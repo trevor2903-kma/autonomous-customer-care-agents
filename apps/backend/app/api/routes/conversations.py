@@ -8,26 +8,41 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_session
+from ...models.conversation import Conversation
+from ...models.enums import MessageSender
 from ...schemas.conversation import ConversationCreate, ConversationOut
 from ...schemas.message import MessageCreate
 from ...services import conversation_service as svc
+from ...tasks.background import process_message
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
+def _schedule_processing(background: BackgroundTasks, conversation: Conversation) -> None:
+    """Lên lịch xử lý nền cho tin nhắn KHÁCH mới nhất (đường nhanh — PRD §10 FR-ASYNC-1)."""
+    if not conversation.messages:
+        return
+    last = conversation.messages[-1]
+    if last.sender == MessageSender.CUSTOMER:
+        background.add_task(process_message, conversation.id, last.id)
+
+
 @router.post("", response_model=ConversationOut, status_code=201)
 async def create_conversation(
-    payload: ConversationCreate, session: AsyncSession = Depends(get_session)
+    payload: ConversationCreate,
+    background: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
 ) -> ConversationOut:
     conversation = await svc.create_conversation(
         session,
         customer_identifier=payload.customer_identifier,
         first_message=payload.message,
     )
+    _schedule_processing(background, conversation)
     return conversation
 
 
@@ -52,6 +67,7 @@ async def get_conversation(
 async def post_message(
     conversation_id: uuid.UUID,
     payload: MessageCreate,
+    background: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ) -> ConversationOut:
     conversation = await svc.add_message(
@@ -59,6 +75,7 @@ async def post_message(
     )
     if conversation is None:
         raise HTTPException(status_code=404, detail="conversation not found")
-    # TODO (Phase 5, PRD §8/§10): kích hoạt pipeline qua BackgroundTasks -> ghi audit_log ->
-    #   phát realtime (Redis pub/sub). Phản hồi khách CHỈ từ Response Generator (PRD §7.4).
+    # Đường nhanh: trả về ngay, pipeline + audit chạy nền (PRD §10 FR-ASYNC-1).
+    # TODO (PRD §10 FR-ASYNC-7): phát realtime qua Redis pub/sub. Phản hồi khách CHỈ từ Response Generator.
+    _schedule_processing(background, conversation)
     return conversation
