@@ -45,7 +45,7 @@ health:
 	curl -s http://localhost:8000/api/health
 
 check-conn:
-	cd apps/backend && uv run python -m app.scripts.check_connections
+	uv run --python 3.12 --with asyncpg --with redis --with qdrant-client --with python-dotenv scripts/check_connections.py
 
 test:
 	cd apps/backend && uv run pytest -q

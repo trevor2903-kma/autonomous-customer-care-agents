@@ -1,0 +1,50 @@
+# docker-compose.local.yml — hạ tầng DỰ PHÒNG khi không dùng managed (Neon/Upstash/Qdrant).
+# Dùng: `make local-infra-up` / `make local-infra-down`.
+# Sau khi up, trỏ .env vào phần "LOCAL" trong .env.example.
+# Đây KHÔNG phải đường chạy mặc định (managed-first theo PRD §6) — chỉ để chạy offline.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: csm-postgres
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: csm
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d csm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: csm-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: csm-qdrant
+    ports:
+      - "6333:6333" # REST/HTTP
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrantdata:/qdrant/storage
+
+volumes:
+  pgdata:
+  redisdata:
+  qdrantdata:
