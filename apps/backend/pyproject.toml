@@ -1,0 +1,41 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Autonomous Customer Support — Backend (FastAPI + LangGraph), scaffold"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115,<0.116",
+    "uvicorn[standard]>=0.30,<0.32",
+    "langgraph>=0.2,<0.3",
+    "sqlalchemy>=2.0,<2.1",
+    "alembic>=1.13,<1.14",
+    "asyncpg>=0.30,<0.31",
+    "greenlet>=3.0",
+    "pydantic>=2.9,<3",
+    "pydantic-settings>=2.5,<3",
+    "redis>=5.0,<6",
+    "qdrant-client>=1.12,<2",
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv]
+# Cài app ở chế độ editable để `import app` chạy mọi nơi (uvicorn, alembic, pytest).
