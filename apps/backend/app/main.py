@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.routes import health
+from .api.routes import conversations, health
 from .api.ws import chat
 from .core.config import settings
 from .core.logging import configure_logging, get_logger
@@ -46,6 +46,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api")
+app.include_router(conversations.router, prefix="/api")
 app.include_router(chat.router)
 
 
