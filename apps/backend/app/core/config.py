@@ -64,5 +64,13 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.backend_cors_origins.split(",") if o.strip()]
 
+    @property
+    def cors_origin_regex(self) -> str | None:
+        # Dev: cho phép mọi cổng localhost/127.0.0.1 (dashboard :3000, Expo web :8081/:19006, ...).
+        # Prod: None -> chỉ dùng allow-list cors_origins (chặt chẽ).
+        if self.env == "development":
+            return r"https?://(localhost|127\.0\.0\.1)(:\d+)?"
+        return None
+
 
 settings = Settings()  # type: ignore[call-arg]

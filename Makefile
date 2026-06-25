@@ -4,7 +4,7 @@
 # Backend dùng uv (Python 3.12 managed). Frontend/mobile dùng pnpm workspaces.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev-backend dev-dashboard dev-mobile migrate makemigration \
+.PHONY: help install dev-backend dev-dashboard dev-mobile dev-mobile-web migrate makemigration \
         health check-conn test build local-infra-up local-infra-down
 
 help:
@@ -34,6 +34,9 @@ dev-dashboard:
 
 dev-mobile:
 	pnpm --filter mobile start
+
+dev-mobile-web:
+	pnpm --filter mobile web
 
 migrate:
 	cd apps/backend && uv run alembic upgrade head

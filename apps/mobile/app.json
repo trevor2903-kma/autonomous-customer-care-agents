@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "platforms": ["ios", "android"],
+    "platforms": ["ios", "android", "web"],
     "newArchEnabled": false,
     "splash": {
       "backgroundColor": "#0a0a0a"
