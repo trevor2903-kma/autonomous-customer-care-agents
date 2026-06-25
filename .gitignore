@@ -28,6 +28,7 @@ venv/
 node_modules/
 .pnpm-store/
 .next/
+next-env.d.ts
 out/
 dist/
 build/
@@ -35,6 +36,11 @@ build/
 .expo-shared/
 *.tsbuildinfo
 .turbo/
+
+# Playwright / verification artifacts
+.playwright-mcp/
+dashboard-handoff.png
+customer-chat-echo.png
 
 # ─────────────────────────────────────────────────────────────
 # Logs / OS / IDE

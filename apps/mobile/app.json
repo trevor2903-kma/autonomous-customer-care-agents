@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "ACSS Admin",
+    "slug": "acss-admin",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["ios", "android"],
+    "newArchEnabled": false,
+    "splash": {
+      "backgroundColor": "#0a0a0a"
+    }
+  }
+}
