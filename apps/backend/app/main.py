@@ -11,9 +11,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.routes import agents, conversations, health
+from .api.routes import agents, conversations, health, rag
 from .api.ws import chat
 from .core.config import settings
+from .core.embeddings import close_openai
 from .core.logging import configure_logging, get_logger
 from .core.qdrant_client import close_qdrant
 from .core.redis_client import close_redis
@@ -28,7 +29,8 @@ async def lifespan(app: FastAPI):
     yield
     await close_redis()
     await close_qdrant()
-    log.info("Backend shutdown — closed redis/qdrant clients")
+    await close_openai()
+    log.info("Backend shutdown — closed redis/qdrant/openai clients")
 
 
 app = FastAPI(
@@ -49,6 +51,7 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
+app.include_router(rag.router, prefix="/api")
 app.include_router(chat.router)
 
 
