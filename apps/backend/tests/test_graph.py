@@ -1,11 +1,32 @@
-"""Phase 4 verify — graph compile + chạy CẢ 2 NHÁNH (response / human_handoff).
+"""Graph compile + chạy CẢ 2 NHÁNH (response / human_handoff).
 
-Không cần DB/network (nodes là stub). asyncio_mode=auto (pyproject) -> async test chạy tự động.
+Kiểm ĐỊNH TUYẾN graph, KHÔNG kiểm chất lượng phân loại RAG (xem test_intent.py). Agent 1 (intent) giờ có
+logic THẬT gọi network → patch `classify_intent` bằng stub tất định để test chạy OFFLINE.
+asyncio_mode=auto (pyproject) -> async test chạy tự động.
 """
 
 from __future__ import annotations
 
+import pytest
+
 from app.agents.graph import build_graph, run_pipeline
+
+
+@pytest.fixture(autouse=True)
+def _offline_intent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Giữ pipeline test offline: intent_node gọi classify_intent (network) -> thay bằng stub tất định."""
+
+    async def fake_classify(text: str) -> dict:
+        return {
+            "intent": "product_information",
+            "category": "pre_sale",
+            "entities": {},
+            "confidence": 0.9,
+            "uncertainty_flags": [],
+            "rag_contexts": [{"intent": "product_information", "category": "pre_sale", "score": 0.9}],
+        }
+
+    monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)
 
 
 def test_graph_compiles() -> None:

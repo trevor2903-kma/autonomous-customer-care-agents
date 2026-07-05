@@ -24,6 +24,11 @@ def _get_client() -> AsyncOpenAI:
     return _client
 
 
+def get_openai() -> AsyncOpenAI:
+    """Client OpenAI dùng chung (embeddings + chat cho bước chọn intent). Đóng ở close_openai()."""
+    return _get_client()
+
+
 async def embed_texts(texts: list[str]) -> list[list[float]]:
     """Embed danh sách chuỗi trong 1 request (giữ nguyên thứ tự đầu vào)."""
     if not texts:

@@ -14,7 +14,7 @@ from uuid import NAMESPACE_URL, uuid5
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from ..core.config import settings
-from ..core.embeddings import embed_texts, embedding_dim
+from ..core.embeddings import embed_text, embed_texts, embedding_dim
 from ..core.qdrant_client import get_qdrant
 
 _HEADING = "## "
@@ -105,3 +105,30 @@ async def reset_collection() -> None:
     if await client.collection_exists(settings.qdrant_collection):
         await client.delete_collection(settings.qdrant_collection)
     await ensure_collection()
+
+
+async def search(query: str, top_k: int = 3) -> list[dict]:
+    """Truy hồi top-k chunk gần nhất (cosine). Trả [{intent, category, text, score}].
+
+    TẦNG SERVICE để Knowledge Agent (PRD §7.2) tái dùng — Intent Classifier ở lát cắt này gọi tạm để
+    tự phân loại (không nhét truy hồi cứng vào node intent).
+    """
+    vector = await embed_text(query)
+    res = await get_qdrant().query_points(
+        collection_name=settings.qdrant_collection,
+        query=vector,
+        limit=top_k,
+        with_payload=True,
+    )
+    hits: list[dict] = []
+    for point in res.points:
+        payload = point.payload or {}
+        hits.append(
+            {
+                "intent": payload.get("intent"),
+                "category": payload.get("category"),
+                "text": payload.get("text"),
+                "score": point.score,
+            }
+        )
+    return hits

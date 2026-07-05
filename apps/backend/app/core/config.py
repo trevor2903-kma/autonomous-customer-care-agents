@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     confidence_threshold: float = 0.6
     auto_resolve_minutes: int = 30
     context_window_messages: int = 10
+    # Intent Classifier (PRD §7.1): 2 ứng viên RAG đầu chênh score < margin -> cờ ambiguous_intent.
+    intent_ambiguous_margin: float = 0.05
 
     # ── Postgres (Neon) ───────────────────────────────────────────────────────
     # SSL bật qua connect_args={"ssl": ...} (CLAUDE.md). URL KHÔNG mang '?sslmode='.

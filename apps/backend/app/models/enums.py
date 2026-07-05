@@ -25,6 +25,20 @@ class ConversationStatus(StrEnum):
     CLOSED = "CLOSED"
 
 
+class Intent(StrEnum):
+    # Tập ĐÓNG intent (PRD §7.1) — dùng validate nhãn LLM trả về (chống trôi nhãn). Ngoài tập -> other.
+    PRODUCT_PRICE = "product_price"
+    PRODUCT_INFORMATION = "product_information"
+    SIZE_CONSULTING = "size_consulting"
+    SHIPPING = "shipping"
+    ORDER_STATUS = "order_status"
+    REFUND = "refund"
+    EXCHANGE = "exchange"
+    COMPLAINT = "complaint"
+    PROMOTION = "promotion"
+    OTHER = "other"
+
+
 class MessageSender(StrEnum):
     CUSTOMER = "customer"
     AI = "ai"
