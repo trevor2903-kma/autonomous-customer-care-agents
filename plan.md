@@ -1,139 +1,187 @@
-# SLICE — Cập nhật repo: bỏ React Native, chuyển sang PWA · plan one-shot
+# PLAN — Lát cắt dọc (walking skeleton): Upload → Embed (Qdrant) → Intent Classifier phân loại theo RAG
 
-> **Bản chất:** plan ONE-SHOT cho một lát refactor + đồng bộ tài liệu. Xong thì bỏ. Nguồn chân lý: **`PRD.md`**.
-> **Quyết định:** bỏ hẳn app mobile React Native (Expo). "App trên điện thoại" giờ là **web dashboard dạng PWA**
-> (cài lên màn hình chính) — một codebase web duy nhất, responsive; không duy trì codebase mobile riêng.
-> **Lý do:** nhu cầu trên điện thoại chỉ là Admin xem hội thoại + duyệt/nhận ca chuyển tiếp nhanh khi di chuyển,
-> không cần truy cập phần cứng/OS → PWA đủ, giảm một codebase. Tuân thủ `CLAUDE.md`.
-
-> **Lưu ý repo:** đây là hệ **CSKH shop quần áo** (Admin/nhân viên CSKH, khách hàng, RAG chính sách). Web hiện có
-> 2 trang: `/` (Admin dashboard) và `/chat` (cổng chat khách). PRD của repo này đánh số: **§1.3** bối cảnh,
-> **§6** kiến trúc, **§11** human_handoff + EscalationCard (mobile = FR-ESC-3), **§14.5** thông báo (FR-NOTI),
-> **§16** bảng Web vs Mobile, **§21** tech stack, **§22** ngoài phạm vi/tương lai.
+> **Bản chất file này:** kịch bản ONE-SHOT để verify hệ thống ở mức cơ bản nhất — MỘT lát cắt dọc chạy thật,
+> KHÔNG phải toàn bộ hệ. Xong thì bỏ. Nguồn chân lý vẫn là **`PRD.md`** (đặc biệt §7.1 Intent Classifier,
+> §13 RAG). Repo hiện tại đã scaffold xong; plan này CẮM logic thật vào đúng chỗ đã chừa.
+>
+> **Mục tiêu (đúng yêu cầu):** admin upload tài liệu → **embed vào Qdrant** → khi khách chat, **Agent 1
+> (Intent Classifier) phân loại intent dựa trên tài liệu RAG đó**. CHƯA cần lưu trữ tài liệu lâu dài (chỉ đẩy
+> vector lên Qdrant, KHÔNG persist document xuống Postgres).
+>
+> **Quyết định kiến trúc (ghi rõ để không lệch PRD):** lát cắt này cho Intent Classifier **tự truy hồi** để
+> phân loại. Trong kiến trúc đầy đủ (PRD §7.2), truy hồi là việc của Knowledge Agent — nên hàm `search()`
+> viết ở **tầng service** (`rag_service`) để Knowledge Agent tái dùng về sau, KHÔNG nhét cứng vào node intent.
 
 ---
 
-## 1. In scope / Out of scope
+## 0. In / Out scope
 
 **In scope:**
 
-- Gỡ bỏ `apps/mobile` (Expo/React Native) khỏi monorepo + mọi tham chiếu build/script.
-- Biến `apps/dashboard` (Next.js) thành **PWA cài được**: web app manifest + service worker tối giản + icon.
-- Đảm bảo các trang hiện có (`/`, `/chat`) responsive tốt trên khổ điện thoại.
-- Cập nhật MỌI tài liệu nhắc tới mobile: `PRD.md`, `CLAUDE.md`, `docs/architecture.md`, `README.md`.
-- Cập nhật cấu hình monorepo: `pnpm-workspace.yaml`, root `package.json`, `Makefile`, `.npmrc`, `.gitignore`,
-  comment `packages/shared-types`.
+- Thêm khả năng **embeddings** (OpenAI `text-embedding-3-small` — đã có trong `config.EMBEDDING_MODEL`).
+- Bootstrap **collection Qdrant** (tên `settings.qdrant_collection` = `knowledge`).
+- **RAG service**: chunk tài liệu → embed → upsert Qdrant; và `search(query, top_k)`.
+- **Route upload**: `POST /api/rag/upload` (nhận file .md/.txt) → embed → Qdrant.
+- **Intent Classifier thật** (thay stub): truy hồi top-k intent từ Qdrant → chọn intent (LLM nếu
+  `ENABLE_LLM`, ngược lại similarity top-1) → set `intent/category/entities/confidence/uncertainty_flags`.
+- **Điểm test**: `POST /api/agents/classify` (chạy RIÊNG bước intent) + WS `/ws/chat` trả kết quả phân loại.
 
-**Out of scope (KHÔNG làm ở lát này):**
+**Out of scope (giữ nguyên scaffold / để layer sau):**
 
-- KHÔNG làm push notification thật (đưa vào PRD §22 tương lai — iOS hạn chế PWA push; Phase 1 dùng badge in-app
-  + realtime WebSocket thay thế).
-- KHÔNG đụng backend, agent/node, logic nghiệp vụ. (Ngoại lệ đề xuất: 2 comment CORS trong backend còn nhắc
-  "Expo web" — chỉ FLAG cho người dùng, KHÔNG tự sửa vì ranh giới "không đụng backend".)
-- KHÔNG đổi tên `apps/dashboard` (giữ tên, tránh churn; nó là app web duy nhất: cổng chat khách + Admin + PWA).
-- KHÔNG đổi `node-linker=hoisted` / phiên bản React (tránh churn cài đặt/rủi ro build) — chỉ dọn comment nhắc Expo.
+- KHÔNG chạy đủ pipeline 4 agent cho lát cắt này (chỉ Agent 1). Decision/Response/human_handoff vẫn stub.
+- KHÔNG persist tài liệu xuống Postgres (bảng `knowledge_document` để yên); KHÔNG RAG management UI, re-index.
+- KHÔNG PDF/DOCX (chỉ .md/.txt); KHÔNG multi-provider (chỉ OpenAI); KHÔNG tách Knowledge Agent (Layer sau).
+- KHÔNG gửi phản hồi "trả lời khách" — lát cắt chỉ trả **metadata phân loại** (Response Generator vẫn là
+  điểm phát ngôn DUY NHẤT tới khách; wiring câu trả lời thật là việc sau).
 
 ---
 
-## 2. Gỡ bỏ app mobile
+## 1. Tài liệu test (đã có sẵn để upload)
 
-- Xóa thư mục `apps/mobile/`.
-- `pnpm-workspace.yaml`: bỏ mục `apps/mobile` + comment nhắc Expo.
-- Root `package.json`: bỏ script `dev:mobile`.
-- `Makefile`: bỏ target `dev-mobile` + `dev-mobile-web` (.PHONY, help echo, recipe); sửa comment header
-  "Frontend/mobile" → "Frontend".
-- `.npmrc`: giữ `node-linker=hoisted` + `enable-pre-post-scripts` (tránh churn), chỉ dọn comment nhắc Expo/RN/Metro.
-- `.gitignore`: dọn comment "Expo" + bỏ dòng `.expo/`, `.expo-shared/` (không còn Expo).
-- `packages/shared-types`: GIỮ NGUYÊN type (dashboard vẫn dùng). Chỉ sửa comment "backend ↔ dashboard ↔ mobile"
-  → "backend ↔ dashboard" (không có type nào chỉ dành riêng cho mobile).
-- Chạy `pnpm install` lại để cập nhật lockfile sau khi bỏ workspace.
-- **FLAG (không sửa):** `apps/backend/app/main.py` + `app/core/config.py` còn comment ví dụ "Expo web :8081/:19006"
-  trong CORS regex — báo người dùng, để họ quyết (ranh giới: không đụng backend).
+`intents_seed_vi.md` — mỗi mục `## <intent_id>` là MỘT chunk; payload `{intent, category, text, source}`.
+Đặt vào repo tại `fixtures/knowledge/intents_seed_vi.md` (tạo thư mục `fixtures/knowledge/`).
 
-## 3. Biến dashboard thành PWA (tối giản, không thư viện nặng)
+---
 
-Ưu tiên cách thủ công gọn, tránh phụ thuộc dễ vỡ (KHÔNG `next-pwa`):
+## 2. Dependencies & cấu hình
 
-- **Manifest:** thêm `app/manifest.ts` (Next.js App Router sinh ra `/manifest.webmanifest`): `name`,
-  `short_name`, `start_url: "/"`, `display: "standalone"`, `background_color`, `theme_color`, `icons` (192, 512).
-  App Router tự chèn `<link rel="manifest">`.
-- **Icon:** sinh icon placeholder đơn giản (ô vuông màu neutral + vòng tròn) kích thước 192×192 và 512×512 vào
-  `public/` (PNG). Không dùng thư viện nặng — sinh bằng script Node một lần (không commit script).
-- **Service worker:** thêm `public/sw.js` TỐI GIẢN — precache app shell (`/`, `/chat`, manifest, icon);
-  request `/api/*`, cross-origin (backend :8000, WebSocket) và non-GET → **network (không cache)** tránh dữ liệu
-  cũ. Shell: network-first + fallback cache khi offline. Không cần chiến lược caching phức tạp.
-- **Đăng ký SW:** client component `app/PWARegister.tsx` (thêm vào `app/layout.tsx`), đăng ký `sw.js` **chỉ ở
-  production** (`process.env.NODE_ENV === "production"`) để tránh SW phá hot-reload khi dev.
-- **Meta:** thêm `export const viewport` (`themeColor` + `width=device-width`) + `metadata.manifest`
-  (+ `appleWebApp`/apple-touch-icon cho iOS "Add to Home Screen").
-- **Responsive:** rà `/` và `/chat` hiển thị tốt trên khổ điện thoại (không tràn ngang, chạm được); chỉ chỉnh
-  tối thiểu nếu thật sự tràn.
+- **`apps/backend/pyproject.toml`** — thêm vào `dependencies`:
+  - `openai>=1.40,<2` (embeddings + chat cho bước chọn intent)
+  - `python-multipart>=0.0.9` (FastAPI cần để nhận `UploadFile`)
+  - Cài: `cd apps/backend && uv sync` (hoặc `uv add openai python-multipart`).
+- **`.env`** (gốc repo) — điền/đặt:
+  - `ENABLE_LLM=true` (bật bước chọn intent bằng LLM; xem Phase 3 để hiểu chế độ fallback)
+  - `LLM_PROVIDER=openai`, `LLM_API_KEY=<openai key>`, `LLM_MODEL=gpt-4o-mini`
+  - `EMBEDDING_MODEL=text-embedding-3-small` (đã mặc định)
+  - `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION=knowledge` (đã có)
+  - _(Không muốn dùng OpenAI? Xem "Ghi chú" cuối file — phương án fastembed local, không cần key.)_
 
-> Ghi chú: PWA cài được cần HTTPS ở production (localhost dev thì OK). Không xử lý gì thêm ở lát này.
+**Verify:** `cd apps/backend && uv run python -c "import openai, multipart; print('deps ok')"`; `make health`
+vẫn trả `ok` cho api + 3 dịch vụ (Qdrant reachable).
 
-## 4. Cập nhật tài liệu (đồng bộ — quan trọng)
+---
 
-| File                   | Sửa gì                                                                                                                                                                        |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PRD.md`               | §1.3, §6, §11 (FR-ESC-3), §14.5 (FR-NOTI-2), §16 (bảng), §21 (stack), §22 — đổi "Mobile Admin (React Native/Expo)" → "trên điện thoại: web PWA"; đưa push thật vào §22. Wording dưới. |
-| `CLAUDE.md`            | Mục stack: "Mobile: React Native / Expo…" → "Điện thoại (PWA): web dashboard cài được lên màn hình chính cho Admin (không codebase mobile riêng)". Bỏ mọi nhắc React Native/Expo.     |
-| `docs/architecture.md` | Bảng thành phần: bỏ dòng "Mobile (Expo)"; dòng Web ghi rõ là PWA cài được. Không còn nhắc `apps/mobile`.                                                                       |
-| `README.md`            | Bỏ `make dev-mobile`/`dev-mobile-web` + ghi chú Expo/Metro/duplicate-React; xóa `apps/mobile` khỏi cây thư mục; thêm dòng "web là PWA, cài trên điện thoại qua Add to Home Screen".  |
+## 3. Kế hoạch theo Phase
 
-**Wording mới cho các mục PRD (áp đúng, không tự chế thêm):**
+> Sau MỖI phase: chạy "Verify", hiển thị output, `git commit` (`feat(rag-intent): phase N - ...`), tiếp nếu không lỗi.
 
-- §1.3: "Trên điện thoại, chính web này (dạng PWA cài được lên màn hình chính) cho Admin xử lý nhanh hội thoại
-  được chuyển tiếp khi di chuyển."
-- §6: "Trên điện thoại (PWA): chính Web Admin ở trên, cài lên màn hình chính — Admin xem danh sách hội thoại +
-  duyệt/nhận ca chuyển tiếp nhanh. Một app web duy nhất, responsive; KHÔNG có codebase mobile riêng."
-- §11 FR-ESC-3: "FR-ESC-3 (trên điện thoại — PWA): bản rút gọn responsive của EscalationCard (tóm tắt + intent +
-  lý do + nháp + nút Nhận) để xử lý nhanh. Thông báo: badge số ca chờ hiển thị trong app. (Web push đẩy thật
-  xuyên nền tảng: xem §22.)"
-- §14.5 FR-NOTI-2: "FR-NOTI-2: thông báo tới Admin khi có ca chuyển tiếp / chờ duyệt — badge (số ca chờ) trên
-  dashboard/PWA, realtime qua WebSocket. (Web push đẩy thật xuyên nền tảng: §22.)"
-- §16 (bảng): đổi tiêu đề `## 16. Web vs Mobile` → `## 16. Web vs Điện thoại (PWA)`; cột "Mobile Admin" →
-  "Điện thoại (PWA, Admin)"; giữ nguyên các ✓/✗ chức năng; ô "✅ rút gọn + push" → "✅ rút gọn" (push → badge).
-  Ghi chú layout "Mobile Admin: …" → "Trên điện thoại (PWA): Conversation List → Chat Screen (rút gọn), cài lên
-  màn hình chính; badge số ca chờ." Thêm dòng dưới bảng: "Chỉ một app web (Next.js), responsive; cột 'Điện thoại
-  (PWA)' là ưu tiên hiển thị + duyệt nhanh trên màn hình nhỏ, KHÔNG phải app riêng. Web push đẩy thật: §22."
-- §21 (stack): dòng "| Mobile | React Native / Expo (SDK 51+) |" → "| Điện thoại (PWA) | Chính Web (Next.js) cài
-  lên màn hình chính — không codebase mobile riêng |".
-- §22 (thêm dòng vào Phase 3 hoặc mục thông báo): "Web push notification xuyên nền tảng cho Admin (đặc biệt trên
-  iOS, vốn hạn chế PWA push) — thay cho push native của app mobile cũ."
+### Phase 0 — Deps + config
 
-> Giữ nguyên tắc: PRD là nguồn chân lý — sau lát này PRD phải phản ánh đúng rằng mobile = PWA.
+Như mục 2. Commit: `feat(rag-intent): phase 0 - deps openai/multipart + env RAG/LLM`.
+**Verify:** import deps ok; `/api/health` ok.
 
-## 5. Verify
+### Phase 1 — Embeddings + bootstrap collection
 
-1. `pnpm install` OK; `apps/mobile` đã biến mất; không còn tham chiếu mobile trong workspace/Makefile/package.json;
-   lockfile không còn expo/react-native.
-2. `make dev-dashboard` (hoặc `pnpm --filter dashboard dev`); mở `http://localhost:3000` — `/` chạy bình thường,
-   `/chat` (cổng chat khách, WebSocket echo) vẫn hoạt động.
-3. `pnpm --filter dashboard build` (production) PASS; kiểm tra `/manifest.webmanifest` + `/icon-192.png` +
-   `/icon-512.png` truy cập được.
-4. Ở bản production/preview: DevTools → Application → Manifest hiện đúng name/icons; Service Worker đăng ký OK
-   (chỉ ở production); trình duyệt cho phép "Install app" / "Add to Home Screen".
-5. Thu nhỏ cửa sổ / DevTools device mode (khổ điện thoại) → `/` và `/chat` responsive, không tràn ngang.
-6. `grep -ri "react-native\|expo\|apps/mobile" .` (trừ node_modules, git history) → không còn kết quả trong
-   **tài liệu & config** (backend CORS comment "Expo web" đã FLAG — ngoài phạm vi, người dùng quyết).
+- Tạo **`app/core/embeddings.py`**:
+  - `async embed_texts(texts: list[str]) -> list[list[float]]` và `async embed_text(text) -> list[float]`,
+    dùng `AsyncOpenAI(api_key=settings.llm_api_key)` + `settings.embedding_model`.
+  - `embedding_dim()` — suy ra số chiều bằng cách embed 1 chuỗi "dim probe" (tránh hardcode; `text-embedding-3-small`
+    = 1536). Cache lại.
+- Trong **`app/services/rag_service.py`** (tạo mới): `async ensure_collection()` — nếu collection chưa có →
+  `create_collection(name=settings.qdrant_collection, vectors_config=VectorParams(size=embedding_dim(),
+distance=Distance.COSINE))`. Idempotent (đã có thì bỏ qua).
+- Gọi `ensure_collection()` lười (khi upload/search lần đầu) hoặc trong lifespan `main.py` (tùy — lười là đủ).
 
-## 6. Definition of Done
+**Verify:** script nhỏ gọi `ensure_collection()` rồi `get_qdrant().get_collection(...)` in ra `points_count=0`
 
-- [ ] `apps/mobile` đã xóa; `pnpm-workspace.yaml`/`package.json`/`Makefile`/`.npmrc`/`.gitignore` sạch tham chiếu
-      mobile; `pnpm install` OK; lockfile sạch expo/react-native.
-- [ ] `pnpm --filter dashboard build` PASS; `/manifest.webmanifest` + icon 192/512 tồn tại.
-- [ ] Service worker đăng ký ở production; app "Install/Add to Home Screen" được; API/cross-origin không bị cache.
-- [ ] Các trang hiện có (`/`, `/chat`) responsive trên khổ điện thoại.
-- [ ] `PRD.md` §1.3/§6/§11/§14.5/§16/§21/§22 đã cập nhật đúng wording ở mục 4; push thật nằm ở §22.
-- [ ] `CLAUDE.md`, `docs/architecture.md`, `README.md` không còn nhắc React Native/Expo; mô tả PWA.
-- [ ] `grep` không còn "react-native"/"expo"/"apps/mobile" trong tài liệu & config (backend comment đã FLAG).
+- vector size = 1536. Commit: `feat(rag-intent): phase 1 - embeddings + qdrant collection bootstrap`.
 
-## 7. Ranh giới & quy ước (theo CLAUDE.md)
+### Phase 2 — RAG ingest + route upload
 
-- CHỈ làm: gỡ mobile + PWA hạ tầng cho dashboard + cập nhật tài liệu/config. KHÔNG đụng backend/agent/logic.
-- Đơn giản trước: PWA tối giản (manifest + SW cơ bản + icon), không thư viện nặng, không caching phức tạp,
-  KHÔNG push thật. Đừng đẻ thêm việc ngoài mục 2–4.
-- SW không cache API/dữ liệu động (tránh dữ liệu cũ); SW chỉ bật ở production.
-- Commit nhỏ theo bước (vd `chore(repo): remove react-native mobile app`, `feat(pwa): manifest + service worker
-  + icons`, `docs: sync mobile→PWA in PRD/CLAUDE/architecture/README`).
-- Kết thúc: in tóm tắt thay đổi, kết quả verify, checklist DoD đã đạt.
+- **`app/services/rag_service.py`** thêm:
+  - `chunk_by_heading(text) -> list[dict]`: tách theo dòng bắt đầu `"## "`; mỗi section → `{intent: <heading>,
+category: <parse dòng "- category:"> | None, text: <cả section>}`.
+  - `async ingest_document(text: str, source: str) -> int`: `ensure_collection()` → chunk → `embed_texts` →
+    `upsert` các point (id ổn định theo `source#intent`, payload `{intent, category, text, source}`) → trả số chunk.
+  - `async collection_info() -> dict` (points_count) và `async reset_collection()` (drop + `ensure_collection`).
+- Tạo **`app/api/routes/rag.py`** (`APIRouter(prefix="/rag", tags=["rag"])`):
+  - `POST /upload` — `file: UploadFile`; chỉ nhận `.md`/`.txt`; đọc bytes → `decode("utf-8")` →
+    `ingest_document(text, source=file.filename)` → `{ "source", "chunks", "collection" }`.
+  - `GET /info` → `collection_info()`. `POST /reset` → `reset_collection()` (tiện test lại nhiều lần).
+- **`app/main.py`**: `app.include_router(rag.router, prefix="/api")`.
+
+**Verify:** `curl -F "file=@fixtures/knowledge/intents_seed_vi.md" http://localhost:8000/api/rag/upload`
+→ `{"chunks": 10, ...}`; `GET /api/rag/info` → `points_count: 10`. Commit:
+`feat(rag-intent): phase 2 - rag ingest service + /api/rag/upload`.
+
+### Phase 3 — Intent Classifier thật (thay stub)
+
+- **`app/services/rag_service.py`** thêm `async search(query: str, top_k: int = 3) -> list[dict]`: `embed_text(query)`
+  → `query_points(collection, query=vec, limit=top_k, with_payload=True)` → list `{intent, category, text, score}`.
+- **(Khuyến nghị, Layer-1 lite)** thêm `Intent(StrEnum)` vào `app/models/enums.py` (tập đóng theo PRD §7.1:
+  product_price, product_information, size_consulting, shipping, order_status, refund, exchange, complaint,
+  promotion, other). Dùng để validate nhãn LLM trả về (chống trôi nhãn).
+- Viết **`app/agents/nodes/intent.py`** thật, tách hàm thuần để tái dùng:
+  - `async classify_intent(text: str) -> dict` trả `{intent, category, entities, confidence, uncertainty_flags,
+rag_contexts}`:
+    1. `hits = await rag_service.search(text, top_k=3)`.
+    2. Nếu `not hits` **hoặc** `settings.llm_api_key` trống **hoặc** Qdrant/collection lỗi → **degrade an toàn**:
+       trả `intent="unknown", confidence=0.0, uncertainty_flags=["no_relevant_knowledge"]` (KHÔNG gọi network —
+       giữ `make test` chạy offline).
+    3. **Chế độ chọn intent:**
+       - `ENABLE_LLM=true`: gọi LLM (`AsyncOpenAI`, `settings.llm_model`) với prompt: "Cho các intent ứng viên
+         sau (kèm mô tả/ví dụ từ RAG) và câu khách, chọn 1 intent, trích entities, và độ tự tin". Output JSON
+         (`response_format=json_object`). Validate intent ∈ `Intent`. Cờ: `ambiguous_intent` nếu LLM lưỡng lự /
+         2 ứng viên đầu điểm sát nhau; `out_of_domain` nếu LLM chọn `other` với điểm truy hồi thấp.
+       - `ENABLE_LLM=false`: **similarity top-1** — `intent = hits[0].intent`, `confidence = hits[0].score`,
+         `entities = {}`. Cờ theo ngưỡng: `low_retrieval_score`/`out_of_domain` nếu `score < CONFIDENCE_THRESHOLD`;
+         `ambiguous_intent` nếu `|score[0]-score[1]|` nhỏ.
+  - `async intent_node(state)`: gọi `classify_intent(state["input"])`, set các field vào state + `trace`
+    (`node="intent"`, confidence, `detail={"top": [...]} `), `status=CLASSIFYING`. Giữ chữ ký node như cũ.
+  - _Lưu ý:_ node vẫn phải hoạt động trong graph (`build_graph`) — chỉ Agent 1 có logic thật; knowledge/decision/
+    response vẫn stub. `make test` phải xanh (nhờ degrade an toàn ở bước 2).
+
+**Verify:** `cd apps/backend && uv run python -c "..."` gọi `classify_intent("áo này còn size M không shop?")`
+→ intent hợp lý (`product_information`/`size_consulting`); `make test` xanh. Commit:
+`feat(rag-intent): phase 3 - intent classifier RAG (search + LLM/similarity) + Intent enum`.
+
+### Phase 4 — Điểm test: REST classify + wire WebSocket
+
+- **`app/api/routes/agents.py`** thêm `POST /classify` (body `{ "message": str }`) → `classify_intent(message)`
+  → trả `{intent, category, entities, confidence, uncertainty_flags, rag_contexts: [{intent, score}]}`. Chạy
+  RIÊNG Agent 1 (KHÔNG chạy cả graph).
+- **`app/api/ws/chat.py`**: khi nhận text của khách → `classify_intent(text)` → gửi lại
+  `{"type": "classification", intent, confidence, entities}` (thay `echo`). Đây là **tín hiệu dev/verify**, KHÔNG
+  phải câu trả lời cuối cho khách (Response Generator lo việc đó sau — PRD §7.4).
+
+**Verify:** `curl -s -X POST /api/agents/classify -H 'Content-Type: application/json' -d '{"message":"đơn 1234 tới đâu rồi"}'`
+→ `intent=order_status`; mở WS gửi câu bất kỳ → nhận `type=classification`. Commit:
+`feat(rag-intent): phase 4 - /api/agents/classify + ws classification`.
+
+### Phase 5 — Verify lát cắt (bộ câu test)
+
+- Tạo **`scripts/verify_intent.py`**: danh sách ~10–12 câu khách (giọng KHÁC ví dụ trong seed để không "học vẹt")
+  kèm intent kỳ vọng → gọi `classify_intent` (hoặc `/api/agents/classify`) → in `dự đoán vs kỳ vọng` + tỉ lệ đúng.
+- Ngưỡng sanity (KHÔNG phải KPI PRD): ≥ ~8/10 đúng là đạt cho lát cắt verify.
+
+**Verify:** chạy `uv run python scripts/verify_intent.py` → in bảng + accuracy ≥ ngưỡng. Commit:
+`feat(rag-intent): phase 5 - verify script cho intent qua RAG`.
+
+---
+
+## 4. Definition of Done
+
+- [ ] `uv sync` xong với `openai` + `python-multipart`; `/api/health` ok.
+- [ ] `POST /api/rag/upload` với `intents_seed_vi.md` → `chunks = 10`; `GET /api/rag/info` → `points_count = 10`.
+- [ ] `classify_intent()` phân loại đúng ≥ ~8/10 câu test (Phase 5), có `confidence` + `uncertainty_flags` + `rag_contexts`.
+- [ ] `POST /api/agents/classify` trả intent đúng; WS `/ws/chat` trả `type=classification` khi khách chat.
+- [ ] `make test` vẫn xanh (intent_node degrade an toàn khi offline; các node khác vẫn stub).
+- [ ] KHÔNG persist tài liệu xuống Postgres; embeddings chỉ nằm ở Qdrant.
+- [ ] Chỉ Agent 1 có logic thật; Response Generator vẫn là điểm phát ngôn duy nhất (lát cắt chỉ trả metadata).
+
+---
+
+## 5. Ghi chú cho Claude Code
+
+- **Embeddings KHÔNG bị gate bởi `ENABLE_LLM`** — RAG cần embeddings để chạy. `ENABLE_LLM` chỉ gate **bước chọn
+  intent bằng LLM** (bật → LLM chọn + trích entities; tắt → similarity top-1). Cả hai chế độ đều "phân loại theo RAG".
+- **Giữ `make test` chạy offline:** mọi lệnh gọi network trong `intent_node` phải đi qua nhánh degrade an toàn
+  khi thiếu key / Qdrant lỗi / collection trống → trả `unknown` + cờ, KHÔNG ném lỗi.
+- **Async-first, config từ env** (CLAUDE.md): dùng `AsyncOpenAI`, `AsyncQdrantClient`; không hardcode key/URL/model.
+- **`search()` ở tầng service** (`rag_service`) để Knowledge Agent (PRD §7.2) tái dùng — đừng nhét truy hồi cứng
+  vào node intent.
+- **Chống trôi nhãn:** validate intent LLM trả về ∈ `Intent` enum; nếu lệch → coi như `other` + `out_of_domain`.
+- **Phương án không dùng OpenAI (tùy chọn):** thay `embeddings.py` bằng `fastembed` (qdrant-client hỗ trợ, chạy
+  local, không cần API key) và bỏ bước LLM (chỉ similarity top-1). Đổi `EMBEDDING_MODEL` + `embedding_dim()` cho khớp.
+- **Sau lát cắt này** (không làm ở đây): tách Knowledge Agent, chạy đủ pipeline, gate/PENDING_APPROVAL, phản hồi
+  khách thật qua Response Generator, PDF/DOCX ingest, RAG management — theo `docs/DEVELOPMENT.md` (Layer 1→4).
