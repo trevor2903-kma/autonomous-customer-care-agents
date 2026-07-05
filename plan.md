@@ -1,208 +1,139 @@
-# PLAN — Scaffold Monorepo: HỆ THỐNG CHĂM SÓC KHÁCH HÀNG TỰ TRỊ (Shop Quần áo)
+# SLICE — Cập nhật repo: bỏ React Native, chuyển sang PWA · plan one-shot
 
-> Nguồn chân lý của hệ thống là **`PRD.md`**.
->
-> **Phạm vi:** CHỈ dựng nền móng — monorepo, môi trường, skeleton **chạy được**. Node agent là **stub**,
-> UI là **placeholder**. KHÔNG triển khai logic nghiệp vụ thật. Mục tiêu: khung sạch để cắm logic theo PRD.
->
-> **Kiến trúc (theo PRD §5–§8):** pipeline cố định `intent → knowledge → decision → response` + human_handoff
-> có điều kiện, KHÔNG có Supervisor. Hạ tầng managed-first (Neon · Upstash · Qdrant); giữ docker-compose.local.yml dự phòng.
+> **Bản chất:** plan ONE-SHOT cho một lát refactor + đồng bộ tài liệu. Xong thì bỏ. Nguồn chân lý: **`PRD.md`**.
+> **Quyết định:** bỏ hẳn app mobile React Native (Expo). "App trên điện thoại" giờ là **web dashboard dạng PWA**
+> (cài lên màn hình chính) — một codebase web duy nhất, responsive; không duy trì codebase mobile riêng.
+> **Lý do:** nhu cầu trên điện thoại chỉ là Admin xem hội thoại + duyệt/nhận ca chuyển tiếp nhanh khi di chuyển,
+> không cần truy cập phần cứng/OS → PWA đủ, giảm một codebase. Tuân thủ `CLAUDE.md`.
 
----
-
-## 1. Pipeline & thứ tự (khớp PRD §7–§8)
-
-`intent → knowledge → decision → [gate] → response`, cộng `human_handoff` có điều kiện. Ở scaffold, 5 node
-là **stub**: `intent`, `knowledge`, `decision`, `response`, `human_handoff`. Node ra quyết định là `decision`
-(sau nó là định tuyến auto_reply/human_handoff). Chi tiết nghiệp vụ: xem PRD, KHÔNG lặp lại ở đây.
+> **Lưu ý repo:** đây là hệ **CSKH shop quần áo** (Admin/nhân viên CSKH, khách hàng, RAG chính sách). Web hiện có
+> 2 trang: `/` (Admin dashboard) và `/chat` (cổng chat khách). PRD của repo này đánh số: **§1.3** bối cảnh,
+> **§6** kiến trúc, **§11** human_handoff + EscalationCard (mobile = FR-ESC-3), **§14.5** thông báo (FR-NOTI),
+> **§16** bảng Web vs Mobile, **§21** tech stack, **§22** ngoài phạm vi/tương lai.
 
 ---
 
-## 2. In / Out scope (scaffold)
+## 1. In scope / Out of scope
 
 **In scope:**
 
-- Monorepo pnpm workspaces + backend Python.
-- Kết nối Neon · Upstash Redis · Qdrant Cloud; `/api/health` ping thật cả 3.
-- Skeleton FastAPI: REST + **WebSocket echo** (chứng minh transport realtime; chưa wiring AI).
-- Skeleton LangGraph: `ConversationState` (chừa sẵn confidence/uncertainty/escalation + trường CSKH:
-  intent/entities/rag_contexts/action/draft_reply/awaiting_customer), 5 node stub, `policy.py` route theo
-  confidence/cờ, endpoint demo chạy **cả 2 nhánh** (`response` / `human_handoff`).
-- Async skeleton bằng FastAPI BackgroundTasks.
-- Dashboard Next.js (trạng thái service + agent-trace placeholder + conversation-list placeholder) + cổng chat
-  khách placeholder (Header/ChatWindow/Input nối WebSocket echo) + Mobile Expo (trạng thái backend).
-- `shared-types`; migration Alembic tạo bảng tối thiểu (conversation, message, knowledge_document, audit_log)
-  — đủ rộng theo PRD §20.
-- `.env.example`, `.gitignore`, `README.md`, `Makefile`, `docker-compose.local.yml`.
-- Sao chép `PRD.md` và `CLAUDE.md` vào repo (đặt ở gốc).
+- Gỡ bỏ `apps/mobile` (Expo/React Native) khỏi monorepo + mọi tham chiếu build/script.
+- Biến `apps/dashboard` (Next.js) thành **PWA cài được**: web app manifest + service worker tối giản + icon.
+- Đảm bảo các trang hiện có (`/`, `/chat`) responsive tốt trên khổ điện thoại.
+- Cập nhật MỌI tài liệu nhắc tới mobile: `PRD.md`, `CLAUDE.md`, `docs/architecture.md`, `README.md`.
+- Cập nhật cấu hình monorepo: `pnpm-workspace.yaml`, root `package.json`, `Makefile`, `.npmrc`, `.gitignore`,
+  comment `packages/shared-types`.
 
-**Out of scope (chỉ CHỪA CHỖ — theo PRD §22):** logic phân loại intent / RAG (embed+truy hồi) / decision /
-gate / human_handoff định tuyến / vòng học thật; LLM trong pipeline (`ENABLE_LLM=false`); wiring AI vào
-WebSocket; Redis pub/sub thật; tích hợp đơn hàng/push; auth đầy đủ.
+**Out of scope (KHÔNG làm ở lát này):**
+
+- KHÔNG làm push notification thật (đưa vào PRD §22 tương lai — iOS hạn chế PWA push; Phase 1 dùng badge in-app
+  + realtime WebSocket thay thế).
+- KHÔNG đụng backend, agent/node, logic nghiệp vụ. (Ngoại lệ đề xuất: 2 comment CORS trong backend còn nhắc
+  "Expo web" — chỉ FLAG cho người dùng, KHÔNG tự sửa vì ranh giới "không đụng backend".)
+- KHÔNG đổi tên `apps/dashboard` (giữ tên, tránh churn; nó là app web duy nhất: cổng chat khách + Admin + PWA).
+- KHÔNG đổi `node-linker=hoisted` / phiên bản React (tránh churn cài đặt/rủi ro build) — chỉ dọn comment nhắc Expo.
 
 ---
 
-## 3. Tech Stack & Phiên bản
+## 2. Gỡ bỏ app mobile
 
-| Thành phần            | Lựa chọn                                           | Phiên bản / Ghi chú                      |
-| --------------------- | -------------------------------------------------- | ---------------------------------------- |
-| Monorepo (JS)         | pnpm workspaces                                    | pnpm 9.x                                 |
-| Node.js               | LTS                                                | 20.x / 22.x                              |
-| Python                | CPython                                            | 3.12.x                                   |
-| Python pkg manager    | uv (fallback venv+pip)                             | latest                                   |
-| Backend               | FastAPI + uvicorn[standard]                        | 0.115.x / 0.30.x                         |
-| Realtime              | WebSocket (FastAPI) + Redis pub/sub                | pub/sub là TODO (scaffold: echo)         |
-| Agent orchestration   | LangGraph                                          | 0.2.x                                    |
-| LLM SDK               | (cấu hình được: OpenAI/Anthropic/Gemini)           | chưa bật                                 |
-| ORM / Migration       | SQLAlchemy 2.0.x / Alembic 1.13.x                  | async                                    |
-| DB driver             | asyncpg                                            | 0.29.x (Neon cần SSL)                    |
-| Validation            | Pydantic 2.9.x / pydantic-settings 2.5.x           |                                          |
-| PostgreSQL            | Neon (managed)                                     | free: 0.5GB, 100 CU-hrs/tháng            |
-| Redis                 | Upstash (managed)                                  | free: 500K lệnh/tháng; session + pub/sub |
-| Vector DB             | Qdrant Cloud (managed)                             | free: 1GB; embedding tri thức (RAG)      |
-| Async jobs (scaffold) | FastAPI BackgroundTasks                            | không broker                             |
-| Frontend              | Next.js 14 · Tailwind · shadcn/ui · TanStack Query |                                          |
-| Mobile                | React Native / Expo                                | SDK 51+                                  |
-| Container (dự phòng)  | Docker + Compose v2                                | chỉ cho docker-compose.local.yml         |
+- Xóa thư mục `apps/mobile/`.
+- `pnpm-workspace.yaml`: bỏ mục `apps/mobile` + comment nhắc Expo.
+- Root `package.json`: bỏ script `dev:mobile`.
+- `Makefile`: bỏ target `dev-mobile` + `dev-mobile-web` (.PHONY, help echo, recipe); sửa comment header
+  "Frontend/mobile" → "Frontend".
+- `.npmrc`: giữ `node-linker=hoisted` + `enable-pre-post-scripts` (tránh churn), chỉ dọn comment nhắc Expo/RN/Metro.
+- `.gitignore`: dọn comment "Expo" + bỏ dòng `.expo/`, `.expo-shared/` (không còn Expo).
+- `packages/shared-types`: GIỮ NGUYÊN type (dashboard vẫn dùng). Chỉ sửa comment "backend ↔ dashboard ↔ mobile"
+  → "backend ↔ dashboard" (không có type nào chỉ dành riêng cho mobile).
+- Chạy `pnpm install` lại để cập nhật lockfile sau khi bỏ workspace.
+- **FLAG (không sửa):** `apps/backend/app/main.py` + `app/core/config.py` còn comment ví dụ "Expo web :8081/:19006"
+  trong CORS regex — báo người dùng, để họ quyết (ranh giới: không đụng backend).
 
----
+## 3. Biến dashboard thành PWA (tối giản, không thư viện nặng)
 
-## 4. Prerequisites
+Ưu tiên cách thủ công gọn, tránh phụ thuộc dễ vỡ (KHÔNG `next-pwa`):
 
-```bash
-node --version              # >= 20
-corepack enable && corepack prepare pnpm@latest --activate
-python3 --version           # 3.12.x
-# uv:  curl -LsSf https://astral.sh/uv/install.sh | sh
-uv --version
-# (tùy chọn) docker --version
-```
+- **Manifest:** thêm `app/manifest.ts` (Next.js App Router sinh ra `/manifest.webmanifest`): `name`,
+  `short_name`, `start_url: "/"`, `display: "standalone"`, `background_color`, `theme_color`, `icons` (192, 512).
+  App Router tự chèn `<link rel="manifest">`.
+- **Icon:** sinh icon placeholder đơn giản (ô vuông màu neutral + vòng tròn) kích thước 192×192 và 512×512 vào
+  `public/` (PNG). Không dùng thư viện nặng — sinh bằng script Node một lần (không commit script).
+- **Service worker:** thêm `public/sw.js` TỐI GIẢN — precache app shell (`/`, `/chat`, manifest, icon);
+  request `/api/*`, cross-origin (backend :8000, WebSocket) và non-GET → **network (không cache)** tránh dữ liệu
+  cũ. Shell: network-first + fallback cache khi offline. Không cần chiến lược caching phức tạp.
+- **Đăng ký SW:** client component `app/PWARegister.tsx` (thêm vào `app/layout.tsx`), đăng ký `sw.js` **chỉ ở
+  production** (`process.env.NODE_ENV === "production"`) để tránh SW phá hot-reload khi dev.
+- **Meta:** thêm `export const viewport` (`themeColor` + `width=device-width`) + `metadata.manifest`
+  (+ `appleWebApp`/apple-touch-icon cho iOS "Add to Home Screen").
+- **Responsive:** rà `/` và `/chat` hiển thị tốt trên khổ điện thoại (không tràn ngang, chạm được); chỉ chỉnh
+  tối thiểu nếu thật sự tràn.
 
----
+> Ghi chú: PWA cài được cần HTTPS ở production (localhost dev thì OK). Không xử lý gì thêm ở lát này.
 
-## 5. TRƯỚC KHI BẮT ĐẦU — tài khoản managed (việc của con người)
+## 4. Cập nhật tài liệu (đồng bộ — quan trọng)
 
-Claude Code tạo `.env.example` + checklist rồi **DỪNG chờ** `.env` được điền.
+| File                   | Sửa gì                                                                                                                                                                        |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PRD.md`               | §1.3, §6, §11 (FR-ESC-3), §14.5 (FR-NOTI-2), §16 (bảng), §21 (stack), §22 — đổi "Mobile Admin (React Native/Expo)" → "trên điện thoại: web PWA"; đưa push thật vào §22. Wording dưới. |
+| `CLAUDE.md`            | Mục stack: "Mobile: React Native / Expo…" → "Điện thoại (PWA): web dashboard cài được lên màn hình chính cho Admin (không codebase mobile riêng)". Bỏ mọi nhắc React Native/Expo.     |
+| `docs/architecture.md` | Bảng thành phần: bỏ dòng "Mobile (Expo)"; dòng Web ghi rõ là PWA cài được. Không còn nhắc `apps/mobile`.                                                                       |
+| `README.md`            | Bỏ `make dev-mobile`/`dev-mobile-web` + ghi chú Expo/Metro/duplicate-React; xóa `apps/mobile` khỏi cây thư mục; thêm dòng "web là PWA, cài trên điện thoại qua Add to Home Screen".  |
 
-| Dịch vụ                  | Đăng ký                    | Cần lấy               |
-| ------------------------ | -------------------------- | --------------------- |
-| Neon                     | https://neon.tech          | Connection string     |
-| Upstash Redis            | https://upstash.com        | `rediss://` URL (TLS) |
-| Qdrant Cloud             | https://cloud.qdrant.io    | Cluster URL + API key |
-| Langfuse (optional, sau) | https://cloud.langfuse.com | Public + Secret key   |
+**Wording mới cho các mục PRD (áp đúng, không tự chế thêm):**
 
----
+- §1.3: "Trên điện thoại, chính web này (dạng PWA cài được lên màn hình chính) cho Admin xử lý nhanh hội thoại
+  được chuyển tiếp khi di chuyển."
+- §6: "Trên điện thoại (PWA): chính Web Admin ở trên, cài lên màn hình chính — Admin xem danh sách hội thoại +
+  duyệt/nhận ca chuyển tiếp nhanh. Một app web duy nhất, responsive; KHÔNG có codebase mobile riêng."
+- §11 FR-ESC-3: "FR-ESC-3 (trên điện thoại — PWA): bản rút gọn responsive của EscalationCard (tóm tắt + intent +
+  lý do + nháp + nút Nhận) để xử lý nhanh. Thông báo: badge số ca chờ hiển thị trong app. (Web push đẩy thật
+  xuyên nền tảng: xem §22.)"
+- §14.5 FR-NOTI-2: "FR-NOTI-2: thông báo tới Admin khi có ca chuyển tiếp / chờ duyệt — badge (số ca chờ) trên
+  dashboard/PWA, realtime qua WebSocket. (Web push đẩy thật xuyên nền tảng: §22.)"
+- §16 (bảng): đổi tiêu đề `## 16. Web vs Mobile` → `## 16. Web vs Điện thoại (PWA)`; cột "Mobile Admin" →
+  "Điện thoại (PWA, Admin)"; giữ nguyên các ✓/✗ chức năng; ô "✅ rút gọn + push" → "✅ rút gọn" (push → badge).
+  Ghi chú layout "Mobile Admin: …" → "Trên điện thoại (PWA): Conversation List → Chat Screen (rút gọn), cài lên
+  màn hình chính; badge số ca chờ." Thêm dòng dưới bảng: "Chỉ một app web (Next.js), responsive; cột 'Điện thoại
+  (PWA)' là ưu tiên hiển thị + duyệt nhanh trên màn hình nhỏ, KHÔNG phải app riêng. Web push đẩy thật: §22."
+- §21 (stack): dòng "| Mobile | React Native / Expo (SDK 51+) |" → "| Điện thoại (PWA) | Chính Web (Next.js) cài
+  lên màn hình chính — không codebase mobile riêng |".
+- §22 (thêm dòng vào Phase 3 hoặc mục thông báo): "Web push notification xuyên nền tảng cho Admin (đặc biệt trên
+  iOS, vốn hạn chế PWA push) — thay cho push native của app mobile cũ."
 
-## 6. Cấu trúc Monorepo
+> Giữ nguyên tắc: PRD là nguồn chân lý — sau lát này PRD phải phản ánh đúng rằng mobile = PWA.
 
-```
-autonomous-customer-support-system/
-├── PRD.md                        # NGUỒN CHÂN LÝ (giữ ở gốc)
-├── CLAUDE.md                     # quy ước code (Claude Code tự đọc)
-├── plan.md                       # file này — bỏ sau scaffold
-├── README.md, Makefile, .gitignore, .env.example
-├── docker-compose.local.yml      # dự phòng
-├── package.json, pnpm-workspace.yaml
-├── apps/
-│   ├── backend/                  # FastAPI · LangGraph
-│   │   ├── pyproject.toml, Dockerfile, .env.example, alembic.ini, alembic/
-│   │   └── app/
-│   │       ├── main.py
-│   │       ├── core/{config.py, database.py, redis_client.py, qdrant_client.py, logging.py}
-│   │       ├── api/{deps.py, routes/{health.py, conversations.py, agents.py}, ws/{chat.py}}
-│   │       ├── agents/{state.py, graph.py, policy.py, nodes/{intent,knowledge,decision,response,human_handoff}.py}
-│   │       ├── models/{base.py, conversation.py, message.py, knowledge_document.py, audit_log.py}
-│   │       ├── schemas/{conversation.py, message.py, agent.py}
-│   │       ├── services/{conversation_service.py, audit_service.py}
-│   │       ├── tools/            # placeholder (PRD §7 — phase sau: RAG retriever, order lookup)
-│   │       └── tasks/{background.py}
-│   ├── dashboard/                # Next.js 14 — dashboard Admin + cổng chat khách (placeholder)
-│   └── mobile/                   # Expo — Admin xử lý nhanh (placeholder)
-├── packages/shared-types/
-└── docs/architecture.md          # tóm tắt kiến trúc + trỏ PRD
-```
+## 5. Verify
 
----
+1. `pnpm install` OK; `apps/mobile` đã biến mất; không còn tham chiếu mobile trong workspace/Makefile/package.json;
+   lockfile không còn expo/react-native.
+2. `make dev-dashboard` (hoặc `pnpm --filter dashboard dev`); mở `http://localhost:3000` — `/` chạy bình thường,
+   `/chat` (cổng chat khách, WebSocket echo) vẫn hoạt động.
+3. `pnpm --filter dashboard build` (production) PASS; kiểm tra `/manifest.webmanifest` + `/icon-192.png` +
+   `/icon-512.png` truy cập được.
+4. Ở bản production/preview: DevTools → Application → Manifest hiện đúng name/icons; Service Worker đăng ký OK
+   (chỉ ở production); trình duyệt cho phép "Install app" / "Add to Home Screen".
+5. Thu nhỏ cửa sổ / DevTools device mode (khổ điện thoại) → `/` và `/chat` responsive, không tràn ngang.
+6. `grep -ri "react-native\|expo\|apps/mobile" .` (trừ node_modules, git history) → không còn kết quả trong
+   **tài liệu & config** (backend CORS comment "Expo web" đã FLAG — ngoài phạm vi, người dùng quyết).
 
-## 7. Kế hoạch theo Phase
+## 6. Definition of Done
 
-> Sau MỖI phase: chạy "Verify", hiển thị output, `git commit` (`feat(scaffold): phase N - ...`), tiếp tục nếu không lỗi.
+- [ ] `apps/mobile` đã xóa; `pnpm-workspace.yaml`/`package.json`/`Makefile`/`.npmrc`/`.gitignore` sạch tham chiếu
+      mobile; `pnpm install` OK; lockfile sạch expo/react-native.
+- [ ] `pnpm --filter dashboard build` PASS; `/manifest.webmanifest` + icon 192/512 tồn tại.
+- [ ] Service worker đăng ký ở production; app "Install/Add to Home Screen" được; API/cross-origin không bị cache.
+- [ ] Các trang hiện có (`/`, `/chat`) responsive trên khổ điện thoại.
+- [ ] `PRD.md` §1.3/§6/§11/§14.5/§16/§21/§22 đã cập nhật đúng wording ở mục 4; push thật nằm ở §22.
+- [ ] `CLAUDE.md`, `docs/architecture.md`, `README.md` không còn nhắc React Native/Expo; mô tả PWA.
+- [ ] `grep` không còn "react-native"/"expo"/"apps/mobile" trong tài liệu & config (backend comment đã FLAG).
 
-**Phase 0 — Khởi tạo.** `git init`, `.gitignore`, prerequisites, README, pnpm-workspace, root package.json,
-Makefile (`dev-backend`, `dev-dashboard`, `dev-mobile`, `migrate`, `health`, `test`, `local-infra-up/down`).
-Đặt sẵn `PRD.md` + `CLAUDE.md` ở gốc.
-**Verify:** `pnpm -v`, `python3 --version`, `uv --version` OK; git sạch.
+## 7. Ranh giới & quy ước (theo CLAUDE.md)
 
-**Phase 1 — Kết nối managed.** Tạo `.env.example` + checklist §5. **DỪNG** chờ `.env`. Tạo docker-compose.local.yml dự phòng.
-**Verify:** script kiểm tra kết nối 3 dịch vụ.
-
-**Phase 2 — Backend + Health + WebSocket khung.** `uv init`; `config.py` (gồm `CONFIDENCE_THRESHOLD=0.6`,
-`AUTO_RESOLVE_MINUTES=30`, `CONTEXT_WINDOW_MESSAGES=10` — đọc env, ghi chú "tinh chỉnh ở Chương 4");
-`database.py` (Neon SSL qua `connect_args={"ssl": True}`, KHÔNG `sslmode=`); redis/qdrant client; `main.py`;
-`health.py` ping thật; `ws/chat.py` **WebSocket echo** (accept + echo, chưa wiring pipeline).
-**Verify:** `/api/health` trả `ok` cho api + 3 dịch vụ; kết nối WebSocket echo được.
-
-**Phase 3 — Models + Migration.** `conversation` (id, customer_identifier, status, current_intent, entities
-JSONB, confidence, uncertainty_flags JSONB, escalation_reason, assigned_admin_id, created_at, updated_at,
-last_message_at); `message` (id, conversation_id, sender, content, intent, confidence, created_at);
-`knowledge_document` (id, title, source_type, file_ref, metadata JSONB, status, embedding_ref, created_at,
-indexed_at); `audit_log` (id, conversation_id, message_id, node, action, confidence, uncertainty_flags JSONB,
-escalation_reason, detail JSONB, created_at). Alembic async + migration đầu. Service + `conversations.py`
-(POST tạo hội thoại + gửi message / GET).
-**Verify:** `make migrate`; POST/GET conversation; 4 bảng tồn tại.
-
-**Phase 4 — Skeleton LangGraph.** `state.py` `ConversationState`: `conversation_id, input, scratchpad,
-messages(append-only), status, result, error` + **chừa sẵn** `confidence, uncertainty_flags, escalation_reason,
-require_human_handoff` + **trường CSKH** `intent, entities, rag_contexts, action, draft_reply,
-awaiting_customer`. 5 node stub set giá trị stub (`confidence=1.0`, `uncertainty_flags=[]`, `action="auto_reply"`);
-`decision` là node quyết định; `human_handoff` set `require_human_handoff=True` + `escalation_reason`.
-`policy.py` `should_handoff(state)`. `graph.py`: `intent → knowledge → decision → [should_handoff] →
-(response | human_handoff)`; trong scaffold giữ tuyến tính đơn giản, conditional sau decision route
-`response`(đại diện nhánh tự động) vs `human_handoff`. Checkpointer `MemorySaver` (TODO: Redis/Postgres cho
-suspend/resume — PRD §10). `agents.py` `run-demo` có cờ ép nhánh → chạy **cả 2 nhánh**. TODO rõ:
-`# TODO (PRD §9/§10): gate, human_handoff định tuyến, suspend/resume, wiring WebSocket↔graph`.
-**Verify:** `make test` (graph compile + 2 nhánh); `run-demo` trả trace đúng nhánh + confidence.
-
-**Phase 5 — Async (BackgroundTasks).** `tasks/background.py` `process_message(conversation_id, message_id)` →
-log + audit + (tùy chọn) graph. TODO: Redis pub/sub phát realtime + suspend/resume (PRD §10).
-**Verify:** POST message → task nền ghi audit_log.
-
-**Phase 6 — Frontend & Mobile & shared-types.** `shared-types`: `Conversation, Message, AgentTraceStep(node,
-confidence, branch), HealthStatus, ConversationStatus(enum theo PRD §15)`. Dashboard `/`: ServiceStatus +
-AgentTracePanel (Run demo + toggle ép handoff) + ConversationList placeholder. Cổng chat khách: Header +
-ChatWindow + Input nối WebSocket echo (hiển thị "connected" + echo). Mobile StatusScreen. `docs/architecture.md`
-(tóm tắt + trỏ PRD).
-**Verify:** dashboard localhost:3000 (3 service xanh + Run demo 2 nhánh); chat khách echo được; Expo OK;
-`pnpm -r build` pass.
-
----
-
-## 8. Definition of Done
-
-- [ ] `.env` có managed HOẶC trỏ local.
-- [ ] `/api/health` trả `ok` (api + 3 dịch vụ); WebSocket echo kết nối được.
-- [ ] `make migrate`; bảng conversation/message/knowledge_document/audit_log tồn tại (đủ cột theo PRD §20).
-- [ ] `ConversationState` chừa sẵn confidence/uncertainty_flags/escalation_reason/require_human_handoff +
-      trường CSKH (intent/entities/rag_contexts/action/draft_reply/awaiting_customer).
-- [ ] `run-demo` chạy **cả 2 nhánh** (`response` / `human_handoff`), trace có nhánh + confidence.
-- [ ] `make test` xanh; BackgroundTask ghi audit_log.
-- [ ] dashboard + cổng chat khách + mobile chạy; `pnpm -r build` pass; `shared-types` dùng chung
-      (gồm `ConversationStatus` enum theo PRD §15).
-- [ ] Chỉ `.env.example` commit; `.env` gitignore.
-- [ ] `PRD.md`, `CLAUDE.md` ở gốc repo; `docs/architecture.md` trỏ PRD.
-
----
-
-## 9. Lưu ý cho Claude Code
-
-- Async-first; cấu hình từ env; không hardcode secret. Mỗi phase 1 commit.
-- **Chừa chỗ, không build logic thật** (theo PRD): State có sẵn các trường; `should_handoff` route được;
-  demo 2 nhánh; audit_log đủ cột. Logic gate/RAG/intent/decision/human_handoff định tuyến/vòng học/ wiring
-  WebSocket↔graph → stub + TODO trỏ PRD.
-- Async/queue: BackgroundTasks (KHÔNG worker polling Redis — phá free tier Upstash). Realtime: WebSocket echo
-  ở scaffold; pub/sub là TODO.
-- **Response Generator là điểm phát ngôn DUY NHẤT** tới khách — đừng rải tin nhắn ở node khác (kể cả khi wiring sau).
-- `conversation.status` theo tập canonical PRD §15.
-- Phase 1: DỪNG chờ `.env` trước khi verify kết nối.
-- Mọi quyết định nghiệp vụ → tra `PRD.md`, KHÔNG suy diễn. Plan này chỉ lo dựng khung.
-- Kết thúc: in cây thư mục, lệnh chạy, checklist DoD.
+- CHỈ làm: gỡ mobile + PWA hạ tầng cho dashboard + cập nhật tài liệu/config. KHÔNG đụng backend/agent/logic.
+- Đơn giản trước: PWA tối giản (manifest + SW cơ bản + icon), không thư viện nặng, không caching phức tạp,
+  KHÔNG push thật. Đừng đẻ thêm việc ngoài mục 2–4.
+- SW không cache API/dữ liệu động (tránh dữ liệu cũ); SW chỉ bật ở production.
+- Commit nhỏ theo bước (vd `chore(repo): remove react-native mobile app`, `feat(pwa): manifest + service worker
+  + icons`, `docs: sync mobile→PWA in PRD/CLAUDE/architecture/README`).
+- Kết thúc: in tóm tắt thay đổi, kết quả verify, checklist DoD đã đạt.
