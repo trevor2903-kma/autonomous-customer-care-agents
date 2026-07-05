@@ -1,4 +1,4 @@
-// shared-types — type dùng chung backend ↔ dashboard ↔ mobile.
+// shared-types — type dùng chung backend ↔ dashboard.
 // ConversationStatus là tập canonical PRD §15 — đồng bộ với backend app/models/enums.py.
 // Mọi thay đổi trạng thái: sửa PRD trước, rồi đồng bộ cả hai nơi (CLAUDE.md).
 

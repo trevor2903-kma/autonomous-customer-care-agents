@@ -23,7 +23,7 @@ venv/
 *.sqlite3
 
 # ─────────────────────────────────────────────────────────────
-# Node / pnpm / Next.js / Expo
+# Node / pnpm / Next.js
 # ─────────────────────────────────────────────────────────────
 node_modules/
 .pnpm-store/
@@ -32,8 +32,6 @@ next-env.d.ts
 out/
 dist/
 build/
-.expo/
-.expo-shared/
 *.tsbuildinfo
 .turbo/
 

@@ -40,7 +40,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_origin_regex=settings.cors_origin_regex,  # dev: mọi cổng localhost (Expo web, dashboard, ...)
+    allow_origin_regex=settings.cors_origin_regex,  # dev: mọi cổng localhost (dashboard, ...)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

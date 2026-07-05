@@ -1,18 +1,17 @@
 # Makefile — autonomous-customer-support-system (scaffold)
 # Nguồn chân lý: PRD.md. Quy ước: CLAUDE.md.
 # Lưu ý Windows: GNU make gọi cmd.exe; mỗi recipe phải tự `cd` (state không giữ giữa dòng).
-# Backend dùng uv (Python 3.12 managed). Frontend/mobile dùng pnpm workspaces.
+# Backend dùng uv (Python 3.12 managed). Frontend dùng pnpm workspaces.
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev-backend dev-dashboard dev-mobile dev-mobile-web migrate makemigration \
+.PHONY: help install dev-backend dev-dashboard migrate makemigration \
         health check-conn test build local-infra-up local-infra-down
 
 help:
 	@echo Targets:
 	@echo   install            - cai dat deps (backend uv sync + pnpm install)
 	@echo   dev-backend        - chay FastAPI (uvicorn --reload :8000)
-	@echo   dev-dashboard      - chay Next.js dashboard (:3000)
-	@echo   dev-mobile         - chay Expo (mobile admin)
+	@echo   dev-dashboard      - chay Next.js dashboard (:3000, PWA cai duoc)
 	@echo   migrate            - alembic upgrade head
 	@echo   makemigration      - alembic revision --autogenerate
 	@echo   health             - curl /api/health
@@ -31,12 +30,6 @@ dev-backend:
 
 dev-dashboard:
 	pnpm --filter dashboard dev
-
-dev-mobile:
-	pnpm --filter mobile start
-
-dev-mobile-web:
-	pnpm --filter mobile web
 
 migrate:
 	cd apps/backend && uv run alembic upgrade head
