@@ -47,7 +47,8 @@ Giai đoạn hiện tại (nếu đang theo plan.md): **chỉ scaffold** — nod
 - **Async:** FastAPI BackgroundTasks (KHÔNG worker polling — phá free tier Upstash). human_handoff/clarification
   dùng suspend/resume (LangGraph interrupt + checkpointer — phase sau).
 - **Frontend:** Next.js 14 · Tailwind · shadcn/ui · TanStack Query.
-- **Mobile:** React Native / Expo (SDK 51+).
+- **Điện thoại (PWA):** chính web dashboard cài được lên màn hình chính cho Admin (Add to Home Screen) — một
+  codebase web duy nhất, responsive; KHÔNG codebase mobile riêng.
 - **AI:** LLM provider cấu hình được (OpenAI/Claude/Gemini); embeddings `text-embedding-3-small`. **Chưa bật ở scaffold.**
 - **Monorepo:** pnpm workspaces; dùng chung ở `packages/shared-types`.
 

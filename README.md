@@ -23,7 +23,7 @@ có chủ đích: ưu tiên dự đoán được + kiểm toán + an toàn nội
 | Hạ tầng | Neon (Postgres) · Upstash (Redis) · Qdrant Cloud — dự phòng `docker-compose.local.yml` |
 | Async | FastAPI BackgroundTasks (KHÔNG worker polling) |
 | Frontend | Next.js 14 · Tailwind · shadcn/ui · TanStack Query |
-| Mobile | React Native / Expo (SDK 51+) |
+| Điện thoại (PWA) | Chính web (Next.js) cài lên màn hình chính (Add to Home Screen) — không codebase mobile riêng |
 | Monorepo | pnpm workspaces (`apps/*`, `packages/*`) + backend Python riêng |
 
 ## Cấu trúc thư mục
@@ -35,8 +35,7 @@ có chủ đích: ưu tiên dự đoán được + kiểm toán + an toàn nội
 ├── docs/architecture.md        # tóm tắt kiến trúc → trỏ PRD
 ├── apps/
 │   ├── backend/                # FastAPI · LangGraph (uv)
-│   ├── dashboard/              # Next.js — Admin dashboard + cổng chat khách
-│   └── mobile/                 # Expo — Admin xử lý nhanh
+│   └── dashboard/              # Next.js — Admin dashboard + cổng chat khách (PWA cài được)
 └── packages/shared-types/      # type dùng chung (ConversationStatus theo PRD §15)
 ```
 
@@ -53,7 +52,7 @@ có chủ đích: ưu tiên dự đoán được + kiểm toán + an toàn nội
 cp .env.example .env            # rồi điền Neon / Upstash / Qdrant
 
 # 2) Cài deps
-make install                    # = uv sync (backend) + pnpm install (workspace) + mobile (standalone)
+make install                    # = uv sync (backend) + pnpm install (workspace)
 
 # 3) Kiểm tra kết nối 3 dịch vụ managed (Phase 1)
 make check-conn
@@ -63,14 +62,13 @@ make migrate
 
 # 5) Chạy (mỗi lệnh một terminal)
 make dev-backend                # FastAPI :8000  (/api/health, /ws/chat)
-make dev-dashboard              # Next.js :3000
-make dev-mobile                 # Expo (native — Expo Go)
-make dev-mobile-web             # Expo web (trình duyệt)
+make dev-dashboard              # Next.js :3000 (web là PWA — Add to Home Screen để cài lên điện thoại)
 ```
 
-> **Monorepo dùng `node-linker=hoisted`** (`.npmrc`): Expo/Metro cần `node_modules` phẳng. Điều kiện để
-> không lỗi "duplicate React": **toàn repo dùng cùng React 18.2.0** (theo Expo SDK 51 — dashboard cũng 18.2.0).
-> Dev backend phải đang chạy để mobile/dashboard gọi `/api/health` (CORS dev cho mọi cổng localhost).
+> **PWA:** dashboard là web app **cài được** — trên điện thoại/desktop dùng **Add to Home Screen / Install app**
+> (service worker chỉ bật ở production; cài được cần HTTPS ở production, localhost dev thì OK). Một codebase web
+> duy nhất, responsive; không codebase mobile riêng.
+> Dev backend phải đang chạy để dashboard gọi `/api/health` (CORS dev cho mọi cổng localhost).
 
 Không có tài khoản managed? Chạy local:
 

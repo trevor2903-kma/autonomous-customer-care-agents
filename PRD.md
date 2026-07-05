@@ -34,9 +34,9 @@ trị tối đa.
 ### 1.3 Bối cảnh sản phẩm
 
 Web đóng vai trò kép: **cổng chat công khai** cho khách hàng VÀ **bảng điều hành đầy đủ** cho Admin (danh
-sách hội thoại, chat trực tiếp, quản lý RAG, giám sát, kiểm toán). Mobile là công cụ tối giản cho Admin xử
-lý nhanh hội thoại được chuyển tiếp khi di chuyển. Backend chạy pipeline đa tác tử thời gian thực (mục tiêu
-phản hồi tự động ≤ 5 giây).
+sách hội thoại, chat trực tiếp, quản lý RAG, giám sát, kiểm toán). Trên điện thoại, chính web này (dạng
+**PWA cài được lên màn hình chính**) cho Admin xử lý nhanh hội thoại được chuyển tiếp khi di chuyển. Backend
+chạy pipeline đa tác tử thời gian thực (mục tiêu phản hồi tự động ≤ 5 giây).
 
 ---
 
@@ -131,8 +131,8 @@ giảm tải nhân viên CSKH; chuẩn hóa quy trình xử lý yêu cầu.
   realtime qua WebSocket.
 - **Web Admin (Next.js):** dashboard đầy đủ — danh sách hội thoại + chat trực tiếp; hàng đợi chuyển tiếp;
   quản lý RAG; giám sát hệ thống/agent; analytics; audit log; bật/tắt gate.
-- **Mobile Admin (React Native/Expo):** tối giản — xem danh sách hội thoại, chat với khách, nhận push khi có
-  ca chuyển tiếp.
+- **Trên điện thoại (PWA):** chính Web Admin ở trên, cài lên màn hình chính — Admin xem danh sách hội thoại +
+  duyệt/nhận ca chuyển tiếp nhanh. Một app web duy nhất, responsive; KHÔNG có codebase mobile riêng.
 - **Backend (FastAPI + LangGraph):** API Gateway + WebSocket; pipeline đa tác tử; session memory; chuyển tiếp
   con người (human handoff). Mục tiêu phản hồi tự động ≤ 5 giây.
 - **Hạ tầng managed:** PostgreSQL (Neon) lưu hội thoại/ticket/audit; Redis (Upstash) cho session memory ngắn
@@ -354,8 +354,9 @@ hội thoại chờ lượt trả lời tiếp theo.
   0.41 < ngưỡng", "ngoài phạm vi shop"); **nháp phản hồi gợi ý** (Admin sửa & gửi được); nút Nhận ca / Đóng
   + ô ghi chú; link mở **toàn bộ transcript** + agent trace.
 - **FR-ESC-2 (web):** thẻ đầy đủ + transcript + trace; Admin chat trực tiếp với khách trong cùng màn hình.
-- **FR-ESC-3 (mobile):** bản rút gọn (tóm tắt + intent + lý do + nháp + nút Nhận) để xử lý nhanh; có push
-  notification khi có ca mới.
+- **FR-ESC-3 (trên điện thoại — PWA):** bản rút gọn responsive của EscalationCard (tóm tắt + intent + lý do +
+  nháp + nút Nhận) để xử lý nhanh. Thông báo: badge số ca chờ hiển thị trong app. (Web push đẩy thật xuyên nền
+  tảng: xem §22.)
 - **FR-ESC-4 (xử lý):** Admin Nhận ca → `HUMAN_HANDLING` (AI tạm dừng) → chat với khách → Đóng → `RESOLVED`.
   Với ca `PENDING_APPROVAL` (gate auto-reply OFF): Admin **duyệt** nháp → gửi nguyên văn; hoặc **sửa & gửi**
   (ghi log là admin-edited); hoặc chuyển sang tự xử lý.
@@ -446,7 +447,8 @@ Document Upload → Chunking → Embedding → Vector Database (Qdrant) → Retr
 ### 14.5 Thông báo
 
 - **FR-NOTI-1:** realtime tới khách (phản hồi AI / tin nhắn admin) qua WebSocket.
-- **FR-NOTI-2:** push notification + badge dashboard tới Admin khi có ca chuyển tiếp / chờ duyệt.
+- **FR-NOTI-2:** thông báo tới Admin khi có ca chuyển tiếp / chờ duyệt — badge (số ca chờ) trên dashboard/PWA,
+  realtime qua WebSocket. (Web push đẩy thật xuyên nền tảng: §22.)
 
 ---
 
@@ -496,16 +498,16 @@ Admin (`PENDING_APPROVAL`, `IN_HUMAN_QUEUE`, `HUMAN_HANDLING`); kết thúc (`RE
 
 ---
 
-## 16. Web vs Mobile
+## 16. Web vs Điện thoại (PWA)
 
-| Chức năng                                    | Web Admin | Mobile Admin     | Web khách |
+| Chức năng                                    | Web Admin | Điện thoại (PWA) | Web khách |
 | -------------------------------------------- | --------- | ---------------- | --------- |
 | Chat với AI                                  | —         | —                | ✅        |
 | Xem lịch sử hội thoại của mình               | —         | —                | ✅        |
 | Xem danh sách hội thoại + lọc                | ✅        | ✅ (xem)         | —         |
 | Chat trực tiếp với khách (human handling)    | ✅        | ✅               | —         |
 | Duyệt nháp (PENDING_APPROVAL)                | ✅        | ✅ rút gọn       | —         |
-| Nhận chuyển tiếp + EscalationCard            | ✅ đầy đủ | ✅ rút gọn + push | —         |
+| Nhận chuyển tiếp + EscalationCard            | ✅ đầy đủ | ✅ rút gọn       | —         |
 | Quản lý RAG (upload/index)                   | ✅        | ❌               | —         |
 | Giám sát hệ thống (System Monitoring)        | ✅        | ❌               | —         |
 | Giám sát agent (Agent Monitoring)            | ✅        | ❌               | —         |
@@ -516,7 +518,10 @@ Admin (`PENDING_APPROVAL`, `IN_HUMAN_QUEUE`, `HUMAN_HANDLING`); kết thúc (`RE
 **Layout web khách:** Header · Chat Window · Message Input (mô phỏng ChatGPT).
 **Layout web Admin chat:** trái = Conversation List (search · tin mới nhất · cập nhật · status); phải = Chat
 Window (tin khách / AI / admin).
-**Mobile Admin:** Conversation List → Chat Screen; nhận thông báo.
+**Trên điện thoại (PWA):** Conversation List → Chat Screen (rút gọn), cài lên màn hình chính; badge số ca chờ.
+
+> Chỉ một app web (Next.js), responsive; cột "Điện thoại (PWA)" là ưu tiên hiển thị + duyệt nhanh trên màn
+> hình nhỏ, KHÔNG phải app riêng. Web push đẩy thật: §22.
 
 ---
 
@@ -599,7 +604,7 @@ Window (tin khách / AI / admin).
 | Lớp                  | Lựa chọn                                                        |
 | -------------------- | -------------------------------------------------------------- |
 | Frontend (Web)       | Next.js 14 · TailwindCSS · shadcn/ui · TanStack Query           |
-| Mobile               | React Native / Expo (SDK 51+)                                  |
+| Điện thoại (PWA)     | Web PWA (Next.js) cài lên màn hình chính — không app riêng      |
 | Backend              | **FastAPI (Python 3.12)** _(draft: Fastify/Node)_              |
 | API / Realtime       | REST API + WebSocket                                           |
 | Agent framework      | LangGraph                                                      |
@@ -622,6 +627,8 @@ Window (tin khách / AI / admin).
   đơn hàng (order lookup là tool thật); marketing automation; vòng học bán tự động đầy đủ (gom mẫu từ
   audit_log → đề xuất bổ sung FAQ/prompt → Admin duyệt — §5 trụ cột 4, thiết kế đã chừa chỗ).
 - **Phase 3:** Voice assistant; tích hợp mạng xã hội; đa ngôn ngữ nâng cao.
+- **Thông báo (push):** Web push notification xuyên nền tảng cho Admin (đặc biệt trên iOS, vốn hạn chế PWA
+  push) — thay cho push native của app mobile cũ (đã bỏ). Phase 1 dùng badge in-app + realtime WebSocket.
 
 ---
 

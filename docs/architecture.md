@@ -36,8 +36,7 @@ PENDING_APPROVAL · IN_HUMAN_QUEUE · HUMAN_HANDLING · RESOLVED · CLOSED`.
 | Thành phần | Vai trò | Code |
 | --- | --- | --- |
 | Backend (FastAPI + LangGraph) | API + WebSocket + pipeline | [`apps/backend`](../apps/backend) |
-| Web (Next.js) | Admin dashboard `/` + cổng chat khách `/chat` | [`apps/dashboard`](../apps/dashboard) |
-| Mobile (Expo) | Admin xử lý nhanh (trạng thái backend) | [`apps/mobile`](../apps/mobile) |
+| Web / PWA (Next.js) | Admin dashboard `/` + cổng chat khách `/chat`; **cài được lên điện thoại** (Add to Home Screen) — một codebase web duy nhất, không codebase mobile riêng | [`apps/dashboard`](../apps/dashboard) |
 | shared-types | type dùng chung (ConversationStatus, Conversation, AgentTraceStep, HealthStatus) | [`packages/shared-types`](../packages/shared-types) |
 | Neon (Postgres) | hội thoại/tin nhắn/audit | `app/models`, `alembic/` |
 | Upstash (Redis) | session ngắn hạn + **pub/sub** realtime (pub/sub: TODO) | `app/core/redis_client.py` |
