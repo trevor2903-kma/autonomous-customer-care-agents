@@ -10,9 +10,16 @@ from uuid import uuid4
 from fastapi import APIRouter, Query
 
 from ...agents.graph import run_pipeline
-from ...schemas.agent import AgentTraceStep, RunDemoResult
+from ...agents.nodes.intent import classify_intent
+from ...schemas.agent import AgentTraceStep, ClassifyRequest, ClassifyResult, RunDemoResult
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+
+@router.post("/classify", response_model=ClassifyResult)
+async def classify(req: ClassifyRequest) -> ClassifyResult:
+    """Chạy RIÊNG Agent 1 (Intent Classifier) — điểm test lát cắt RAG-intent (KHÔNG chạy cả graph)."""
+    return ClassifyResult(**await classify_intent(req.message))
 
 
 @router.post("/run-demo", response_model=RunDemoResult)
