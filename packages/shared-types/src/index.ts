@@ -64,6 +64,28 @@ export interface RunDemoResult {
   trace: AgentTraceStep[];
 }
 
+// RAG management (PRD §17 Module 1) + Intent Classifier metadata (PRD §7.1).
+export interface RagUploadResult {
+  source: string;
+  chunks: number;
+  collection: string;
+}
+
+export interface RagInfo {
+  collection: string;
+  points_count: number;
+  sources: string[];
+}
+
+export interface IntentClassification {
+  intent: string;
+  category: string | null;
+  entities: Record<string, unknown>;
+  confidence: number;
+  uncertainty_flags: string[];
+  rag_contexts: { source: string; score: number }[];
+}
+
 export interface ServiceProbe {
   ok: boolean;
   detail: unknown;
