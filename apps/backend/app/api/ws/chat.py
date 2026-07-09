@@ -35,6 +35,7 @@ async def chat_ws(websocket: WebSocket) -> None:
                 {
                     "type": "classification",
                     "intent": result["intent"],
+                    "category": result["category"],
                     "confidence": result["confidence"],
                     "entities": result["entities"],
                 }
