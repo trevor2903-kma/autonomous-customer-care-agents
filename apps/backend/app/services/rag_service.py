@@ -1,7 +1,8 @@
-"""RAG service (PRD §7.2, §13) — chunk/embed/upsert + search, ở TẦNG SERVICE.
+"""RAG service (PRD §7.2, §13) — extract/chunk/embed/upsert + search, ở TẦNG SERVICE.
 
-Truy hồi (`search`) viết Ở ĐÂY để Knowledge Agent (PRD §7.2) tái dùng về sau — KHÔNG nhét cứng vào node
-intent (quyết định kiến trúc, plan). Async-first, config từ env (CLAUDE.md).
+Truy hồi (`search`) viết Ở ĐÂY để Knowledge Agent (PRD §7.2) tái dùng — KHÔNG nhét cứng vào node intent.
+Chunking TỔNG QUÁT (không theo heading); payload GENERIC {text, source, chunk_index} (chunk không mang nhãn
+intent/category). Async-first, config từ env (CLAUDE.md).
 
 Lát cắt này: chỉ đẩy vector lên Qdrant, KHÔNG persist tài liệu xuống Postgres (bảng knowledge_document để yên).
 """
@@ -17,8 +18,8 @@ from ..core.config import settings
 from ..core.embeddings import embed_text, embed_texts, embedding_dim
 from ..core.qdrant_client import get_qdrant
 
-_HEADING = "## "
-_CATEGORY_RE = re.compile(r"^\s*-\s*category\s*:\s*(.+?)\s*$", re.IGNORECASE)
+_WS_RE = re.compile(r"[ \t]+")
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+")
 
 
 async def ensure_collection() -> None:
@@ -32,86 +33,111 @@ async def ensure_collection() -> None:
     )
 
 
-def chunk_by_heading(text: str) -> list[dict]:
-    """Tách tài liệu theo dòng '## <intent>' → mỗi section = 1 chunk {intent, category, text}.
-
-    Nội dung trước heading đầu tiên (tiêu đề/giới thiệu) bị bỏ qua. `text` giữ CẢ section (kể cả heading)
-    để embed giàu ngữ cảnh; `category` lấy từ dòng '- category: <...>' nếu có.
-    """
-    sections: list[dict] = []
-    intent: str | None = None
-    lines: list[str] = []
-
-    def flush() -> None:
-        if intent is None:
-            return
-        category: str | None = None
-        for ln in lines:
-            m = _CATEGORY_RE.match(ln)
-            if m:
-                category = m.group(1).strip()
-                break
-        sections.append({"intent": intent, "category": category, "text": "\n".join(lines).strip()})
-
-    for raw in text.splitlines():
-        if raw.startswith(_HEADING):
-            flush()
-            intent = raw[len(_HEADING):].strip()
-            lines = [raw]
-        elif intent is not None:
-            lines.append(raw)
-    flush()
-    return sections
+def _normalize(text: str) -> str:
+    """Chuẩn hoá khoảng trắng theo dòng; giữ ranh giới đoạn (dòng trống)."""
+    lines = [_WS_RE.sub(" ", ln).strip() for ln in text.splitlines()]
+    return re.sub(r"\n{2,}", "\n\n", "\n".join(lines)).strip()
 
 
-def _point_id(source: str, intent: str) -> str:
-    """UUID ổn định theo (source, intent) → re-upload ghi đè đúng point (idempotent)."""
-    return str(uuid5(NAMESPACE_URL, f"{source}#{intent}"))
+def chunk_text(text: str, size: int = 800, overlap: int = 120) -> list[str]:
+    """Chunking TỔNG QUÁT (không theo heading): chuẩn hoá → tách câu → gộp cửa sổ ~size ký tự,
+    chồng lấn ~overlap (giữ vài câu cuối), ưu tiên ranh giới câu."""
+    normalized = _normalize(text)
+    if not normalized:
+        return []
+
+    segments: list[str] = []
+    for para in normalized.split("\n\n"):
+        for sent in _SENTENCE_SPLIT_RE.split(para.strip()):
+            sent = sent.strip()
+            if sent:
+                segments.append(sent)
+    if not segments:
+        return []
+
+    chunks: list[str] = []
+    cur: list[str] = []
+    cur_len = 0
+    for seg in segments:
+        if cur and cur_len + len(seg) + 1 > size:
+            chunks.append(" ".join(cur))
+            # overlap: giữ lại các câu cuối tổng ~overlap ký tự cho chunk kế.
+            keep: list[str] = []
+            klen = 0
+            for s in reversed(cur):
+                if keep and klen + len(s) + 1 > overlap:
+                    break
+                keep.insert(0, s)
+                klen += len(s) + 1
+            cur, cur_len = keep, klen
+        cur.append(seg)
+        cur_len += len(seg) + 1
+    if cur:
+        chunks.append(" ".join(cur))
+    return chunks
 
 
 async def ingest_document(text: str, source: str) -> int:
-    """Chunk → embed → upsert Qdrant. Trả số chunk đã nạp. KHÔNG persist xuống Postgres."""
+    """Chunk (tổng quát) → embed → upsert Qdrant với payload GENERIC. Trả số chunk. KHÔNG persist Postgres."""
     await ensure_collection()
-    chunks = chunk_by_heading(text)
+    chunks = chunk_text(text)
     if not chunks:
         return 0
-    vectors = await embed_texts([c["text"] for c in chunks])
+    vectors = await embed_texts(chunks)
     points = [
         PointStruct(
-            id=_point_id(source, c["intent"]),
+            id=str(uuid5(NAMESPACE_URL, f"{source}#{i}")),
             vector=vec,
-            payload={"intent": c["intent"], "category": c["category"], "text": c["text"], "source": source},
+            payload={"text": chunk, "source": source, "chunk_index": i},
         )
-        for c, vec in zip(chunks, vectors)
+        for i, (chunk, vec) in enumerate(zip(chunks, vectors))
     ]
     await get_qdrant().upsert(collection_name=settings.qdrant_collection, points=points, wait=True)
     return len(points)
 
 
 async def collection_info() -> dict:
-    """Thông tin collection (points_count, vector_size). Bảo đảm collection tồn tại trước."""
+    """Thông tin collection: points_count + danh sách distinct source (scroll toàn bộ payload.source)."""
     await ensure_collection()
-    info = await get_qdrant().get_collection(settings.qdrant_collection)
+    client = get_qdrant()
+    info = await client.get_collection(settings.qdrant_collection)
+
+    sources: set[str] = set()
+    offset = None
+    while True:
+        points, offset = await client.scroll(
+            collection_name=settings.qdrant_collection,
+            limit=256,
+            offset=offset,
+            with_payload=True,
+            with_vectors=False,
+        )
+        for point in points:
+            src = (point.payload or {}).get("source")
+            if src:
+                sources.add(src)
+        if offset is None:
+            break
+
     return {
         "collection": settings.qdrant_collection,
         "points_count": info.points_count,
-        "vector_size": info.config.params.vectors.size,
+        "sources": sorted(sources),
     }
 
 
 async def reset_collection() -> None:
-    """Drop + tạo lại collection (tiện test lại nhiều lần)."""
+    """Drop + tạo lại collection (payload đổi so với bản seed → cần reset trước khi upload lại)."""
     client = get_qdrant()
     if await client.collection_exists(settings.qdrant_collection):
         await client.delete_collection(settings.qdrant_collection)
     await ensure_collection()
 
 
-async def search(query: str, top_k: int = 3) -> list[dict]:
-    """Truy hồi top-k chunk gần nhất (cosine). Trả [{intent, category, text, score}].
+async def search(query: str, top_k: int = 4) -> list[dict]:
+    """Truy hồi top-k chunk gần nhất (cosine). Trả [{text, source, score, chunk_index}] (payload generic).
 
-    TẦNG SERVICE để Knowledge Agent (PRD §7.2) tái dùng — Intent Classifier ở lát cắt này gọi tạm để
-    tự phân loại (không nhét truy hồi cứng vào node intent).
+    TẦNG SERVICE để Knowledge Agent (PRD §7.2) tái dùng — Intent Classifier gọi để lấy ngữ cảnh phân loại.
     """
     vector = await embed_text(query)
     res = await get_qdrant().query_points(
@@ -125,9 +151,9 @@ async def search(query: str, top_k: int = 3) -> list[dict]:
         payload = point.payload or {}
         hits.append(
             {
-                "intent": payload.get("intent"),
-                "category": payload.get("category"),
                 "text": payload.get("text"),
+                "source": payload.get("source"),
+                "chunk_index": payload.get("chunk_index"),
                 "score": point.score,
             }
         )
