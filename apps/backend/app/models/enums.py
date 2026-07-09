@@ -39,6 +39,28 @@ class Intent(StrEnum):
     OTHER = "other"
 
 
+class Category(StrEnum):
+    # Nhóm category của intent (PRD §7.1). Chunk generic KHÔNG mang category → suy từ INTENT_CATEGORY.
+    PRE_SALE = "pre_sale"
+    AFTER_SALE = "after_sale"
+    GENERAL = "general"
+
+
+# Map tĩnh intent -> category (chunk generic không mang nhãn category).
+INTENT_CATEGORY: dict[Intent, Category] = {
+    Intent.PRODUCT_PRICE: Category.PRE_SALE,
+    Intent.PRODUCT_INFORMATION: Category.PRE_SALE,
+    Intent.SIZE_CONSULTING: Category.PRE_SALE,
+    Intent.PROMOTION: Category.PRE_SALE,
+    Intent.ORDER_STATUS: Category.AFTER_SALE,
+    Intent.REFUND: Category.AFTER_SALE,
+    Intent.EXCHANGE: Category.AFTER_SALE,
+    Intent.COMPLAINT: Category.AFTER_SALE,
+    Intent.SHIPPING: Category.GENERAL,
+    Intent.OTHER: Category.GENERAL,
+}
+
+
 class MessageSender(StrEnum):
     CUSTOMER = "customer"
     AI = "ai"

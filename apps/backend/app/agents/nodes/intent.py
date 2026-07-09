@@ -1,11 +1,13 @@
-"""Node 1 — Intent Classifier (PRD §7.1). Phân loại intent theo RAG (lát cắt walking-skeleton).
+"""Node 1 — Intent Classifier (PRD §7.1). Phân loại intent + trích ENTITIES theo RAG.
 
-- `classify_intent(text)` = hàm THUẦN, tái dùng ở `/api/agents/classify` + WS. Trả METADATA phân loại
-  (KHÔNG phải câu trả lời khách — Response Generator mới là điểm phát ngôn duy nhất, PRD §7.4).
-- `intent_node(state)` bọc `classify_intent` vào graph (chỉ Agent 1 có logic thật; các node khác vẫn stub).
-- Degrade AN TOÀN khi offline (thiếu key / Qdrant lỗi / collection trống) → `unknown` + `no_relevant_knowledge`,
-  KHÔNG gọi network, KHÔNG ném lỗi → giữ `make test` chạy offline (plan §5).
-- `ENABLE_LLM` chỉ gate BƯỚC CHỌN intent bằng LLM. Embeddings/RAG luôn chạy (không gate).
+- Chunk truy hồi là GENERIC (không mang nhãn) → intent do **LLM** quyết (không còn similarity-top-1-nhãn).
+- ENTITIES = LLM (schema + few-shot) ⊕ regex (`extract_entities_rule`), merge `{**rule, **llm}` (LLM đè, regex
+  bù). Regex chạy MỌI nhánh (kể cả degrade) → `order_id` luôn bắt được (fix bug entities rỗng).
+- `category` suy từ map tĩnh `INTENT_CATEGORY` (chunk generic không mang category).
+- Degrade AN TOÀN khi offline/thiếu key/LLM lỗi → `intent="unknown"` + cờ (`llm_unavailable`/`search_error`/
+  `no_relevant_knowledge`), KHÔNG network, KHÔNG ném lỗi → `make test` offline. Embeddings KHÔNG gate bởi ENABLE_LLM.
+- `classify_intent` = hàm THUẦN (tái dùng ở /api/agents/classify + WS). Trả METADATA phân loại (KHÔNG phải câu
+  trả lời khách — Response Generator mới phát ngôn, PRD §7.4).
 """
 
 from __future__ import annotations
@@ -16,92 +18,69 @@ from typing import Any
 from ...core.config import settings
 from ...core.embeddings import get_openai
 from ...core.logging import get_logger
-from ...models.enums import ConversationStatus, Intent
+from ...models.enums import INTENT_CATEGORY, ConversationStatus, Intent
 from ...services import rag_service
 from ..state import ConversationState
+from ._entities import extract_entities_rule
 
 log = get_logger("agent.intent")
 
 _VALID_INTENTS = {i.value for i in Intent}
 
 
-def _degrade(reason: str) -> dict[str, Any]:
-    """Kết quả an toàn khi không truy hồi được tri thức (không network / lỗi). Grounding: PRD §5 trụ cột 3."""
+def _degrade(rule: dict[str, str], flags: list[str], rag_contexts: list[dict] | None = None) -> dict[str, Any]:
+    """Kết quả degrade an toàn. entities = regex (bù) — order_id không bị mất kể cả khi không có LLM."""
     return {
         "intent": "unknown",
         "category": None,
-        "entities": {},
+        "entities": dict(rule),
         "confidence": 0.0,
-        "uncertainty_flags": ["no_relevant_knowledge"],
-        "rag_contexts": [],
-    }
-
-
-def _contexts(hits: list[dict]) -> list[dict]:
-    """Rút gọn hits thành rag_contexts nhẹ (intent + category + score) cho metadata."""
-    return [
-        {"intent": h["intent"], "category": h.get("category"), "score": round(float(h["score"]), 4)}
-        for h in hits
-    ]
-
-
-def _category_for(intent: str, hits: list[dict]) -> str | None:
-    for h in hits:
-        if h["intent"] == intent:
-            return h.get("category")
-    return hits[0].get("category") if hits else None
-
-
-def _classify_similarity(hits: list[dict]) -> dict[str, Any]:
-    """Chọn intent = similarity top-1 (chế độ ENABLE_LLM=false hoặc fallback khi LLM lỗi)."""
-    top = hits[0]
-    intent = top["intent"] if top["intent"] in _VALID_INTENTS else "other"
-    score = float(top["score"])
-
-    flags: list[str] = []
-    if score < settings.confidence_threshold:
-        flags.append("low_retrieval_score")
-    if intent == "other":
-        flags.append("out_of_domain")
-    if len(hits) > 1 and abs(score - float(hits[1]["score"])) < settings.intent_ambiguous_margin:
-        flags.append("ambiguous_intent")
-
-    return {
-        "intent": intent,
-        "category": top.get("category"),
-        "entities": {},
-        "confidence": score,
         "uncertainty_flags": flags,
-        "rag_contexts": _contexts(hits),
+        "rag_contexts": rag_contexts or [],
     }
 
 
-async def _classify_llm(text: str, hits: list[dict]) -> dict[str, Any]:
-    """Chọn intent bằng LLM (ENABLE_LLM=true): dựa trên ứng viên RAG, chọn 1 intent + trích entities."""
-    candidates = "\n".join(
-        f"- {h['intent']} (category={h.get('category')}, score={float(h['score']):.3f}): "
-        f"{(h.get('text') or '')[:400]}"
-        for h in hits
+def _rag_contexts(hits: list[dict]) -> list[dict]:
+    return [{"source": h.get("source"), "score": round(float(h["score"]), 4)} for h in hits]
+
+
+def _system_prompt() -> str:
+    return (
+        "Bạn là bộ phân loại intent + trích entities cho CSKH shop quần áo.\n"
+        "1) CHỈ chọn intent trong tập đóng: " + ", ".join(sorted(_VALID_INTENTS)) + ".\n"
+        "2) Trích entities theo schema THEO intent (giá trị là CHUỖI; KHÔNG bịa key ngoài schema):\n"
+        "   - order_status/refund/exchange/complaint: order_id (chỉ chữ số)\n"
+        "   - product_price/product_information: product_name, color\n"
+        "   - size_consulting: height, weight, size\n"
+        "   - shipping: destination (option: order_id)\n"
+        "   - promotion: promo_code\n"
+        "   - other: {}\n"
+        "3) confidence trong [0,1].\n"
+        'Trả JSON: {"intent": <str>, "entities": {<key>: <chuỗi>}, "confidence": <float>}.\n'
+        "Ví dụ:\n"
+        '- "Đơn hàng 6578 của tôi sắp giao tới nơi chưa?" -> '
+        '{"intent":"order_status","entities":{"order_id":"6578"},"confidence":0.95}\n'
+        '- "Mình cao 1m60 nặng 50kg mặc size gì?" -> '
+        '{"intent":"size_consulting","entities":{"height":"1m60","weight":"50kg"},"confidence":0.9}'
     )
-    system = (
-        "Bạn là bộ phân loại intent cho CSKH shop quần áo. "
-        "CHỈ chọn intent trong tập đóng: " + ", ".join(sorted(_VALID_INTENTS)) + ". "
-        "Dựa trên các intent ứng viên (kèm mô tả/ví dụ truy hồi từ RAG) và câu của khách, chọn ĐÚNG 1 intent, "
-        "trích entities nếu có (vd order_id, product_name, size), và cho confidence 0..1. "
-        'Trả JSON: {"intent": <str>, "entities": {<key>: <value>}, "confidence": <float>}.'
+
+
+async def _classify_llm(text: str, hits: list[dict], rule: dict[str, str]) -> dict[str, Any]:
+    """Chọn intent + trích entities bằng LLM, dựa trên ngữ cảnh RAG (chunk generic)."""
+    context = "\n\n".join(
+        f"[{h.get('source')}#{h.get('chunk_index')}] {(h.get('text') or '')[:500]}" for h in hits
     )
-    user = f"Câu khách: {text!r}\n\nCác intent ứng viên (RAG):\n{candidates}"
+    user = f"Ngữ cảnh RAG:\n{context}\n\nCâu khách: {text!r}"
 
     resp = await get_openai().chat.completions.create(
         model=settings.llm_model,
-        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        messages=[{"role": "system", "content": _system_prompt()}, {"role": "user", "content": user}],
         response_format={"type": "json_object"},
         temperature=0,
     )
     data = json.loads(resp.choices[0].message.content or "{}")
 
     flags: list[str] = []
-    # Chống trôi nhãn: intent phải ∈ Intent enum; lệch -> other + out_of_domain.
     raw_intent = str(data.get("intent", "")).strip()
     if raw_intent in _VALID_INTENTS:
         intent = raw_intent
@@ -109,59 +88,70 @@ async def _classify_llm(text: str, hits: list[dict]) -> dict[str, Any]:
         intent = "other"
         flags.append("out_of_domain")
 
+    llm_entities_raw = data.get("entities")
+    llm_entities = (
+        {k: str(v) for k, v in llm_entities_raw.items() if v is not None and str(v).strip()}
+        if isinstance(llm_entities_raw, dict)
+        else {}
+    )
+    entities = {**rule, **llm_entities}  # LLM đè trùng key; regex bù key thiếu
+
     try:
         confidence = max(0.0, min(1.0, float(data.get("confidence"))))
     except (TypeError, ValueError):
         confidence = float(hits[0]["score"])
 
-    entities = data.get("entities")
-    if not isinstance(entities, dict):
-        entities = {}
-
+    category = INTENT_CATEGORY.get(Intent(intent))
     top_score = float(hits[0]["score"])
+    if top_score < settings.confidence_threshold:
+        flags.append("low_retrieval_score")
     if len(hits) > 1 and abs(top_score - float(hits[1]["score"])) < settings.intent_ambiguous_margin:
         flags.append("ambiguous_intent")
-    if intent == "other" and top_score < settings.confidence_threshold and "out_of_domain" not in flags:
-        flags.append("out_of_domain")
 
     return {
         "intent": intent,
-        "category": _category_for(intent, hits),
+        "category": category.value if category else None,
         "entities": entities,
         "confidence": confidence,
         "uncertainty_flags": flags,
-        "rag_contexts": _contexts(hits),
+        "rag_contexts": _rag_contexts(hits),
     }
 
 
 async def classify_intent(text: str) -> dict[str, Any]:
-    """Phân loại intent của câu khách theo RAG. Trả {intent, category, entities, confidence,
+    """Phân loại intent + trích entities theo RAG. Trả {intent, category, entities, confidence,
     uncertainty_flags, rag_contexts}. Degrade an toàn khi offline (KHÔNG network, KHÔNG ném lỗi)."""
-    # 1) Thiếu key -> không thể embed/search -> degrade ngay (không chạm network; giữ make test offline).
-    if not settings.llm_api_key:
-        return _degrade("no_llm_api_key")
+    # Tính regex SỚM — dùng cho MỌI nhánh (kể cả degrade) để order_id không bao giờ mất.
+    rule = extract_entities_rule(text)
 
-    # 2) Truy hồi top-k ứng viên (tầng service — Knowledge Agent tái dùng, PRD §7.2).
+    # 1) Thiếu key -> không embed/search/LLM -> degrade (không network).
+    if not settings.llm_api_key:
+        return _degrade(rule, ["llm_unavailable"])
+
+    # 2) Truy hồi ngữ cảnh (tầng service — Knowledge Agent tái dùng, PRD §7.2).
     try:
-        hits = await rag_service.search(text, top_k=3)
-    except Exception as exc:  # noqa: BLE001 — Qdrant/embed lỗi -> degrade an toàn, KHÔNG ném.
+        hits = await rag_service.search(text)
+    except Exception as exc:  # noqa: BLE001 — Qdrant/embed lỗi -> degrade, KHÔNG ném.
         log.warning("intent.search failed -> degrade: %s", exc)
-        return _degrade(f"search_error:{type(exc).__name__}")
+        return _degrade(rule, ["search_error"])
 
     if not hits:
-        return _degrade("no_hits")
+        return _degrade(rule, ["no_relevant_knowledge"])
 
-    # 3) Chọn intent: LLM (nếu bật) hoặc similarity top-1.
+    # 3) LLM bắt buộc cho intent (chunk generic không có nhãn).
     if settings.enable_llm:
         try:
-            return await _classify_llm(text, hits)
-        except Exception as exc:  # noqa: BLE001 — LLM lỗi -> fallback similarity (vẫn có hits RAG).
-            log.warning("intent.llm failed -> similarity fallback: %s", exc)
-    return _classify_similarity(hits)
+            return await _classify_llm(text, hits, rule)
+        except Exception as exc:  # noqa: BLE001 — LLM lỗi -> degrade + cờ (đừng im lặng), entities=regex.
+            log.warning("intent.llm failed -> degrade llm_unavailable: %s", exc)
+            return _degrade(rule, ["llm_unavailable"], _rag_contexts(hits))
+
+    # ENABLE_LLM=false: chunk generic không phân loại được nếu không LLM -> degrade + entities regex.
+    return _degrade(rule, ["llm_unavailable"], _rag_contexts(hits))
 
 
 async def intent_node(state: ConversationState) -> dict[str, Any]:
-    """Node graph: chạy classify_intent rồi ghi vào state + trace. Chữ ký node giữ như cũ (PRD §7.1)."""
+    """Node graph: chạy classify_intent rồi ghi vào state + trace. Chỉ Agent 1 có logic thật (PRD §7.1)."""
     result = await classify_intent(state.get("input", ""))
     return {
         "status": ConversationStatus.CLASSIFYING,
@@ -175,7 +165,7 @@ async def intent_node(state: ConversationState) -> dict[str, Any]:
                 "node": "intent",
                 "confidence": result["confidence"],
                 "branch": None,
-                "detail": {"intent": result["intent"], "top": result["rag_contexts"]},
+                "detail": {"intent": result["intent"], "entities": result["entities"]},
             }
         ],
     }
