@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AnalyzePanel } from "@/components/rag/AnalyzePanel";
 import { ClassifyTester } from "@/components/rag/ClassifyTester";
 import { UploadPanel } from "@/components/rag/UploadPanel";
 
@@ -24,6 +25,7 @@ export default function RagPage() {
       <div className="grid gap-6">
         <UploadPanel />
         <ClassifyTester />
+        <AnalyzePanel />
       </div>
     </main>
   );

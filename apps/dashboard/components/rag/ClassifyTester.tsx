@@ -79,7 +79,8 @@ export function ClassifyTester() {
   );
 }
 
-function Badge({ label, tone = "neutral" }: { label: string; tone?: "neutral" | "blue" | "amber" }) {
+// Badge nhỏ tái dùng (ClassifyTester + AnalyzePanel) — tránh trùng lặp presentational helper.
+export function Badge({ label, tone = "neutral" }: { label: string; tone?: "neutral" | "blue" | "amber" }) {
   const tones = {
     neutral: "bg-neutral-100 text-neutral-700",
     blue: "bg-blue-100 text-blue-700",
