@@ -38,29 +38,18 @@ async def test_classify_degrades_without_key_keeps_order_id(monkeypatch: pytest.
 
 
 async def test_classify_llm_off_keeps_order_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Có key nhưng ENABLE_LLM=false -> degrade llm_unavailable; regex vẫn bắt order_id.
+    # ENABLE_LLM=false -> degrade llm_unavailable; regex vẫn bắt order_id.
     monkeypatch.setattr(intent_mod.settings, "llm_api_key", "sk-test")
     monkeypatch.setattr(intent_mod.settings, "enable_llm", False)
-
-    async def fake_search(query: str, top_k: int = 4) -> list[dict]:
-        return [{"text": "chính sách", "source": "doc.pdf", "chunk_index": 0, "score": 0.5}]
-
-    monkeypatch.setattr(intent_mod.rag_service, "search", fake_search)
     r = await intent_mod.classify_intent("đơn 6578 sắp tới chưa shop")
     assert r["intent"] == "unknown"
     assert "llm_unavailable" in r["uncertainty_flags"]
     assert r["entities"].get("order_id") == "6578"
-    assert r["rag_contexts"] == [{"source": "doc.pdf", "score": 0.5}]
 
 
-async def test_classify_degrades_on_search_error_keeps_order_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(intent_mod.settings, "llm_api_key", "sk-test")
-
-    async def boom(*args: object, **kwargs: object) -> list[dict]:
-        raise RuntimeError("qdrant down")
-
-    monkeypatch.setattr(intent_mod.rag_service, "search", boom)
-    r = await intent_mod.classify_intent("mã đơn 6578")
-    assert r["intent"] == "unknown"
-    assert "search_error" in r["uncertainty_flags"]
-    assert r["entities"].get("order_id") == "6578"
+async def test_classify_output_is_clean_no_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Agent 1 SẠCH (§7.1): KHÔNG import rag_service (không retrieval); output KHÔNG có rag_contexts.
+    assert not hasattr(intent_mod, "rag_service")
+    monkeypatch.setattr(intent_mod.settings, "llm_api_key", "")
+    r = await intent_mod.classify_intent("áo này giá bao nhiêu shop")
+    assert "rag_contexts" not in r

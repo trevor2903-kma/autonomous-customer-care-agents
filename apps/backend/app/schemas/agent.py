@@ -32,10 +32,9 @@ class ClassifyRequest(BaseModel):
 
 
 class ClassifyResult(BaseModel):
-    # METADATA phân loại (KHÔNG phải câu trả lời khách — Response Generator mới phát ngôn, PRD §7.4).
+    # Agent 1 SẠCH (PRD §7.1): metadata phân loại — KHÔNG rag_contexts (đó là của Agent 2, §7.2).
     intent: str
     category: str | None = None
     entities: dict[str, Any] = {}
     confidence: float
     uncertainty_flags: list[str] = []
-    rag_contexts: list[dict[str, Any]] = []
