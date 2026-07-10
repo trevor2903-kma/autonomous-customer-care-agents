@@ -13,8 +13,9 @@ from app.agents.graph import build_graph, run_pipeline
 
 
 @pytest.fixture(autouse=True)
-def _offline_intent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Giữ pipeline test offline: intent_node gọi classify_intent (network) -> thay bằng stub tất định."""
+def _offline_agents(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Giữ pipeline test offline: Agent 1 (classify_intent) + Agent 2 (retrieve_knowledge) đều gọi network
+    -> thay bằng stub tất định."""
 
     async def fake_classify(text: str) -> dict:
         return {
@@ -23,10 +24,17 @@ def _offline_intent(monkeypatch: pytest.MonkeyPatch) -> None:
             "entities": {},
             "confidence": 0.9,
             "uncertainty_flags": [],
-            "rag_contexts": [{"intent": "product_information", "category": "pre_sale", "score": 0.9}],
+        }
+
+    async def fake_retrieve(query: str, top_k: int = 4) -> dict:
+        return {
+            "rag_contexts": [{"text": "chính sách", "source": "kb.pdf", "score": 0.8}],
+            "retrieval_confidence": 0.8,
+            "uncertainty_flags": [],
         }
 
     monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)
+    monkeypatch.setattr("app.agents.nodes.knowledge.retrieve_knowledge", fake_retrieve)
 
 
 def test_graph_compiles() -> None:
@@ -71,7 +79,6 @@ async def test_flags_accumulate_without_duplication(monkeypatch: pytest.MonkeyPa
             "entities": {},
             "confidence": 0.5,
             "uncertainty_flags": ["multi_intent"],
-            "rag_contexts": [],
         }
 
     monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)

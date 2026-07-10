@@ -1,23 +1,77 @@
-"""Node 2 — Knowledge Agent / RAG (STUB). PRD §7.2, §13."""
+"""Node 2 — Knowledge Agent / RAG (PRD §7.2, §13). Truy hồi tri thức từ KHO TRI THỨC (chính sách/FAQ/sản phẩm).
+
+- `retrieve_knowledge(query)` = hàm THUẦN (tái dùng): gọi `rag_service.search` (tầng service) → `rag_contexts`
+  (text+source+score) + `retrieval_confidence` + cờ. Đây là VAI của Agent 2 (Agent 1 KHÔNG retrieval nữa).
+- Cờ Agent 2: `no_relevant_knowledge` (không tri thức) / `low_retrieval_score` (điểm thấp).
+- Grounding (PRD §5 trụ cột 3, FR-PIPE-5): Agent 2 chỉ PHÁT cờ; Decision Engine (sau) đọc cờ → human_handoff
+  nếu không có tri thức. Agent 2 KHÔNG tự quyết.
+- Degrade AN TOÀN offline: thiếu key / Qdrant lỗi / collection trống / không hits → `rag_contexts=[]`,
+  `retrieval_confidence=0.0`, `["no_relevant_knowledge"]` (KHÔNG network vô ích, KHÔNG ném lỗi) → `make test` offline.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
+from ...core.config import settings
+from ...core.logging import get_logger
 from ...models.enums import ConversationStatus
+from ...services import rag_service
 from ..state import ConversationState
 
+log = get_logger("agent.knowledge")
 
-def knowledge_node(state: ConversationState) -> dict[str, Any]:
-    # STUB: KHÔNG RAG thật (chưa embed/truy hồi Qdrant). rag_contexts rỗng.
-    # TODO (PRD §7.2/§13): truy hồi tri thức từ Qdrant theo intent/entities -> contexts + điểm truy hồi;
-    #   cờ no_relevant_knowledge / low_retrieval_score / stale_knowledge. Grounding: không có tri thức
-    #   -> Decision Engine chuyển human_handoff, KHÔNG để Response bịa (PRD §14 FR-PIPE-5).
+
+def _degrade(flags: list[str]) -> dict[str, Any]:
+    return {"rag_contexts": [], "retrieval_confidence": 0.0, "uncertainty_flags": flags}
+
+
+async def retrieve_knowledge(query: str, top_k: int = 4) -> dict[str, Any]:
+    """Truy hồi tri thức cho `query`. Trả {rag_contexts, retrieval_confidence, uncertainty_flags}."""
+    # Thiếu key -> không embed/search được -> degrade (không network).
+    if not settings.llm_api_key:
+        return _degrade(["no_relevant_knowledge"])
+
+    try:
+        hits = await rag_service.search(query, top_k)
+    except Exception as exc:  # noqa: BLE001 — Qdrant/embed lỗi / collection chưa có -> degrade, KHÔNG ném.
+        log.warning("knowledge.search failed -> degrade no_relevant_knowledge: %s", exc)
+        return _degrade(["no_relevant_knowledge"])
+
+    if not hits:
+        return _degrade(["no_relevant_knowledge"])
+
+    rag_contexts = [
+        {"text": h.get("text"), "source": h.get("source"), "score": round(float(h["score"]), 4)}
+        for h in hits
+    ]
+    retrieval_confidence = float(hits[0]["score"])
+    flags: list[str] = []
+    if retrieval_confidence < settings.confidence_threshold:
+        flags.append("low_retrieval_score")
+
+    return {
+        "rag_contexts": rag_contexts,
+        "retrieval_confidence": retrieval_confidence,
+        "uncertainty_flags": flags,
+    }
+
+
+async def knowledge_node(state: ConversationState) -> dict[str, Any]:
+    """Node graph: retrieve_knowledge trên input rồi ghi state + trace. Ghi `rag_contexts` (VAI Agent 2) +
+    `retrieval_confidence`; `uncertainty_flags` tích luỹ (reducer add)."""
+    result = await retrieve_knowledge(state.get("input", ""))
     return {
         "status": ConversationStatus.RETRIEVING,
-        "rag_contexts": [],
-        "confidence": 1.0,
+        "rag_contexts": result["rag_contexts"],
+        "retrieval_confidence": result["retrieval_confidence"],
+        "uncertainty_flags": result["uncertainty_flags"],
         "trace": [
-            {"node": "knowledge", "confidence": 1.0, "branch": None, "detail": {"stub": True, "contexts": 0}}
+            {
+                "node": "knowledge",
+                "confidence": result["retrieval_confidence"],
+                "branch": None,
+                "detail": {"contexts": len(result["rag_contexts"])},
+            }
         ],
     }
