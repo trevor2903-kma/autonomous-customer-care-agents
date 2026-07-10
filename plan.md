@@ -1,213 +1,148 @@
-# PLAN — Nạp tài liệu thật (PDF/Word) + UI Admin + Intent Classifier (intent + ENTITIES) theo RAG
+# PLAN — Tách vai đúng PRD: Agent 1 (taxonomy trong prompt) + Agent 2 (Knowledge Agent) + dọn state contract
 
 > **Bản chất:** kịch bản ONE-SHOT, xong thì bỏ. Nguồn chân lý vẫn là **`PRD.md`** (§7.1 Intent Classifier —
-> output có **intent + entities**; §7.2 Knowledge Agent; §13 RAG; §17 Module 1 RAG Management). Repo đã scaffold
+> output SẠCH, KHÔNG retrieval; §7.2 Knowledge Agent — retrieval; §13 RAG; §5 trụ cột 3 — grounding).
 >
-> - đã có bản intent classifier seed-based; plan này **thay** phần xử lý tài liệu bằng nạp file thật, thêm UI,
->   và **sửa luôn bug entities rỗng**.
+> **Vì sao có plan này:** hiện Agent 1 đang **làm hộ việc retrieval của Agent 2** (`classify_intent` gọi
+> `rag_service.search`, output rò rỉ `rag_contexts` + cờ `low_retrieval_score`) — lệch vai so với PRD. Plan
+> này **tách vai**:
 >
-> **Gộp 2 việc:** (A) admin **upload file thật (PDF/Word/txt/md)** → **trích văn bản → chunking TỔNG QUÁT →
-> embed vào Qdrant**, kèm **UI Quản lý tri thức**; (B) **Intent Classifier trích ĐÚNG entities** (vd
-> `order_id`) thay vì trả `{}`. CHƯA cần lưu trữ tài liệu lâu dài (chỉ đẩy vector lên Qdrant).
+> - **Agent 1** phân loại từ message + **taxonomy cố định trong prompt** (KHÔNG retrieval). Output sạch
+>   `{intent, category, entities, confidence, uncertainty_flags}`.
+> - **Agent 2 (Knowledge Agent)** đảm nhiệm retrieval từ **kho tri thức** (chính sách/FAQ/sản phẩm) → contexts.
+> - **Qdrant đổi vai:** từ "kho intent" → **kho tri thức để TRẢ LỜI** (Agent 2 truy hồi). Intents-guide KHÔNG
+>   còn upload (taxonomy đã vào prompt).
+> - Dọn **state contract**: cờ tích luỹ, tách per-stage confidence.
+>
+> Chỉ Agent 1 + Agent 2 có logic thật; Decision/Response/human_handoff vẫn stub (chỉ chỉnh Decision tối thiểu do contract).
 
 ---
 
-## 0. Quyết định kiến trúc (đọc trước — thay code seed hiện tại)
+## 0. Quyết định kiến trúc
 
-- **Chunking TỔNG QUÁT** (recursive theo đoạn/câu + overlap), KHÔNG theo heading `##`. **Thay** `chunk_by_heading`
-  hiện có (chỉ hợp file seed cấu trúc sẵn).
-- **Payload chunk GENERIC** `{text, source, chunk_index}` — **bỏ** nhãn `intent`/`category` trên chunk (payload
-  seed cũ). ⚠️ Payload đổi → **sau khi deploy phải `POST /api/rag/reset` rồi upload lại** (vector cũ không tương thích).
-- **Intent do LLM quyết** từ chunk truy hồi + tập `Intent` enum đóng. Vì chunk generic không mang nhãn nên **đường
-  similarity-top-1-nhãn không dùng được nữa** → **LLM bắt buộc cho intent**. Không LLM / offline / LLM lỗi →
-  **degrade `intent=unknown`** (+ cờ), nhưng **entities vẫn được trích bằng regex** (xem dưới). `make test` vẫn offline OK.
-- **Entities** (fix bug rỗng): kết hợp **LLM (schema + few-shot)** ⊕ **regex** (`order_id`, neo theo từ khoá) →
-  merge `entities = {**regex, **llm}`. Regex chạy ở **mọi nhánh** (kể cả degrade) → `order_id` luôn bắt được.
-- **`category`** lấy từ **map tĩnh `INTENT_CATEGORY`** (chunk generic không mang category).
-- Truy hồi (`search`) giữ ở **tầng service** để Knowledge Agent (PRD §7.2) tái dùng.
+- **Agent 1 (§7.1):** LLM phân loại từ message + **taxonomy few-shot cố định** (mô tả + ví dụ mỗi intent). BỎ
+  `rag_service.search`. Output **BỎ `rag_contexts`**; cờ ∈ `{ambiguous_intent, multi_intent, out_of_domain}`
+  (BỎ `low_retrieval_score`); `confidence` = độ tự tin LLM (không phải điểm cosine). Giữ entities (LLM ⊕ regex).
+- **Agent 2 (§7.2):** `retrieve_knowledge(query)` gọi `rag_service.search` trên **kho tri thức** → `rag_contexts`
+  (text+source+score) + `retrieval_confidence` + cờ `no_relevant_knowledge`/`low_retrieval_score`.
+- **State contract (Layer 1 lite):** `uncertainty_flags` **TÍCH LUỸ** (reducer `add`); thêm `intent_confidence`
+  - `retrieval_confidence`; `rag_contexts` **do Agent 2 ghi** (Agent 1 không ghi nữa). Decision đọc cờ tích luỹ
+  - `min(intent_confidence, retrieval_confidence)`.
+- **Corpus:** upload **`knowledge_base_shop_quan_ao.pdf`** (chính sách/FAQ/sản phẩm) — KHÁC intents-guide.
+- Degrade an toàn (cả 2 agent) khi offline → `make test` vẫn offline OK; Response Generator vẫn là điểm phát ngôn duy nhất.
 
 ---
 
 ## 1. In / Out scope
 
-**In scope — Backend:** deps `openai`/`python-multipart`/`pypdf`/`python-docx`; embeddings + bootstrap collection;
-**trích đa định dạng (.pdf/.docx/.txt/.md) + chunking tổng quát + ingest (payload generic)**; route
-`POST /api/rag/upload` + `/info` + `/reset`; enums `Intent`/`Category` + `INTENT_CATEGORY`; **Intent Classifier
-LLM (intent) + ENTITIES (LLM schema/few-shot ⊕ regex)**; `POST /api/agents/classify` + WS.
-
-**In scope — Frontend:** trang **Quản lý tri thức (RAG)** `app/rag/page.tsx` (upload file, xem số chunk + nguồn,
-reset) + **widget test phân loại** hiển thị intent/category/confidence/cờ/**entities**/nguồn.
-
-**Out of scope (giữ nguyên / layer sau):** KHÔNG chạy đủ pipeline 4 agent (chỉ Agent 1); Knowledge/Decision/
-Response/human_handoff GIỮ stub. KHÔNG persist tài liệu xuống Postgres (bảng `knowledge_document` để yên).
-KHÔNG OCR PDF scan; KHÔNG multi-provider (chỉ OpenAI); KHÔNG re-index/versioning nâng cao; KHÔNG shadcn.
-KHÔNG gửi câu trả lời cho khách (chỉ metadata phân loại; Response Generator vẫn là điểm phát ngôn DUY NHẤT).
+**In scope:** dọn state contract; **refactor Agent 1** (taxonomy prompt, bỏ retrieval, output sạch); **xây Agent 2**
+(retrieve từ kho tri thức); endpoint verify `POST /api/agents/analyze`; upload kho tri thức + verify e2e.
+**Out of scope:** Decision/Response/human_handoff logic thật (chỉ chỉnh Decision tối thiểu do reducer); gate/
+PENDING_APPROVAL; phản hồi khách thật; multi-provider; RAG management nâng cao. Intents-guide KHÔNG upload nữa.
 
 ---
 
-## 2. Tài liệu test & Dependencies
+## 2. Kế hoạch theo Phase
 
-- Test: `tai_lieu_intents_shop_quan_ao.pdf` (guide 10 intent, PRD §7.1, văn xuôi + ví dụ) — upload qua UI/curl.
-- `apps/backend/pyproject.toml` thêm: `openai>=1.40,<2` (đã có), `python-multipart>=0.0.9` (đã có),
-  `pypdf>=5,<6`, `python-docx>=1.1,<2` → `cd apps/backend && uv sync`.
-- `.env` (gốc repo): `ENABLE_LLM=true`, `LLM_PROVIDER=openai`, `LLM_API_KEY=<openai key>`, `LLM_MODEL=gpt-4o-mini`,
-  `EMBEDDING_MODEL=text-embedding-3-small`, `QDRANT_URL/QDRANT_API_KEY/QDRANT_COLLECTION` (đã có).
-- Frontend: không dep mới (FormData native + TanStack có sẵn).
+> Sau MỖI phase: chạy "Verify", cho tôi xem output, `git commit` (`refactor(agents): phase N - ...`), tóm tắt 1 dòng, tiếp nếu không lỗi.
 
-**Verify:** `uv run python -c "import openai, multipart, pypdf, docx; print('deps ok')"`; `make health` ok.
+### Phase 0 — Dọn state contract (cờ tích luỹ + per-stage confidence)
 
----
+- `app/agents/state.py`: đổi `uncertainty_flags: list[str]` → **`Annotated[list[str], add]`** (tích luỹ như
+  `trace`); thêm `intent_confidence: float`, `retrieval_confidence: float`.
+- `app/agents/nodes/decision.py` (chỉnh tối thiểu do reducer — nếu không sẽ NHÂN ĐÔI cờ):
+  - Đọc cờ tích luỹ để route (giữ nguyên logic an toàn).
+  - **Chỉ emit cờ MỚI** cho `uncertainty_flags` (tức `injected` từ scratchpad), KHÔNG trả lại cả danh sách cũ.
+  - `confidence` để check ngưỡng = `min(state.get("intent_confidence",1.0), state.get("retrieval_confidence",1.0))`.
+- `should_handoff` (policy.py) KHÔNG đổi (vẫn đọc `require_human_handoff`).
 
-## 3. Kế hoạch theo Phase
+**Verify:** `make test` xanh; chạy `run-demo` 2 nhánh — nhánh handoff vẫn đúng, cờ KHÔNG bị nhân đôi. Commit:
+`refactor(agents): phase 0 - state contract (accumulate flags + per-stage confidence)`.
 
-> Sau MỖI phase: chạy "Verify", cho tôi xem output, `git commit` (`feat(rag): phase N - ...`), tóm tắt 1 dòng, tiếp nếu không lỗi.
+### Phase 1 — Refactor Agent 1 SẠCH (§7.1): taxonomy trong prompt, bỏ retrieval
 
-### Phase 0 — Deps + config
-
-Như mục 2. Commit: `feat(rag): phase 0 - deps (pypdf/python-docx) + env LLM/RAG`. **Verify:** import ok; health ok.
-
-### Phase 1 — Embeddings + bootstrap collection
-
-- `app/core/embeddings.py`: `embed_text`/`embed_texts` (`AsyncOpenAI(api_key=settings.llm_api_key)` +
-  `settings.embedding_model`) + `embedding_dim()` (probe, cache; 1536).
-- `app/services/rag_service.py`: `ensure_collection()` (COSINE, size=`embedding_dim()`), idempotent.
-
-**Verify:** collection tồn tại, vector size 1536. Commit: `feat(rag): phase 1 - embeddings + qdrant collection`.
-
-### Phase 2 — Trích đa định dạng + chunking TỔNG QUÁT + ingest (thay chunk_by_heading)
-
-- `app/services/extract.py`: `extract_text(filename, data: bytes) -> str` — `.pdf`→`pypdf.PdfReader(BytesIO)`;
-  `.docx`→`docx.Document(BytesIO)` (nối `paragraph.text`); `.txt`/`.md`→`decode("utf-8", errors="ignore")`;
-  đuôi khác→`ValueError`.
-- `rag_service.py`:
-  - **XOÁ** `chunk_by_heading`; thêm `chunk_text(text, size=800, overlap=120) -> list[str]` (chuẩn hoá khoảng
-    trắng → tách `\n\n` → gộp cửa sổ ~`size` ký tự, ~`overlap` chồng lấn, ưu tiên ranh giới câu). KHÔNG theo heading.
-  - `ingest_document(text, source) -> int`: `ensure_collection()` → `chunk_text` → `embed_texts` → `upsert`
-    (id `uuid5(source#i)`; **payload `{text, source, chunk_index:i}`**). Trả số chunk.
-  - `collection_info() -> {collection, points_count, sources[]}` (sources: `scroll` gom distinct `payload.source`);
-    `reset_collection()` (drop + `ensure_collection`).
-
-**Verify:** unit — `extract_text` đọc PDF ra chữ tiếng Việt; `chunk_text` ra N>1 chunk (payload generic). Commit:
-`feat(rag): phase 2 - multi-format extract + generic chunking + ingest`.
-
-### Phase 3 — Route upload
-
-- `app/api/routes/rag.py` (`prefix="/rag"`): `POST /upload` (`UploadFile`, chỉ .pdf/.docx/.txt/.md else 415;
-  `extract_text` → rỗng thì 422; `ingest_document` → `{source, chunks, collection}`); `GET /info`; `POST /reset`.
-- `app/main.py`: `include_router(rag.router, prefix="/api")`.
-
-**Verify:** `curl -F "file=@tai_lieu_intents_shop_quan_ao.pdf" .../api/rag/upload` → `chunks>0`; `/api/rag/info`
-→ `points_count` + `sources` có tên file. Commit: `feat(rag): phase 3 - /api/rag/upload (pdf/docx/txt/md) + info + reset`.
-
-### Phase 4 — Enums + Intent Classifier (LLM cho intent) + ENTITIES (fix bug rỗng)
-
-- `app/models/enums.py`: `Intent(StrEnum)` (product_price, product_information, size_consulting, shipping,
-  order_status, refund, exchange, complaint, promotion, other); `Category(StrEnum)` (pre_sale, after_sale,
-  general); `INTENT_CATEGORY: dict[Intent, Category]` (price/info/size/promotion→pre_sale; order_status/refund/
-  exchange/complaint→after_sale; shipping/other→general).
-- `rag_service.search(query, top_k=4) -> [{text, source, score, chunk_index}]` (payload generic; **bỏ** intent/category).
-- **Entities helper** `extract_entities_rule(text) -> dict` (trong `intent.py` hoặc `nodes/_entities.py`):
-  - `order_id`: regex **neo theo từ khoá** (unicode, ignorecase):
-    `r"(?:đơn(?:\s*hàng)?|order|mã(?:\s*đơn)?|#)\D{0,8}(\d{3,})"` → `{"order_id": "<số>"}` (giá trị **chuỗi**).
-  - (tuỳ chọn) `size`: `r"\bsize\s*([SMLX]{1,3}|\d{2,3})\b"`; `height`/`weight`: `r"(\d[.,]?\d*\s*m|\d{2,3}\s*cm)"`,
-    `r"(\d{2,3})\s*kg"`. Cẩn thận không nhặt nhầm (neo từ khoá + giữ chuỗi).
-- Viết lại `app/agents/nodes/intent.py`:
-  - `classify_intent(text)`:
-    1. `rule = extract_entities_rule(text)` (tính sớm — dùng cho MỌI nhánh).
-    2. Thiếu `llm_api_key` → degrade: `intent="unknown", category=None, entities=rule, confidence=0.0,
-uncertainty_flags=["llm_unavailable"], rag_contexts=[]` (không network).
-    3. `hits = await search(text)`; lỗi → degrade `["search_error"]` + `entities=rule`; `not hits` → degrade
-       `["no_relevant_knowledge"]` + `entities=rule` + `rag_contexts=[]`.
-    4. `ENABLE_LLM=true`: gọi LLM (`AsyncOpenAI`, `settings.llm_model`, `response_format=json_object`, temp 0) với
-       (a) **nhãn hợp lệ = `Intent` enum**, (b) **schema entity theo intent** + **few-shot** (xem dưới), (c) các
-       đoạn `hits[].text` làm ngữ cảnh, (d) câu khách. Output JSON `{intent, entities, confidence}`.
-       - Validate `intent ∈ Intent`; lệch → `"other"` + cờ `out_of_domain`.
-       - `entities = {**rule, **(llm.entities if dict else {})}` (LLM đè trùng key; regex bù key thiếu).
-       - `category = INTENT_CATEGORY.get(intent)`; `rag_contexts = [{source, score} for hits]`;
-         cờ `low_retrieval_score` nếu `hits[0].score < CONFIDENCE_THRESHOLD`, `ambiguous_intent` nếu 2 điểm đầu sát nhau.
-       - LLM lỗi (exception) → degrade `intent="unknown"` + cờ **`llm_unavailable`** + `entities=rule` +
-         `rag_contexts=[{source,score}]` (đừng ném lỗi; đừng im lặng — cờ để chẩn đoán).
-    5. `ENABLE_LLM=false` → degrade `intent="unknown"` + cờ `["llm_unavailable"]` + `entities=rule` +
-       `rag_contexts=[{source,score}]` (chunk generic không phân loại được nếu không LLM).
-  - `intent_node(state)` giữ chữ ký; ghi state + `trace`. Chỉ Agent 1 có logic thật; node khác GIỮ stub.
-  - **make test phải xanh** (mọi nhánh degrade KHÔNG network, KHÔNG ném lỗi).
-- **Prompt LLM (entity schema + few-shot):** yêu cầu chỉ chọn intent ∈ enum; trích entities theo schema:
-  order_status/refund/exchange/complaint→`order_id`; product_price/product_information→`product_name`,`color`;
-  size_consulting→`height`,`weight`,`size`; shipping→`destination`(+option `order_id`); promotion→`promo_code`;
-  other→{}. Giá trị **chuỗi**; `order_id` chỉ chữ số; không bịa key ngoài schema. Few-shot gồm:
-  - `"Đơn hàng 6578 của tôi sắp giao tới nơi chưa?"` → `{"intent":"order_status","entities":{"order_id":"6578"}}`
-  - `"Mình cao 1m60 nặng 50kg mặc size gì?"` → `{"intent":"size_consulting","entities":{"height":"1m60","weight":"50kg"}}`
-
-**Verify:** `classify_intent("Đơn hàng 6578 của tôi sắp giao tới nơi chưa?")` → `intent=order_status`,
-`category=after_sale`, `entities.order_id=="6578"`; `make test` xanh. Commit:
-`feat(rag): phase 4 - enums + LLM intent + entity extraction (schema+few-shot+regex)`.
-
-### Phase 5 — Điểm test backend: classify + WS
-
-- `app/api/routes/agents.py`: `POST /classify` (body `{message}`) → `classify_intent` → trả
-  `{intent, category, entities, confidence, uncertainty_flags, rag_contexts:[{source,score}]}`.
-- `app/api/ws/chat.py`: text khách → `classify_intent` → gửi `{"type":"classification", intent, category,
-confidence, entities}` (thay echo). Tín hiệu dev/verify, KHÔNG phải câu trả lời khách (PRD §7.4).
+- Tạo `app/agents/nodes/taxonomy.py`: hằng `TAXONOMY` = 10 intent, mỗi intent `{description, examples:[...3-4 câu]}`
+  (lấy nội dung từ intents-guide) + `entity schema` theo intent; hàm `render_taxonomy() -> str` để nhúng vào prompt.
+- `app/agents/nodes/intent.py`:
+  - **BỎ** `from ...services import rag_service` và mọi lời gọi `search` / `_rag_contexts` / cờ `low_retrieval_score`.
+  - `_system_prompt()` dùng `render_taxonomy()` (đầy đủ mô tả + ví dụ) — KHÔNG cần ngữ cảnh RAG nữa.
+  - `classify_intent(text) -> {intent, category, entities, confidence, uncertainty_flags}` (**BỎ rag_contexts**):
+    LLM phân loại từ message; validate intent ∈ `Intent` (lệch → other + `out_of_domain`); cờ khác:
+    `ambiguous_intent`/`multi_intent` do LLM báo (nếu mơ hồ/nhiều ý); `confidence` = LLM; `category` = `INTENT_CATEGORY`;
+    entities = `{**extract_entities_rule(text), **llm_entities}`. Degrade: thiếu key/LLM lỗi → `intent="unknown"`,
+    `confidence=0.0`, cờ `["llm_unavailable"]`, entities = regex (KHÔNG network, KHÔNG ném lỗi).
+  - `intent_node(state)`: ghi `intent, entities, intent_confidence(=confidence), uncertainty_flags` + `trace`.
+    **KHÔNG ghi `rag_contexts`, KHÔNG ghi `confidence` chung.**
+- `app/schemas/agent.py` `ClassifyResult`: **BỎ trường `rag_contexts`**.
 
 **Verify:** `curl -X POST .../api/agents/classify -d '{"message":"Đơn hàng 6578 của tôi sắp giao tới nơi chưa?"}'`
-→ `entities.order_id="6578"`; WS trả `type=classification`. Commit: `feat(rag): phase 5 - /api/agents/classify + ws`.
+→ `intent=order_status`, `category=after_sale`, `entities.order_id="6578"`, `uncertainty_flags` KHÔNG có
+`low_retrieval_score`, **KHÔNG có `rag_contexts`**. `make test` xanh. Commit:
+`refactor(agents): phase 1 - Agent 1 clean (taxonomy prompt, no retrieval, no rag_contexts)`.
 
-### Phase 6 — UI Admin: trang Quản lý tri thức (RAG)
+### Phase 2 — Xây Agent 2 (Knowledge Agent, §7.2)
 
-- `packages/shared-types` (theo pattern export sẵn): `RagUploadResult{source,chunks,collection}`;
-  `RagInfo{collection,points_count,sources:string[]}`; `IntentClassification{intent, category:string|null,
-entities:Record<string,unknown>, confidence, uncertainty_flags:string[], rag_contexts:{source:string;score:number}[]}`.
-- `apps/dashboard/lib/api.ts`: `uploadKnowledgeDoc(file)` (FormData → `POST /api/rag/upload`, KHÔNG tự set
-  Content-Type), `getRagInfo()`, `resetRag()`, `classifyMessage(message)`.
-- `components/rag/UploadPanel.tsx` (theo `ServiceStatus.tsx`: `"use client"` + TanStack + Tailwind thuần): input
-  `accept=".pdf,.docx,.txt,.md"`; nút Upload (mutation, loading, kết quả `{source,chunks}`); hiện `getRagInfo()`
-  (points_count + sources), invalidate sau upload; nút Reset (confirm).
-- `components/rag/ClassifyTester.tsx`: ô nhập câu khách → nút "Phân loại" (`classifyMessage`) → hiện `intent`,
-  `category`, `confidence`, `uncertainty_flags`, **`entities` (nổi bật)**, và `rag_contexts` (source + score).
-- `app/rag/page.tsx`: layout như `app/page.tsx` (header + link "← Dashboard"), render `<UploadPanel/>` + `<ClassifyTester/>`.
-- `app/page.tsx`: thêm link header **"Quản lý tri thức (RAG) →"** trỏ `/rag`.
+- `app/agents/nodes/knowledge.py` (viết thật, tách hàm thuần tái dùng):
+  - `retrieve_knowledge(query: str, top_k: int = 4) -> {rag_contexts, retrieval_confidence, uncertainty_flags}`:
+    - Thiếu `llm_api_key` (embeddings cần) / Qdrant lỗi / collection trống / `not hits` → degrade:
+      `rag_contexts=[]`, `retrieval_confidence=0.0`, `uncertainty_flags=["no_relevant_knowledge"]` (KHÔNG ném lỗi).
+    - Có hits: `hits = await rag_service.search(query, top_k)` → `rag_contexts=[{text, source, score}]`;
+      `retrieval_confidence = float(hits[0]["score"])`; cờ `low_retrieval_score` nếu `hits[0].score < CONFIDENCE_THRESHOLD`.
+  - `knowledge_node(state)`: `query = state.get("input","")` → `retrieve_knowledge(query)` → ghi `rag_contexts`,
+    `retrieval_confidence`, `uncertainty_flags` (reducer tích luỹ) + `trace` (`node="knowledge"`, contexts count) +
+    `status=RETRIEVING`.
+- Grounding (PRD §5 trụ cột 3, FR-PIPE-5): cờ `no_relevant_knowledge` sẽ khiến Decision Engine (sau này)
+  chuyển `human_handoff` — Agent 2 chỉ phát cờ, KHÔNG tự quyết.
 
-**Verify:** `make dev-backend` + `make dev-dashboard` → `/rag`: upload PDF → thấy `chunks=N` + nguồn;
-ClassifyTester câu "Đơn hàng 6578…" → intent=order_status + **entities.order_id=6578**. `pnpm -r build` pass.
-Commit: `feat(rag): phase 6 - admin RAG upload UI + classify tester (hiện entities)`.
+**Verify:** unit — sau khi upload kho tri thức, `retrieve_knowledge("chính sách đổi trả trong bao nhiêu ngày?")`
+→ `rag_contexts` có nguồn `knowledge_base_shop_quan_ao.pdf`, `retrieval_confidence>0`; `retrieve_knowledge("bla bla xyz")`
+→ `no_relevant_knowledge`. `make test` xanh. Commit: `feat(agents): phase 2 - Knowledge Agent (RAG retrieval)`.
 
-### Phase 7 — Verify tổng (e2e) + migration
+### Phase 3 — Endpoint verify Agent 1 + Agent 2
 
-- **RESET rồi upload lại** (payload đổi so với bản seed): `POST /api/rag/reset` → upload PDF (UI/curl).
-- Chạy bộ câu (order_status/size/product/promotion/complaint) qua `/api/agents/classify`; kiểm intent + entities.
+- `app/api/routes/agents.py`: `POST /analyze` (body `{message}`) → `intent = await classify_intent(msg)`;
+  `know = await retrieve_knowledge(msg)` → trả `{intent, category, entities, intent_confidence(=intent.confidence),
+retrieval_confidence, uncertainty_flags: intent.flags + know.flags, rag_contexts}`. (schema `AnalyzeResult`.)
+  Cho thấy rõ tách vai: Agent 1 → intent/entities; Agent 2 → rag_contexts; cờ gộp.
 
-**Verify:** e2e đạt (đặc biệt `order_id=6578`); `make test` xanh; `pnpm -r build` pass. Commit:
-`feat(rag): phase 7 - e2e verify + reset/re-ingest`.
+**Verify:** `curl -X POST .../api/agents/analyze -d '{"message":"phí ship đi tỉnh bao nhiêu?"}'` → intent=shipping +
+`rag_contexts` (Agent 2) có đoạn về phí ship. Commit: `feat(agents): phase 3 - /api/agents/analyze (intent + knowledge)`.
+
+### Phase 4 — Upload kho tri thức + verify e2e
+
+- **RESET** collection (`POST /api/rag/reset`) rồi **upload `knowledge_base_shop_quan_ao.pdf`** (KHÔNG upload
+  intents-guide nữa — taxonomy đã ở prompt Agent 1).
+- Chạy `/api/agents/analyze` vài câu chính sách/sản phẩm; kiểm intent (Agent 1) + rag_contexts hợp lý (Agent 2).
+
+**Verify:** analyze "đổi trả trong bao lâu?" → intent=refund + context đổi trả; "size M nặng bao nhiêu kg?" →
+intent=size_consulting + context bảng size; "asdf zxcv" → intent=other/unknown + `no_relevant_knowledge`. `make test` xanh.
+Commit: `chore(agents): phase 4 - upload knowledge base + e2e verify`.
 
 ---
 
-## 4. Definition of Done
+## 3. Definition of Done
 
-- [ ] `uv sync` với openai/python-multipart/pypdf/python-docx; `/api/health` ok.
-- [ ] Upload `tai_lieu_intents_shop_quan_ao.pdf` (UI **và** curl) → `chunks>0`; `/api/rag/info` → `points_count` + `sources` có tên file. Trích được **PDF + Word + txt/md**; chunking **tổng quát**; payload **generic**.
-- [ ] `POST /api/agents/classify` với `"Đơn hàng 6578 của tôi sắp giao tới nơi chưa?"` → `intent=order_status`,
-      `category=after_sale`, **`entities.order_id="6578"`** (đúng qua LLM; và regex bù nếu LLM off/lỗi).
-- [ ] Với `ENABLE_LLM=true`: entities đa dạng đúng schema (order_id/size/height/weight/product_name…).
-- [ ] LLM off/lỗi → cờ `llm_unavailable`, KHÔNG mất `order_id` (regex). `make test` xanh.
-- [ ] Trang `/rag` upload + hiện chunk/nguồn + reset; ClassifyTester hiện **entities**. `pnpm -r build` pass.
-- [ ] Chỉ Agent 1 có logic thật; KHÔNG persist Postgres; Response Generator vẫn là điểm phát ngôn duy nhất.
+- [ ] `make test` xanh; `run-demo` 2 nhánh đúng, `uncertainty_flags` **tích luỹ, không nhân đôi**.
+- [ ] **Agent 1 sạch:** `/api/agents/classify` trả `{intent, category, entities, confidence, uncertainty_flags}`
+      — **KHÔNG `rag_contexts`**, KHÔNG `low_retrieval_score`; taxonomy ở prompt (không gọi Qdrant). order_id vẫn đúng.
+- [ ] **Agent 2 thật:** `retrieve_knowledge`/`knowledge_node` trả `rag_contexts` + `retrieval_confidence` + cờ
+      `no_relevant_knowledge`/`low_retrieval_score`; degrade offline không ném lỗi.
+- [ ] State: `rag_contexts` do **Agent 2** ghi; `intent_confidence`/`retrieval_confidence` tách riêng; cờ tích luỹ tới Decision.
+- [ ] `/api/agents/analyze` cho thấy đúng tách vai; upload **kho tri thức** (không phải intents-guide) + e2e đạt.
 
 ---
 
-## 5. Ghi chú cho Claude Code
+## 4. Ghi chú cho Claude Code
 
-- **Thay** `chunk_by_heading` → `chunk_text` **tổng quát**; payload **generic** `{text, source, chunk_index}`;
-  `search` trả `{text, source, score, chunk_index}` (bỏ intent/category). Sau deploy: **reset + upload lại**.
-- **LLM bắt buộc cho intent** (chunk generic không có nhãn); không LLM → degrade `unknown` + cờ `llm_unavailable`.
-  Embeddings KHÔNG bị gate bởi `ENABLE_LLM` (retrieval vẫn chạy).
-- **Entities:** LLM (schema + few-shot) ⊕ **regex order_id** (neo từ khoá, giá trị chuỗi) → merge
-  `{**rule, **llm}`. Regex chạy MỌI nhánh (kể cả degrade) → order_id luôn bắt. `category` từ `INTENT_CATEGORY` map.
-- **Giữ `make test` offline:** mọi nhánh degrade KHÔNG network, KHÔNG ném lỗi; LLM lỗi → cờ, đừng im lặng.
-- **`search()` ở tầng service** (Knowledge Agent PRD §7.2 tái dùng) — đừng nhét truy hồi cứng vào node.
-- PDF scan (không text layer) ngoài phạm vi → route 422, ĐỪNG OCR.
-- UI theo **pattern sẵn có** (Tailwind thuần + TanStack + `lib/api.ts`) — KHÔNG thêm shadcn. "Sửa có phẫu thuật".
-- Async-first; config từ env; KHÔNG hardcode key/URL/model/ngưỡng.
-- Response Generator vẫn là điểm phát ngôn DUY NHẤT — lát cắt chỉ trả metadata phân loại (WS `type=classification`
-  là tín hiệu dev, KHÔNG phải câu trả lời khách).
-- Sau bước này (layer sau): tách Knowledge Agent, chạy đủ pipeline, gate/PENDING_APPROVAL, phản hồi khách thật,
-  RAG management đầy đủ — theo `docs/DEVELOPMENT.md` (Layer 1→4).
+- **Vai:** retrieval + `rag_contexts` + `low_retrieval_score`/`no_relevant_knowledge` thuộc **Agent 2**; intent +
+  entities + `ambiguous/multi/out_of_domain` thuộc **Agent 1**. Đừng để Agent 1 gọi `rag_service` nữa.
+- **Reducer:** khi `uncertainty_flags` thành `Annotated[..., add]`, MỌI node chỉ được trả **cờ MỚI của nó** (đừng
+  trả lại cờ đã có) — nếu không sẽ nhân đôi. Đây là lý do phải chỉnh `decision_node`.
+- **Taxonomy trong prompt** (module `taxonomy.py`), đầy đủ mô tả + ví dụ để bù cho việc bỏ retrieval; giữ entity
+  schema + few-shot (gồm order_id "6578").
+- **`search()` vẫn ở tầng service** — Agent 2 gọi; Agent 1 không. Degrade an toàn cả hai (offline → `make test` xanh).
+- **Qdrant giờ chứa KHO TRI THỨC** (chính sách/FAQ/sản phẩm), không phải intent. Nhớ reset + upload lại (Phase 4).
+- "Sửa có phẫu thuật"; async-first; config từ env. Response Generator vẫn là điểm phát ngôn duy nhất — `/classify`
+  và `/analyze` chỉ trả metadata.
+- Sau bước này (layer sau): Decision Engine thật (priority/severity + gate), Response Generator (grounded từ
+  rag_contexts của Agent 2), suspend/resume — theo `docs/DEVELOPMENT.md`.
