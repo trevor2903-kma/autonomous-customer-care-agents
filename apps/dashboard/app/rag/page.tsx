@@ -3,7 +3,7 @@ import { AnalyzePanel } from "@/components/rag/AnalyzePanel";
 import { ClassifyTester } from "@/components/rag/ClassifyTester";
 import { UploadPanel } from "@/components/rag/UploadPanel";
 
-// Trang Quản lý tri thức (RAG) — PRD §17 Module 1. Upload tài liệu + test phân loại intent/entities.
+// Trang Quản lý tri thức (RAG) — PRD §17 Module 1. Upload KHO TRI THỨC cho Agent 2 + test Agent 1 & Agent 2.
 export default function RagPage() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
@@ -11,7 +11,8 @@ export default function RagPage() {
         <div>
           <h1 className="text-2xl font-semibold">Quản lý tri thức (RAG)</h1>
           <p className="text-sm text-neutral-500">
-            Upload tài liệu (.pdf/.docx/.txt/.md) → embed Qdrant · test phân loại intent + entities
+            Kho tri thức cho Agent 2 (chính sách/FAQ/sản phẩm) → embed Qdrant · test Agent 1 (intent) &amp;
+            Agent 2 (truy hồi)
           </p>
         </div>
         <Link

@@ -29,9 +29,13 @@ export function UploadPanel() {
 
   return (
     <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
         Quản lý tri thức (RAG)
       </h2>
+      <p className="mb-3 mt-1 text-xs text-neutral-400">
+        Tài liệu <span className="font-medium text-neutral-500">Agent 2</span> truy hồi để trả lời (không
+        phải tài liệu phân loại intent).
+      </p>
 
       <div className="flex flex-wrap items-center gap-3">
         <input
