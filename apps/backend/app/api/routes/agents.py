@@ -11,15 +11,39 @@ from fastapi import APIRouter, Query
 
 from ...agents.graph import run_pipeline
 from ...agents.nodes.intent import classify_intent
-from ...schemas.agent import AgentTraceStep, ClassifyRequest, ClassifyResult, RunDemoResult
+from ...agents.nodes.knowledge import retrieve_knowledge
+from ...schemas.agent import (
+    AgentTraceStep,
+    AnalyzeResult,
+    ClassifyRequest,
+    ClassifyResult,
+    RunDemoResult,
+)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 
 @router.post("/classify", response_model=ClassifyResult)
 async def classify(req: ClassifyRequest) -> ClassifyResult:
-    """Chạy RIÊNG Agent 1 (Intent Classifier) — điểm test lát cắt RAG-intent (KHÔNG chạy cả graph)."""
+    """Chạy RIÊNG Agent 1 (Intent Classifier) — output sạch, KHÔNG retrieval (KHÔNG chạy cả graph)."""
     return ClassifyResult(**await classify_intent(req.message))
+
+
+@router.post("/analyze", response_model=AnalyzeResult)
+async def analyze(req: ClassifyRequest) -> AnalyzeResult:
+    """Chạy Agent 1 (intent/entities) + Agent 2 (retrieval) — cho thấy TÁCH VAI đúng PRD §7.1/§7.2.
+    Chỉ trả METADATA (Response Generator vẫn là điểm phát ngôn DUY NHẤT tới khách, §7.4)."""
+    intent = await classify_intent(req.message)  # Agent 1
+    know = await retrieve_knowledge(req.message)  # Agent 2
+    return AnalyzeResult(
+        intent=intent["intent"],
+        category=intent["category"],
+        entities=intent["entities"],
+        intent_confidence=intent["confidence"],
+        retrieval_confidence=know["retrieval_confidence"],
+        uncertainty_flags=intent["uncertainty_flags"] + know["uncertainty_flags"],
+        rag_contexts=know["rag_contexts"],
+    )
 
 
 @router.post("/run-demo", response_model=RunDemoResult)
