@@ -59,3 +59,24 @@ async def test_human_handoff_branch() -> None:
     assert "escalation_card" in final["result"]
     # Pipeline cố định: intent -> knowledge -> decision -> human_handoff
     assert [t["node"] for t in final["trace"]] == ["intent", "knowledge", "decision", "human_handoff"]
+
+
+async def test_flags_accumulate_without_duplication(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reducer `add` + decision chỉ emit cờ MỚI → cờ của Agent 1 KHÔNG bị decision nhân đôi."""
+
+    async def fake_classify(text: str) -> dict:
+        return {
+            "intent": "other",
+            "category": "general",
+            "entities": {},
+            "confidence": 0.5,
+            "uncertainty_flags": ["multi_intent"],
+            "rag_contexts": [],
+        }
+
+    monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)
+    final = await run_pipeline(input_text="demo", force_handoff=False)
+
+    # multi_intent (Agent 1) là cờ bất định -> handoff; phải xuất hiện ĐÚNG 1 lần (không bị decision nhân đôi).
+    assert final["uncertainty_flags"].count("multi_intent") == 1
+    assert final["require_human_handoff"] is True

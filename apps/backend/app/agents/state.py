@@ -26,7 +26,10 @@ class ConversationState(TypedDict, total=False):
 
     # ── Chừa chỗ an toàn/bất định (PRD §5 trụ cột 3, §7.3) ────────────────────
     confidence: float
-    uncertainty_flags: list[str]
+    intent_confidence: float  # Agent 1 — Intent Classifier (PRD §7.1)
+    retrieval_confidence: float  # Agent 2 — Knowledge Agent (PRD §7.2)
+    # TÍCH LUỸ (reducer add) như trace/messages — MỖI node chỉ trả CỜ MỚI của nó (nếu trả lại cờ cũ sẽ nhân đôi).
+    uncertainty_flags: Annotated[list[str], add]
     escalation_reason: str | None
     require_human_handoff: bool
 
