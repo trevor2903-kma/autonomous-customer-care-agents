@@ -1,4 +1,5 @@
 import type {
+  AnalyzeResult,
   Conversation,
   HealthStatus,
   IntentClassification,
@@ -57,6 +58,7 @@ export async function resetRag(): Promise<RagInfo> {
   return res.json();
 }
 
+// Agent 1 · Intent Classifier (PRD §7.1) — chỉ intent/entities, KHÔNG retrieval.
 export async function classifyMessage(message: string): Promise<IntentClassification> {
   const res = await fetch(`${API_BASE}/api/agents/classify`, {
     method: "POST",
@@ -64,5 +66,16 @@ export async function classifyMessage(message: string): Promise<IntentClassifica
     body: JSON.stringify({ message }),
   });
   if (!res.ok) throw new Error(`classify ${res.status}`);
+  return res.json();
+}
+
+// Agent 1 + Agent 2 · Knowledge Agent (PRD §7.2) — tách vai: intent/entities + truy hồi rag_contexts.
+export async function analyzeMessage(message: string): Promise<AnalyzeResult> {
+  const res = await fetch(`${API_BASE}/api/agents/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok) throw new Error(`analyze ${res.status}`);
   return res.json();
 }

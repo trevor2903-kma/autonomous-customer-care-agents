@@ -5,7 +5,8 @@ import { useState } from "react";
 import type { IntentClassification } from "shared-types";
 import { classifyMessage } from "@/lib/api";
 
-// Widget test phân loại: nhập câu khách → intent/category/confidence/cờ + ENTITIES (nổi bật) + nguồn RAG.
+// Widget test Agent 1 · Intent Classifier (PRD §7.1): nhập câu khách → intent/category/confidence/cờ + ENTITIES.
+// Agent 1 SẠCH — KHÔNG truy hồi (retrieval là việc Agent 2, §7.2). Để test truy hồi xem AnalyzePanel (/analyze).
 // Metadata phân loại (KHÔNG phải câu trả lời khách — Response Generator lo việc đó, PRD §7.4).
 export function ClassifyTester() {
   const [message, setMessage] = useState("Đơn hàng 6578 của tôi sắp giao tới nơi chưa?");
@@ -14,9 +15,12 @@ export function ClassifyTester() {
 
   return (
     <section className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-        Test phân loại (Intent Classifier)
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
+        Test Agent 1 · Intent Classifier
       </h2>
+      <p className="mb-3 mt-1 text-xs text-neutral-400">
+        Agent 1 sạch — không truy hồi (retrieval là việc của Agent 2, §7.2).
+      </p>
 
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -69,17 +73,6 @@ export function ClassifyTester() {
               </div>
             )}
           </div>
-
-          {r.rag_contexts.length > 0 && (
-            <div className="text-xs text-neutral-500">
-              <span className="font-semibold">Nguồn RAG:</span>{" "}
-              {r.rag_contexts.map((c, i) => (
-                <span key={i} className="mr-2">
-                  <code>{c.source}</code> ({c.score.toFixed(3)})
-                </span>
-              ))}
-            </div>
-          )}
         </div>
       )}
     </section>

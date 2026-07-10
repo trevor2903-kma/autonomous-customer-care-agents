@@ -77,13 +77,24 @@ export interface RagInfo {
   sources: string[];
 }
 
+// Agent 1 · Intent Classifier (PRD §7.1) — metadata phân loại SẠCH, KHÔNG retrieval (khớp ClassifyResult).
 export interface IntentClassification {
   intent: string;
   category: string | null;
   entities: Record<string, unknown>;
   confidence: number;
   uncertainty_flags: string[];
-  rag_contexts: { source: string; score: number }[];
+}
+
+// Agent 1 (intent/entities) + Agent 2 · Knowledge Agent (retrieval) — PRD §7.2 (khớp AnalyzeResult backend).
+export interface AnalyzeResult {
+  intent: string; // Agent 1
+  category: string | null; // Agent 1
+  entities: Record<string, unknown>; // Agent 1
+  intent_confidence: number; // Agent 1
+  retrieval_confidence: number; // Agent 2
+  uncertainty_flags: string[]; // gộp cờ Agent 1 + Agent 2
+  rag_contexts: { text?: string; source: string; score: number }[]; // Agent 2
 }
 
 export interface ServiceProbe {
