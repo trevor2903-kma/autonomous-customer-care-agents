@@ -11,7 +11,7 @@ export function Header({ connected }: { connected: boolean }) {
               connected ? "bg-green-500" : "bg-neutral-300"
             }`}
           />
-          {connected ? "connected (echo — scaffold)" : "đang kết nối…"}
+          {connected ? "Đang hoạt động" : "đang kết nối…"}
         </p>
       </div>
       <Link href="/" className="text-xs text-neutral-500 hover:underline">

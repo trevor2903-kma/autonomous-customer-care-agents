@@ -7,11 +7,11 @@ import { MessageInput } from "@/components/chat/MessageInput";
 import { WS_URL } from "@/lib/api";
 
 // Cổng chat khách (PRD §6, §16): Header · ChatWindow · MessageInput nối WebSocket.
-// SCAFFOLD: chỉ echo — CHƯA wiring AI pipeline. Phản hồi tới khách (khi wiring) sẽ CHỈ đến từ
-// Response Generator (PRD §7.4).
+// Mỗi tin khách chạy ĐỦ pipeline ở backend; câu trả lời tới khách CHỈ đến từ Response Generator (PRD §7.4).
 export default function ChatPage() {
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [typing, setTyping] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const idRef = useRef(0);
 
@@ -26,9 +26,16 @@ export default function ChatPage() {
     ws.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data);
-        push({ from: data.type === "system" ? "system" : "echo", text: String(data.message) });
+        if (data.type === "system") {
+          push({ from: "system", text: String(data.message) });
+        } else if (data.type === "typing") {
+          setTyping(true); // hiện "đang trả lời…"
+        } else if (data.type === "reply") {
+          setTyping(false);
+          push({ from: "ai", text: String(data.content) });
+        }
       } catch {
-        push({ from: "echo", text: String(ev.data) });
+        // Bỏ qua frame không phải JSON hợp lệ.
       }
     };
     return () => ws.close();
@@ -42,7 +49,7 @@ export default function ChatPage() {
   return (
     <main className="mx-auto flex h-screen max-w-2xl flex-col border-x border-neutral-200 bg-neutral-50">
       <Header connected={connected} />
-      <ChatWindow messages={messages} />
+      <ChatWindow messages={messages} typing={typing} />
       <MessageInput disabled={!connected} onSend={send} />
     </main>
   );

@@ -1,15 +1,21 @@
 export type ChatMessage = {
   id: number;
-  from: "you" | "system" | "echo";
+  from: "you" | "system" | "ai";
   text: string;
 };
 
-export function ChatWindow({ messages }: { messages: ChatMessage[] }) {
+export function ChatWindow({
+  messages,
+  typing = false,
+}: {
+  messages: ChatMessage[];
+  typing?: boolean;
+}) {
   return (
     <div className="flex-1 space-y-2 overflow-y-auto p-4">
-      {messages.length === 0 && (
+      {messages.length === 0 && !typing && (
         <p className="text-center text-sm text-neutral-400">
-          Gửi một tin nhắn — server sẽ echo lại (scaffold, chưa nối AI).
+          Hỏi shop về sản phẩm, size, đổi trả, vận chuyển…
         </p>
       )}
       {messages.map((m) => (
@@ -32,6 +38,13 @@ export function ChatWindow({ messages }: { messages: ChatMessage[] }) {
           </span>
         </div>
       ))}
+      {typing && (
+        <div className="flex justify-start">
+          <span className="max-w-[75%] rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-400">
+            đang trả lời…
+          </span>
+        </div>
+      )}
     </div>
   );
 }
