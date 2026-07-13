@@ -14,8 +14,8 @@ from app.agents.graph import build_graph, run_pipeline
 
 @pytest.fixture(autouse=True)
 def _offline_agents(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Giữ pipeline test offline: Agent 1 (classify_intent) + Agent 2 (retrieve_knowledge) đều gọi network
-    -> thay bằng stub tất định."""
+    """Giữ pipeline test offline: Agent 1 (classify_intent) + Agent 2 (retrieve_knowledge) + Agent 4
+    (generate_reply) đều gọi network -> thay bằng stub tất định."""
 
     async def fake_classify(text: str) -> dict:
         return {
@@ -33,8 +33,12 @@ def _offline_agents(monkeypatch: pytest.MonkeyPatch) -> None:
             "uncertainty_flags": [],
         }
 
+    async def fake_generate(query, intent, entities, rag_contexts) -> dict:  # type: ignore[no-untyped-def]
+        return {"reply": "[stub] phản hồi grounded", "uncertainty_flags": []}
+
     monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)
     monkeypatch.setattr("app.agents.nodes.knowledge.retrieve_knowledge", fake_retrieve)
+    monkeypatch.setattr("app.agents.nodes.response.generate_reply", fake_generate)
 
 
 def test_graph_compiles() -> None:
