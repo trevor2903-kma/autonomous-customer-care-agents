@@ -22,7 +22,10 @@ export default function ChatPage() {
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
     ws.onopen = () => setConnected(true);
-    ws.onclose = () => setConnected(false);
+    ws.onclose = () => {
+      setConnected(false);
+      setTyping(false); // rớt kết nối giữa typing→reply -> gỡ indicator "đang trả lời…" (không kẹt)
+    };
     ws.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data);

@@ -34,19 +34,23 @@ _ERROR_REPLY = (
 @router.websocket("/ws/chat")
 async def chat_ws(websocket: WebSocket) -> None:
     await websocket.accept()
-    conversation_id = str(uuid4())  # giữ trong scope kết nối (single-turn: chưa dùng cho bộ nhớ đa lượt)
+    conn_id = str(uuid4())  # NHÃN kết nối cho log (KHÔNG dùng làm thread_id — xem dưới).
     await websocket.send_json({"type": "system", "message": "connected"})
-    log.info("WebSocket client connected (conversation_id=%s)", conversation_id)
+    log.info("WebSocket client connected (conn_id=%s)", conn_id)
     try:
         while True:
             msg = await websocket.receive_text()
             await websocket.send_json({"type": "typing"})  # UX: hiện "đang trả lời…"
             try:
-                final = await run_pipeline(input_text=msg, conversation_id=conversation_id)
+                # Single-turn: MỖI tin chạy pipeline ĐỘC LẬP -> thread_id mới (run_pipeline tự sinh uuid).
+                # KHÔNG tái dùng 1 thread_id/kết nối: graph có MemorySaver checkpointer nên reduce-channel
+                # (messages/trace/uncertainty_flags, PRD §5) sẽ TÍCH LUỸ + rò cờ qua các lượt. Bộ nhớ đa
+                # lượt (dùng thread_id ổn định) là ROADMAP 09a.
+                final = await run_pipeline(input_text=msg)
                 reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
             except Exception as exc:  # noqa: BLE001 — lỗi pipeline → xin lỗi, KHÔNG rớt kết nối.
                 log.warning("pipeline failed on WS message -> apology: %s", exc)
                 reply = _ERROR_REPLY
             await websocket.send_json({"type": "reply", "content": reply})
     except WebSocketDisconnect:
-        log.info("WebSocket client disconnected (conversation_id=%s)", conversation_id)
+        log.info("WebSocket client disconnected (conn_id=%s)", conn_id)

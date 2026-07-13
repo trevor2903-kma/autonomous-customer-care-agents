@@ -38,25 +38,44 @@ async def test_generate_reply_grounded_uses_context(monkeypatch: pytest.MonkeyPa
 
 async def test_generate_reply_no_context_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     # rag_contexts rỗng -> KHÔNG gọi LLM (phanh), fallback + hallucination_risk.
+    # Dùng SPY đếm lần gọi: assert calls==0 chạy NGOÀI generate_reply nên không bị `except` nuốt (nếu
+    # phanh bị gỡ, get_openai bị gọi -> calls==1 -> test đỏ; AssertionError bên trong try KHÔNG đủ tin cậy).
     monkeypatch.setattr(resp.settings, "llm_api_key", "sk-test")
+    calls = {"n": 0}
 
-    def _boom() -> object:
+    def _spy() -> object:
+        calls["n"] += 1
         raise AssertionError("KHÔNG được gọi LLM khi rag_contexts rỗng")
 
-    monkeypatch.setattr(resp, "get_openai", _boom)
+    monkeypatch.setattr(resp, "get_openai", _spy)
     r = await resp.generate_reply("thời tiết hôm nay thế nào?", "other", {}, [])
+    assert calls["n"] == 0  # phanh phải chặn TRƯỚC get_openai
     assert r["reply"] == resp.FALLBACK_REPLY
     assert "hallucination_risk" in r["uncertainty_flags"]
 
 
 async def test_generate_reply_no_key_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Thiếu key -> KHÔNG gọi LLM, fallback + hallucination_risk (dù có rag_contexts).
+    # Thiếu key -> KHÔNG gọi LLM, fallback + hallucination_risk (dù có rag_contexts). Spy đếm như trên.
     monkeypatch.setattr(resp.settings, "llm_api_key", "")
+    calls = {"n": 0}
 
-    def _boom() -> object:
+    def _spy() -> object:
+        calls["n"] += 1
         raise AssertionError("KHÔNG được gọi LLM khi thiếu key")
 
-    monkeypatch.setattr(resp, "get_openai", _boom)
+    monkeypatch.setattr(resp, "get_openai", _spy)
+    r = await resp.generate_reply(
+        "đổi trả bao lâu?", "refund", {}, [{"text": "7 ngày", "source": "kb.pdf", "score": 0.8}]
+    )
+    assert calls["n"] == 0  # phanh phải chặn TRƯỚC get_openai
+    assert r["reply"] == resp.FALLBACK_REPLY
+    assert "hallucination_risk" in r["uncertainty_flags"]
+
+
+async def test_generate_reply_empty_llm_output_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    # LLM trả rỗng/toàn khoảng trắng -> fallback + hallucination_risk (nhánh `if not reply`).
+    monkeypatch.setattr(resp.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(resp, "get_openai", lambda: _FakeClient("   "))  # strip() -> "" -> phanh
     r = await resp.generate_reply(
         "đổi trả bao lâu?", "refund", {}, [{"text": "7 ngày", "source": "kb.pdf", "score": 0.8}]
     )
