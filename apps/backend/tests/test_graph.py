@@ -73,8 +73,9 @@ async def test_human_handoff_branch() -> None:
     assert [t["node"] for t in final["trace"]] == ["intent", "knowledge", "decision", "human_handoff"]
 
 
-async def test_flags_accumulate_without_duplication(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Reducer `add` + decision chỉ emit cờ MỚI → cờ của Agent 1 KHÔNG bị decision nhân đôi."""
+async def test_pass_through_ignores_real_flags_accumulate_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Phase 1 pass-through (TẠM bỏ Agent 3): cờ THẬT của Agent 1/2 KHÔNG còn ép handoff — traffic thật
+    (không tiêm) → auto_reply. Cờ vẫn tích luỹ đúng 1 lần (reducer `add`, không nhân đôi)."""
 
     async def fake_classify(text: str) -> dict:
         return {
@@ -88,6 +89,9 @@ async def test_flags_accumulate_without_duplication(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)
     final = await run_pipeline(input_text="demo", force_handoff=False)
 
-    # multi_intent (Agent 1) là cờ bất định -> handoff; phải xuất hiện ĐÚNG 1 lần (không bị decision nhân đôi).
+    # Pass-through: cờ thật multi_intent KHÔNG còn ép handoff (Agent 3 tạm bỏ) -> đi nhánh response.
+    assert final["require_human_handoff"] is False
+    assert final["action"] == "auto_reply"
+    assert final["result"]["branch"] == "response"
+    # Reducer `add`: multi_intent tích luỹ đúng 1 lần (decision không trả lại cờ đã tích luỹ).
     assert final["uncertainty_flags"].count("multi_intent") == 1
-    assert final["require_human_handoff"] is True
