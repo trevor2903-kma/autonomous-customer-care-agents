@@ -1,44 +1,52 @@
-"""WebSocket chat — lát cắt RAG-intent: trả KẾT QUẢ PHÂN LOẠI (dev/verify signal).
+"""WebSocket chat — cổng chat khách chạy ĐỦ pipeline (PRD §6, §8, §16).
 
-QUAN TRỌNG (PRD §7.4 + CLAUDE.md): message `type=classification` là TÍN HIỆU DEV/VERIFY, KHÔNG phải câu
-trả lời cuối cho khách. Response Generator vẫn là điểm phát ngôn DUY NHẤT — wiring câu trả lời thật (chạy
-đủ pipeline + phát qua Response Generator) là việc SAU lát cắt này.
+Mỗi tin nhắn khách → gửi `{"type":"typing"}` (UX) → chạy `run_pipeline` (intent → knowledge →
+decision(pass-through) → response) → gửi `{"type":"reply", content}` (câu trả lời do RESPONSE GENERATOR sinh —
+điểm phát ngôn DUY NHẤT, PRD §7.4). Lỗi pipeline → câu xin lỗi, KHÔNG rớt kết nối.
 
-TODO (PRD §7.4, §8, §10):
-  - Tin nhắn khách -> tạo Message -> chạy ĐỦ pipeline (BackgroundTasks) -> phát realtime qua Response Generator.
-  - Phát tin tới client/Admin qua **Redis pub/sub** (FR-ASYNC-7), KHÔNG polling.
-  - Khi hội thoại ở IN_HUMAN_QUEUE/HUMAN_HANDLING: định tuyến tin tới Admin, KHÔNG tới AI (FR-ASYNC-3).
+Phạm vi slice happy-case (xem plan): 1 khách/1 kết nối → gửi thẳng qua WS. **KHÔNG** Redis pub/sub (dành cho
+multi-client/Admin ở HITL phase sau, FR-ASYNC-7). Single-turn: mỗi tin chạy pipeline độc lập (bộ nhớ đa lượt —
+ROADMAP 09a). Persist hội thoại/message = TUỲ CHỌN (Phase 4).
+
+TODO (PRD §7.4, §10): persist Message + audit; khi hội thoại ở IN_HUMAN_QUEUE/HUMAN_HANDLING → định tuyến tin
+tới Admin, KHÔNG tới AI (FR-ASYNC-3); phát realtime qua Redis pub/sub.
 """
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from ...agents.nodes.intent import classify_intent
+from ...agents.graph import run_pipeline
 from ...core.logging import get_logger
 
 router = APIRouter()
 log = get_logger("ws.chat")
 
+# Câu xin lỗi khi pipeline lỗi bất ngờ — KHÔNG rớt WS (phanh cuối, đừng để khách thấy stacktrace).
+_ERROR_REPLY = (
+    "Dạ hệ thống đang gặp trục trặc tạm thời, em xin phép chuyển yêu cầu tới nhân viên hỗ trợ ạ. "
+    "Mong anh/chị thông cảm."
+)
+
 
 @router.websocket("/ws/chat")
 async def chat_ws(websocket: WebSocket) -> None:
     await websocket.accept()
-    await websocket.send_json({"type": "system", "message": "connected (classification mode — RAG intent slice)"})
-    log.info("WebSocket client connected (classification mode)")
+    conversation_id = str(uuid4())  # giữ trong scope kết nối (single-turn: chưa dùng cho bộ nhớ đa lượt)
+    await websocket.send_json({"type": "system", "message": "connected"})
+    log.info("WebSocket client connected (conversation_id=%s)", conversation_id)
     try:
         while True:
-            data = await websocket.receive_text()
-            # Lát cắt: chỉ phân loại intent (metadata), CHƯA sinh câu trả lời khách (Response Generator lo sau).
-            result = await classify_intent(data)
-            await websocket.send_json(
-                {
-                    "type": "classification",
-                    "intent": result["intent"],
-                    "category": result["category"],
-                    "confidence": result["confidence"],
-                    "entities": result["entities"],
-                }
-            )
+            msg = await websocket.receive_text()
+            await websocket.send_json({"type": "typing"})  # UX: hiện "đang trả lời…"
+            try:
+                final = await run_pipeline(input_text=msg, conversation_id=conversation_id)
+                reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
+            except Exception as exc:  # noqa: BLE001 — lỗi pipeline → xin lỗi, KHÔNG rớt kết nối.
+                log.warning("pipeline failed on WS message -> apology: %s", exc)
+                reply = _ERROR_REPLY
+            await websocket.send_json({"type": "reply", "content": reply})
     except WebSocketDisconnect:
-        log.info("WebSocket client disconnected")
+        log.info("WebSocket client disconnected (conversation_id=%s)", conversation_id)
