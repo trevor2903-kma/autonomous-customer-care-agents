@@ -14,12 +14,13 @@ from langgraph.graph import END, START, StateGraph
 
 from ..models.enums import ConversationStatus
 from .nodes.decision import decision_node
-from .nodes.human_handoff import human_handoff_node
 from .nodes.intent import intent_node
 from .nodes.knowledge import knowledge_node
 from .nodes.response import response_node
-from .policy import should_handoff
 from .state import ConversationState
+
+# Node `human_handoff` (EscalationCard + admin queue + suspend/resume) và `policy.should_handoff` = slice 08b —
+# GIỮ file, CHƯA cắm vào graph. Slice này SOLE-EGRESS: Response Generator phát cả câu trả lời lẫn thông báo handoff.
 
 
 def build_graph():
@@ -30,19 +31,15 @@ def build_graph():
     g.add_node("knowledge", knowledge_node)
     g.add_node("decision", decision_node)
     g.add_node("response", response_node)
-    g.add_node("human_handoff", human_handoff_node)
 
     g.add_edge(START, "intent_classifier")
     g.add_edge("intent_classifier", "knowledge")
     g.add_edge("knowledge", "decision")
-    # Conditional sau Decision Engine: nhánh tự động (response) vs chuyển người (human_handoff).
-    g.add_conditional_edges(
-        "decision",
-        should_handoff,
-        {"response": "response", "human_handoff": "human_handoff"},
-    )
+    # SOLE-EGRESS: Response Generator (điểm phát ngôn DUY NHẤT) branch theo state["action"] — phát câu trả lời
+    # grounded (auto_reply) HOẶC thông báo chuyển người (human_handoff). Node human_handoff (side-effect:
+    # EscalationCard + admin queue) = slice 08b: khi đó thêm conditional should_handoff -> human_handoff.
+    g.add_edge("decision", "response")
     g.add_edge("response", END)
-    g.add_edge("human_handoff", END)
 
     # Checkpointer in-memory (scaffold).
     # TODO (PRD §10 FR-ASYNC-3/§10 FR-ASYNC-6): checkpointer Redis/Postgres + interrupt cho suspend/resume

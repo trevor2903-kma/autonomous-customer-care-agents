@@ -121,5 +121,19 @@ async def test_response_node_is_single_speaker(monkeypatch: pytest.MonkeyPatch) 
     assert out["status"] == "REPLIED"
     assert out["messages"] == [{"sender": "ai", "content": "Dạ shop cho đổi trả trong 7 ngày ạ."}]
     assert out["draft_reply"] == "Dạ shop cho đổi trả trong 7 ngày ạ."
-    assert out["result"] == {"branch": "response", "action": "auto_reply", "reply": "Dạ shop cho đổi trả trong 7 ngày ạ."}
+    assert out["result"]["branch"] == "response"
+    assert out["result"]["action"] == "auto_reply"
+    assert out["result"]["reply"] == "Dạ shop cho đổi trả trong 7 ngày ạ."
+    assert out["uncertainty_flags"] == []
+
+
+async def test_response_node_handoff_emits_notice() -> None:
+    # SOLE-EGRESS: action=human_handoff -> Response Generator phát HANDOFF_NOTICE, IN_HUMAN_QUEUE, KHÔNG gọi LLM.
+    out = await resp.response_node(
+        {"action": "human_handoff", "escalation_reason": "blocking_flags=['no_relevant_knowledge']"}
+    )
+    assert out["status"] == "IN_HUMAN_QUEUE"
+    assert out["result"]["branch"] == "human_handoff"
+    assert out["result"]["reply"] == resp.HANDOFF_NOTICE
+    assert out["messages"] == [{"sender": "ai", "content": resp.HANDOFF_NOTICE}]
     assert out["uncertainty_flags"] == []

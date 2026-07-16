@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from app.agents.graph import build_graph, run_pipeline
+from app.agents.nodes.response import HANDOFF_NOTICE
 
 
 @pytest.fixture(autouse=True)
@@ -68,9 +69,10 @@ async def test_human_handoff_branch() -> None:
     assert final["require_human_handoff"] is True
     assert final["status"] == "IN_HUMAN_QUEUE"
     assert final["escalation_reason"]  # có lý do chuyển tiếp
-    assert "escalation_card" in final["result"]
-    # Pipeline cố định: intent -> knowledge -> decision -> human_handoff
-    assert [t["node"] for t in final["trace"]] == ["intent", "knowledge", "decision", "human_handoff"]
+    # SOLE-EGRESS: Response Generator phát thông báo handoff (KHÔNG qua human_handoff node — để dành 08b).
+    assert final["result"]["reply"] == HANDOFF_NOTICE
+    assert [t["node"] for t in final["trace"]] == ["intent", "knowledge", "decision", "response"]
+    assert any(m["sender"] == "ai" for m in final["messages"])
 
 
 async def test_blocking_flag_forces_handoff_once(monkeypatch: pytest.MonkeyPatch) -> None:

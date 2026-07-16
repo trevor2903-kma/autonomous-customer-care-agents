@@ -16,7 +16,7 @@ from typing import Any
 from ...core.config import settings
 from ...core.embeddings import get_openai
 from ...core.logging import get_logger
-from ...models.enums import ConversationStatus
+from ...models.enums import AgentAction, ConversationStatus
 from ..state import ConversationState
 
 log = get_logger("agent.response")
@@ -26,6 +26,10 @@ FALLBACK_REPLY = (
     "Dạ câu hỏi này em xin phép chuyển tới nhân viên hỗ trợ để được giải đáp chính xác hơn ạ. "
     "Mong anh/chị thông cảm và chờ trong giây lát ạ."
 )
+
+# Thông báo khi Agent 3 quyết human_handoff — Response Generator phát (KHÔNG gọi LLM). Node human_handoff
+# đầy đủ (EscalationCard + admin queue) = slice 08b.
+HANDOFF_NOTICE = "Yêu cầu của bạn đã được chuyển tới nhân viên hỗ trợ."
 
 
 def _system_prompt() -> str:
@@ -87,30 +91,48 @@ async def generate_reply(
 
 
 async def response_node(state: ConversationState) -> dict[str, Any]:
-    """Node 4 — sinh phản hồi grounded rồi ghi state + trace. NODE DUY NHẤT ghi tin nhắn AI (PRD §7.4)."""
-    result = await generate_reply(
-        query=state.get("input", ""),
-        intent=state.get("intent"),
-        entities=state.get("entities") or {},
-        rag_contexts=state.get("rag_contexts") or [],
-    )
-    reply = result["reply"]
+    """Node 4 — SOLE-EGRESS: branch theo `state["action"]` (Agent 3). NODE DUY NHẤT ghi tin AI (PRD §7.4).
+
+    - `human_handoff` → phát `HANDOFF_NOTICE` (KHÔNG gọi LLM) → status IN_HUMAN_QUEUE.
+    - `auto_reply` → `generate_reply` grounded → status REPLIED.
+    Cả hai đều set `result.reply` → WS/khách nhận qua CÙNG một đường (không phải sửa WS).
+    """
+    action = state.get("action")
+    if action == AgentAction.HUMAN_HANDOFF:
+        reply = HANDOFF_NOTICE
+        status = ConversationStatus.IN_HUMAN_QUEUE
+        branch = "human_handoff"
+        flags: list[str] = []
+    else:
+        result = await generate_reply(
+            query=state.get("input", ""),
+            intent=state.get("intent"),
+            entities=state.get("entities") or {},
+            rag_contexts=state.get("rag_contexts") or [],
+        )
+        reply = result["reply"]
+        status = ConversationStatus.REPLIED
+        branch = "response"
+        flags = result["uncertainty_flags"]
+
     return {
-        "status": ConversationStatus.REPLIED,
+        "status": status,
         "draft_reply": reply,
         "messages": [{"sender": "ai", "content": reply}],
-        "result": {"branch": "response", "action": state.get("action"), "reply": reply},
-        # Reducer `add`: CHỈ cờ MỚI của node này (hallucination_risk khi phải fallback).
-        "uncertainty_flags": result["uncertainty_flags"],
+        "result": {
+            "branch": branch,
+            "action": str(action) if action else None,
+            "reply": reply,
+            "escalation_reason": state.get("escalation_reason"),
+        },
+        # Reducer `add`: CHỈ cờ MỚI của node này (hallucination_risk khi auto_reply phải fallback).
+        "uncertainty_flags": flags,
         "trace": [
             {
                 "node": "response",
                 "confidence": state.get("confidence"),
-                "branch": "response",
-                "detail": {
-                    "flags": result["uncertainty_flags"],
-                    "grounded": not result["uncertainty_flags"],
-                },
+                "branch": branch,
+                "detail": {"action": str(action) if action else None, "flags": flags},
             }
         ],
     }
