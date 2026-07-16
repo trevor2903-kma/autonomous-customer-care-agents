@@ -78,10 +78,10 @@ async def _classify_llm(text: str, rule: dict[str, str]) -> dict[str, Any]:
 
     flags: list[str] = []
     raw_intent = str(data.get("intent", "")).strip()
-    if raw_intent in _VALID_INTENTS:
-        intent = raw_intent
-    else:
-        intent = "other"
+    intent = raw_intent if raw_intent in _VALID_INTENTS else "other"
+    # intent="other" = NGOÀI taxonomy CSKH (chào hỏi/spam/lạc đề — hoặc nhãn LLM trôi) → out_of_domain.
+    # Agent 3 dùng out_of_domain làm cờ chặn: câu ngoài phạm vi shop → human_handoff (không auto trả).
+    if intent == "other":
         flags.append("out_of_domain")
 
     for flag in data.get("flags") or []:  # chỉ nhận cờ hợp lệ của Agent 1

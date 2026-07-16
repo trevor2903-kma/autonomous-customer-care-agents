@@ -58,8 +58,8 @@ def _initial_state(
         "conversation_id": conversation_id,
         "input": input_text,
         "history": history or [],  # đầu vào chỉ-đọc (lịch sử đa lượt từ DB)
-        # Scaffold demo: tiêm cờ bất định để ép nhánh human_handoff (Decision đọc scratchpad).
-        "scratchpad": {"injected_flags": ["ambiguous_intent"]} if force_handoff else {},
+        # Demo: tiêm cờ CHẶN (∈ BLOCKING_FLAGS) để ép nhánh human_handoff (Decision đọc scratchpad).
+        "scratchpad": {"injected_flags": ["out_of_domain"]} if force_handoff else {},
         "messages": [],
         "trace": [],
         "status": ConversationStatus.NEW,

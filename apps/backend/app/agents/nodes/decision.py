@@ -14,11 +14,15 @@ from typing import Any
 from ...models.enums import AgentAction, ConversationStatus, Priority, Severity
 from ..state import ConversationState
 
-# Tập ĐÓNG cờ bất định có mặt TẠI decision (Agent 1 + Agent 2). Bất kỳ cờ nào xuất hiện → human_handoff.
-# KHÔNG gồm `hallucination_risk`: Agent 4 phát cờ đó SAU decision (phanh dự phòng cuối, KHÔNG định tuyến ở đây).
+# Tập ĐÓNG cờ CHẶN (→ human_handoff). Nguyên tắc: escalate khi KHÔNG trả lời được, KHÔNG phải khi nhãn mờ.
+#   - Cờ grounding (no_relevant_knowledge / low_retrieval_score) là gate "trả lời-được-hay-không" thật sự.
+#   - `ambiguous_intent` KHÔNG chặn: nhãn mờ NHƯNG grounding mạnh (vd "đổi trả", cosine cao) vẫn trả lời được;
+#     nếu grounding yếu thì chính cờ grounding đã chặn. Giữ ambiguous_intent như cờ THÔNG TIN (priority/audit).
+#   - `multi_intent` VẪN chặn: khách hỏi HAI việc khác nhau → trả một cái là thiếu (xử lý multi-intent = sau).
+#   - `out_of_domain`: câu ngoài phạm vi CSKH (intent=other) → handoff.
+#   - `hallucination_risk` KHÔNG thuộc: Agent 4 phát SAU decision (phanh dự phòng cuối, không định tuyến ở đây).
 BLOCKING_FLAGS: frozenset[str] = frozenset(
     {
-        "ambiguous_intent",
         "multi_intent",
         "out_of_domain",
         "no_relevant_knowledge",

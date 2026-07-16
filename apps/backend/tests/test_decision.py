@@ -50,9 +50,9 @@ def test_no_blend_confidence_low_intent_conf_still_auto_reply() -> None:
 
 
 def test_injected_flag_forces_handoff_and_emits_new_flag() -> None:
-    out = _decide(intent="other", uncertainty_flags=[], scratchpad={"injected_flags": ["ambiguous_intent"]})
+    out = _decide(intent="other", uncertainty_flags=[], scratchpad={"injected_flags": ["out_of_domain"]})
     assert out["action"] == "human_handoff"
-    assert out["uncertainty_flags"] == ["ambiguous_intent"]  # emit CỜ MỚI (demo), không trả lại cờ tích luỹ
+    assert out["uncertainty_flags"] == ["out_of_domain"]  # emit CỜ MỚI (demo), không trả lại cờ tích luỹ
 
 
 def test_hallucination_risk_not_blocking() -> None:
@@ -60,6 +60,26 @@ def test_hallucination_risk_not_blocking() -> None:
     assert "hallucination_risk" not in BLOCKING_FLAGS
     out = _decide(intent="shipping", uncertainty_flags=["hallucination_risk"])
     assert out["action"] == "auto_reply"
+
+
+def test_ambiguous_intent_alone_not_blocking() -> None:
+    # ambiguous_intent (nhãn mờ) NHƯNG grounding mạnh (không có cờ grounding) → auto_reply (vd "đổi trả").
+    assert "ambiguous_intent" not in BLOCKING_FLAGS
+    out = _decide(intent="refund", uncertainty_flags=["ambiguous_intent"], retrieval_confidence=0.65)
+    assert out["action"] == "auto_reply"
+
+
+def test_ambiguous_intent_with_grounding_gap_handoff() -> None:
+    # ambiguous_intent + grounding YẾU (no_relevant_knowledge) → handoff (do CỜ GROUNDING chặn, không do ambiguity).
+    out = _decide(intent="refund", uncertainty_flags=["ambiguous_intent", "no_relevant_knowledge"])
+    assert out["action"] == "human_handoff"
+    assert "no_relevant_knowledge" in out["escalation_reason"]
+
+
+def test_out_of_domain_forces_handoff() -> None:
+    # intent=other -> Agent 1 phát out_of_domain (∈ BLOCKING) → handoff (câu ngoài phạm vi CSKH).
+    out = _decide(intent="other", uncertainty_flags=["out_of_domain"])
+    assert out["action"] == "human_handoff"
 
 
 def test_unknown_intent_defaults_low_low() -> None:
