@@ -1,7 +1,7 @@
-"""Service hội thoại — CRUD tối thiểu (scaffold).
+"""Service hội thoại — CRUD conversation + message (persistence, PRD §12).
 
-KHÔNG chạy pipeline ở đây (Phase 4/5 + PRD §8). Lưu ý CLAUDE.md: phản hồi tới khách CHỈ phát từ
-Response Generator — service này KHÔNG tự sinh tin nhắn AI.
+KHÔNG chạy pipeline ở đây (PRD §8 — pipeline là việc của graph). Lưu ý CLAUDE.md: phản hồi tới khách CHỈ phát
+từ Response Generator — service này KHÔNG tự sinh tin nhắn AI.
 """
 
 from __future__ import annotations

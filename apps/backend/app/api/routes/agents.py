@@ -1,6 +1,10 @@
-"""Routes agent — run-demo chạy pipeline LangGraph và trả trace (scaffold).
+"""Routes agent — công cụ DEV/INSPECTOR chạy pipeline single-shot (KHÔNG persist):
 
-KHÔNG wiring vào hội thoại/WebSocket thật ở scaffold — chỉ minh hoạ pipeline cố định + 2 nhánh.
+- /classify: RIÊNG Agent 1 (intent/entities).   - /pipeline: ĐỦ 4 agent cho FE inspector (/rag).
+- /analyze : Agent 1 + Agent 2 (tách vai RAG).  - /run-demo: minh hoạ pipeline cố định + 2 nhánh.
+
+Cổng chat khách THẬT (persist + bộ nhớ đa lượt) = WebSocket /ws/chat. Response Generator vẫn là điểm phát ngôn
+DUY NHẤT tới khách (PRD §7.4) — các route này chỉ trả METADATA / 1 câu test.
 """
 
 from __future__ import annotations

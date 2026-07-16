@@ -29,45 +29,64 @@
   `{type:"reply"}` (+ `typing`). *Single-turn: a fresh `thread_id` per message — no cross-turn memory yet; no
   Redis pub/sub yet (single client is fine).*
 - **07c — Customer chat UI** (§16). `/chat` renders AI replies + typing indicator over WebSocket.
+- **05 — Agent 3 · Decision Engine** (§7.3). **Deterministic** policy: routes on FLAGS (`BLOCKING_FLAGS`), **NOT**
+  confidence-blending; `RETRIEVAL_THRESHOLD` split from `confidence_threshold`; priority/severity by intent;
+  sole-egress (Response Generator emits reply + `HANDOFF_NOTICE`); pass-through removed. **Calibration** (learned
+  live): `ambiguous_intent` is informational (grounding-gated, not a blocker), `out_of_domain` fires for
+  `intent=other`. FR unit tests + live e2e (KB → auto_reply; out-of-domain/nonsense → handoff; complaint → high).
+- **09a (core) — Conversation persistence + multi-turn memory** (§12). Guest conversation + messages → Postgres
+  (short sessions); `history_window` recent turns from DB fed into Agent 1 + Agent 4 prompts (reply still grounded
+  in `rag_contexts`, **not** history). **`thread_id` stays per-message ON PURPOSE** — memory comes from the **DB**,
+  not the checkpointer (stable per-conversation `thread_id` + durable checkpointer = 09b).
+- **FE Pipeline Inspector** (§17). `/rag` panel calls `/api/agents/pipeline` (single-shot, no persist) → observe
+  ALL 4 agents for a test query, incl. Agent 3 `action/priority/severity/escalation_reason`.
 
-> **Baseline reached:** the **happy path is live and demoable** — a customer chats at `/chat`, and the agent
-> auto-answers grounded in the uploaded knowledge base (or politely defers when it lacks knowledge). Concurrency
-> already works (async + per-`thread_id` isolation), on **1 uvicorn worker** (deliberate — see notes).
+> **Autonomous core reached:** the pipeline now **decides + escalates on real traffic** (not just the happy path):
+> KB-answerable → grounded auto-reply; out-of-domain / no-grounding → `human_handoff` + IN_HUMAN_QUEUE. Conversations
+> persist and the agent understands multi-turn context. Concurrency works (async + per-`thread_id`) on **1 uvicorn
+> worker** (deliberate — see notes). Remaining for full HITL: the human SIDE of handoff (08b/08c) + gates (08a).
 
 ---
 
 ## ⚠️ CURRENT DEBT (known-temporary — pay before the thesis is "complete")
 
-- **05 — Agent 3 · Decision Engine is a PASS-THROUGH.** Real traffic always → `auto_reply`; it does **not** yet
-  assess priority/severity or decide `auto_reply` vs `human_handoff` on confidence/flags/grounding. The
-  **human_handoff / escalation path only fires on demo-injected flags**, not real traffic. → The thesis's core
-  claim (**autonomous decisions + human-in-the-loop safety**, PRD §5 pillars 1 & 3) is **not demonstrated on
-  real traffic yet** — only the happy path is. Agent 4's grounding brake gives *basic* safety, but it is not a
-  substitute for Agent 3. **This is the single most important gap.**
-- **Conversation memory not done** (single-turn). Multi-turn context = slice 09a.
+- ~~**05 — Agent 3 pass-through**~~ → **PAID.** Agent 3 is now deterministic and escalates on real traffic
+  (autonomous decisions + safety, PRD §5 pillars 1 & 3, are demonstrated — not just the happy path).
+- ~~**Conversation memory (single-turn)**~~ → **PAID.** Multi-turn memory from DB (09a-core above).
+- **Handoff has no human SIDE yet.** Agent 3 routes to `human_handoff` and Response Generator sends the notice,
+  but there is **no EscalationCard, no admin queue, no admin takeover** (08b/08c) and **no gate / PENDING_APPROVAL**
+  (08a). A customer is *told* "chuyển nhân viên" but no admin actually receives/handles the case yet. → next gap.
+- **Agent 2 retrieval not contextualized for follow-ups.** History feeds Agent 1 + Agent 4, but Agent 2 retrieves
+  on the RAW follow-up query → a very vague follow-up ("thế đi tỉnh thì sao?") retrieves weakly → handoff (fails
+  **safe**). Query-contextualization for Agent 2 = future enhancement.
+- **`MemorySaver` in-memory + `thread_id`-per-message** (correct for memory-from-DB). Durable checkpointer + stable
+  per-conversation `thread_id` = 09b (needed for suspend/resume + running >1 worker).
 
 ---
 
-## 🟡 PHASE 1 — Autonomous pipeline + live chat — **almost done; 05 remains**
+## ✅ PHASE 1 — Autonomous pipeline + live chat — **DONE (incl. 05)**
 
-> Only piece left: make the **decision** real so the pipeline actually routes (auto-reply vs escalate).
+> The decision is real: the pipeline routes auto-reply vs escalate on real traffic. Milestone reached — the
+> autonomous core *decides + escalates*, not just the happy path.
 
-- **05 — Agent 3 · Decision Engine ← THE NEXT THING (per PRD + roadmap).** Aggregate confidence (careful:
-  `intent_confidence` is LLM-reported, `retrieval_confidence` is cosine — different scales; consider a separate
-  `retrieval_threshold`); compute priority/severity; decide `auto_reply` vs `human_handoff` + `escalation_reason`.
-  **Safety invariant**: any uncertainty flag / low grounding / `no_relevant_knowledge` → `human_handoff`
-  (pillar 3). Replace the pass-through; keep Agent 4 as pure response. Backend + test both branches on real messages.
-  → **Milestone:** the autonomous core is *real* (decides + escalates), not just the happy path.
+- **05 — Agent 3 · Decision Engine — DONE.** Deterministic, flag-based (NOT confidence-blend): any flag in
+  `BLOCKING_FLAGS` (incl. `no_relevant_knowledge` / `low_retrieval_score` / `out_of_domain`) → `human_handoff` +
+  `escalation_reason` (pillar 3); priority/severity by intent; separate `RETRIEVAL_THRESHOLD`. Agent 4 stays pure
+  response. Insight applied: `intent_confidence` (LLM) vs `retrieval_confidence` (cosine) are different scales →
+  do NOT `min()` them; route on flags. Both branches tested on real messages.
 
 ---
 
-## 🔵 PHASE 2 — Human-in-the-loop (gates + escalation + admin handling)
+## 🟡 PHASE 2 — Human-in-the-loop (gates + escalation + admin handling) — **← NEXT**
 
-> Now escalation matters (05 produces real `human_handoff`). HITL is the safety story.
+> Escalation is now real (05 produces real `human_handoff` + conversations persist), but nobody on the human side
+> receives it yet. HITL is the safety story — this is the next gap to close.
 
+- **08b — human_handoff + EscalationCard + admin queue** (§11) **← NEXT.** Escalation case + card (summary + intent
+  + context + reason + suggested draft); admin queue UI + badge/push. *(Unblocked: Agent 3 emits real handoffs and
+  conversations are persisted to attach the card to.)*
 - **08a — Gates** (§9). auto-reply gate (system-wide + per category); three-way delivery: direct /
   PENDING_APPROVAL / IN_HUMAN_QUEUE. Invariant FR-GATE-2. `GateConfig` + admin toggle.
-- **08b — human_handoff + EscalationCard + admin queue** (§11). Escalation case + card; admin queue UI + badge/push.
 - **08c — Admin chat / takeover + draft approval** (§11). Admin takes a conversation (AI pauses), admin ↔ customer
   live; PENDING_APPROVAL (approve / edit & send); audit admin actions.
   → **Milestone:** full HITL — escalate → admin handles → customer served.
@@ -161,10 +180,10 @@ multi-customer demo. Decision, filtered through the PRD:
 ## Quick status (update per slice)
 
 - [x] Scaffold · PWA · 01 Agent 1 · 02 RAG + UI · 03 Agent 2 + role split · 04 role-split UI
-- [x] 06 Agent 4 (grounded + brake) · 07a integration · 07b realtime chat (minimal, single-turn) · 07c chat UI
-- [ ] **05 Agent 3 · Decision Engine ← NEXT (core; currently a temporary pass-through)**
-- [ ] 08a gates · 08b human_handoff + EscalationCard + queue · 08c admin chat + draft approval
-- [ ] 09a conversation memory (multi-turn) · 09b suspend/resume + durable checkpointer · 09c auto-resolve + offline
+- [x] 06 Agent 4 (grounded + brake) · 07a integration · 07b realtime chat · 07c chat UI
+- [x] **05 Agent 3 · Decision Engine (deterministic, flag-based)** · **09a-core memory (multi-turn from DB)** · FE pipeline inspector
+- [ ] **08b human_handoff + EscalationCard + admin queue ← NEXT** · 08a gates · 08c admin chat + draft approval
+- [ ] 09b suspend/resume + durable checkpointer · 09c auto-resolve + offline
 - [ ] 10a conversation list · 10b system/agent monitoring · 10c analytics + audit log
 - [ ] 11 auth (admin RBAC; optional customer login) · 12 observability · 13 anti-injection · UI redesign · 14 deploy
 - [ ] 15 learning loop · 16 order-system integration (mock orders + scoped tool) · 17 others

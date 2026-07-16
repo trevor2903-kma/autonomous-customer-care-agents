@@ -35,7 +35,10 @@ Ba kết cục giao phản hồi: **gửi thẳng** / **duyệt nháp** (`PENDIN
 Kiến trúc đã chốt: **pipeline cố định, KHÔNG Supervisor** — có chủ đích, ưu tiên dự đoán được + kiểm toán +
 an toàn nội dung (không trả lời sai chính sách) (PRD §5, 4 trụ cột).
 
-Giai đoạn hiện tại (nếu đang theo plan.md): **chỉ scaffold** — node stub, UI placeholder, KHÔNG logic thật.
+Giai đoạn hiện tại: **pipeline THẬT, happy-path + lõi tự trị đã chạy live.** Agent 1 (intent), Agent 2 (RAG),
+Agent 3 (Decision Engine tất định), Agent 4 (Response grounded) đều thật; lưu hội thoại + bộ nhớ đa lượt
+(Postgres); cổng chat khách `/chat` + FE pipeline inspector `/rag` chạy live. Việc còn lại (HITL đầy đủ, gate,
+suspend/resume, auth, deploy…) và slice tiếp theo (**08b**) → xem **`ROADMAP.md`**.
 
 ---
 
@@ -46,10 +49,12 @@ Giai đoạn hiện tại (nếu đang theo plan.md): **chỉ scaffold** — nod
 - **Hạ tầng (managed-first):** Neon (Postgres) · Upstash Redis · Qdrant Cloud. Dự phòng: `docker-compose.local.yml`.
 - **Async:** FastAPI BackgroundTasks (KHÔNG worker polling — phá free tier Upstash). human_handoff/clarification
   dùng suspend/resume (LangGraph interrupt + checkpointer — phase sau).
-- **Frontend:** Next.js 14 · Tailwind · shadcn/ui · TanStack Query.
+- **Frontend:** Next.js 14 · **Tailwind thuần (KHÔNG shadcn/thư viện UI)** · TanStack Query. Theo pattern
+  component sẵn có (`ServiceStatus`, `AnalyzePanel`…), tái dùng `Badge`.
 - **Điện thoại (PWA):** chính web dashboard cài được lên màn hình chính cho Admin (Add to Home Screen) — một
   codebase web duy nhất, responsive; KHÔNG codebase mobile riêng.
-- **AI:** LLM provider cấu hình được (OpenAI/Claude/Gemini); embeddings `text-embedding-3-small`. **Chưa bật ở scaffold.**
+- **AI:** LLM provider cấu hình được (OpenAI/Claude/Gemini); embeddings `text-embedding-3-small`. **Đã bật**
+  (`ENABLE_LLM=true`): LLM chạy ở Agent 1 (intent) + Agent 4 (response); embeddings cho RAG (Agent 2).
 - **Monorepo:** pnpm workspaces; dùng chung ở `packages/shared-types`.
 
 ---
@@ -60,7 +65,8 @@ Giai đoạn hiện tại (nếu đang theo plan.md): **chỉ scaffold** — nod
 - **Cấu hình đọc từ env** qua pydantic-settings. KHÔNG hardcode secret/URL/ngưỡng.
 - **Type đầy đủ:** type hints (Python), không `any` tùy tiện (TS).
 - **Secret chỉ trong `.env`** (gitignore). Chỉ commit `.env.example`.
-- **Commit mỗi đơn vị công việc:** message rõ ràng (scaffold: `feat(scaffold): phase N - ...`).
+- **Commit mỗi đơn vị công việc:** message rõ ràng, prefix theo slice (`feat(agent3)/feat(memory)/feat(ui)/
+  test(pipeline): ...`).
 - **Neon cần SSL:** `connect_args={"ssl": True}` trong `create_async_engine`. KHÔNG `?sslmode=` (asyncpg không hiểu).
 - **Response Generator là điểm phát ngôn DUY NHẤT** tới khách hàng — đừng gửi tin nhắn cho khách rải rác ở
   node khác.
@@ -84,7 +90,8 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
 
 - Không tính năng ngoài yêu cầu. Không trừu tượng cho code dùng một lần. Không "linh hoạt" không ai yêu cầu.
 - 200 dòng mà 50 là đủ → viết lại. "Kỹ sư senior có nói cái này phức tạp quá mức không?"
-- Scaffold: node là stub log + pass-through. ĐỪNG tự thêm logic agent "cho xịn" — đó là phase sau (theo PRD).
+- ĐỪNG thêm agent/tính năng ngoài slice hiện tại "cho xịn" — lọc mọi ý tưởng qua PRD + ROADMAP trước (vd phần
+  an toàn của Agent 3 dùng LUẬT tất định, KHÔNG LLM/reasoning).
 
 ### 3. Sửa có phẫu thuật — chỉ động vào cái buộc phải động
 
@@ -94,28 +101,40 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
 
 ### 4. Thực thi theo mục tiêu — định nghĩa tiêu chí thành công rồi lặp đến khi xác minh
 
-- Biến task thành mục tiêu kiểm chứng. Scaffold: mỗi phase đã có bước **Verify** — chạy, cho người dùng xem, mới commit.
-- Logic nghiệp vụ (phase sau): mỗi yêu cầu PRD (FR-xxx) là tiêu chí; viết test phản ánh FR rồi làm cho pass.
+- Biến task thành mục tiêu kiểm chứng. Mỗi phase của plan.md có bước **Verify** — chạy (`make test` + e2e live),
+  cho người dùng xem, mới commit.
+- Logic nghiệp vụ: mỗi yêu cầu PRD (FR-xxx) là tiêu chí; viết test phản ánh FR rồi làm cho pass. Chạm LLM/DB →
+  verify LIVE (KB đã nạp); giữ `make test` OFFLINE-xanh (mock LLM/retrieval/DB).
 
 ---
 
-## Ranh giới & chừa chỗ (giai đoạn scaffold)
+## Trạng thái hiện tại & ranh giới
 
-- KHÔNG Supervisor Agent / lớp điều phối động — pipeline cố định (PRD §5).
-- KHÔNG gọi LLM trong pipeline (`ENABLE_LLM=false`); KHÔNG phân loại intent thật, KHÔNG RAG thật (chưa embed/
-  truy hồi), KHÔNG logic gate, KHÔNG human_handoff định tuyến thật, KHÔNG wiring AI vào WebSocket, KHÔNG vòng
-  học — stub + TODO trỏ PRD.
-- KHÔNG tích hợp hệ thống đơn hàng / push thật ở scaffold.
-- KHÔNG worker queue polling Redis — dùng BackgroundTasks; realtime dùng WebSocket echo (stub) + pub/sub (TODO).
-- **Chừa chỗ kiến trúc:** `ConversationState` có sẵn `confidence/uncertainty_flags/escalation_reason/
-  require_human_handoff` + trường CSKH (`intent`, `entities`, `rag_contexts`, `action`, `draft_reply`,
-  `awaiting_customer`); `policy.should_handoff` route được; demo chạy **cả 2 nhánh** (`response` /
-  `human_handoff`); `audit_log` đủ cột (PRD §20).
-- Phase 1: sau khi tạo `.env.example` + checklist, **DỪNG chờ** người dùng điền `.env` trước khi verify.
+**Đã THẬT (đừng coi là stub):**
+- **Agent 1** Intent Classifier (`/api/agents/classify`) — taxonomy trong prompt, KHÔNG retrieval; entities LLM⊕regex.
+- **Agent 2** Knowledge Agent/RAG (`/api/agents/analyze`) — truy hồi Qdrant → `rag_contexts` + `retrieval_confidence` + cờ.
+- **Agent 3** Decision Engine — **tất định**: route trên CỜ (`BLOCKING_FLAGS`), **KHÔNG blend confidence**;
+  `RETRIEVAL_THRESHOLD` tách khỏi `confidence_threshold`; priority/severity theo intent. KHÔNG LLM/reasoning.
+- **Agent 4** Response Generator — grounded từ `rag_contexts` + phanh anti-hallucination (không tri thức → fallback +
+  `hallucination_risk`). **Sole-egress:** phát cả câu trả lời lẫn `HANDOFF_NOTICE`.
+- **Persistence + bộ nhớ đa lượt:** lưu conversation + message (Postgres, guest sid); `history` (history_window) từ DB
+  vào prompt Agent 1 + Agent 4 — **bộ nhớ từ DB**, `thread_id` sinh MỖI lượt (KHÔNG từ checkpointer).
+- **Realtime:** `/ws/chat` chạy đủ pipeline (typing → reply). **FE inspector `/rag`** xem đủ 4 agent. `ENABLE_LLM=true`.
+
+**KHÔNG (giữ ranh giới — CHƯA tới lượt, xem ROADMAP):**
+- KHÔNG Supervisor / điều phối động — pipeline cố định (PRD §5). KHÔNG blend confidence cho an toàn.
+- `human_handoff` node đầy đủ (EscalationCard + hàng đợi Admin, 08b), gate §9 / PENDING_APPROVAL (08a), admin
+  takeover (08c), suspend/resume + **durable checkpointer** (09b — nay vẫn `MemorySaver` in-memory), Redis pub/sub
+  multi-client, tích hợp đơn hàng (16), vòng học (15) — **giữ file/`policy.should_handoff` cho 08b, đừng dựng sớm.**
+- KHÔNG worker queue polling Redis — dùng BackgroundTasks/session ngắn (giữ free-tier).
+
+**Slice tiếp theo:** **08b** (human_handoff + EscalationCard + hàng đợi Admin) — nay đã có hội thoại persisted để gắn.
+Code TODO trỏ số slice trong **`ROADMAP.md`**.
 
 ---
 
 ## Khi nghi ngờ
 
-Thứ tự tra cứu: **PRD.md** (nghiệp vụ, hệ thống nên làm gì) → **CLAUDE.md** (cách code) → hỏi người dùng.
-KHÔNG dùng plan.md làm tham chiếu sau khi scaffold xong.
+Thứ tự tra cứu: **PRD.md** (nghiệp vụ, hệ thống nên làm gì) → **ROADMAP.md** (slice nào, thứ tự, đã xong gì) →
+**CLAUDE.md** (cách code) → hỏi người dùng. `plan.md` = kịch bản one-shot của slice ĐANG chạy; xong slice thì bỏ,
+KHÔNG dùng làm tham chiếu lịch sử.

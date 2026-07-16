@@ -1,7 +1,7 @@
 """LangGraph pipeline cố định (PRD §5–§8): intent → knowledge → decision → [route] → response | human_handoff.
 
 KHÔNG Supervisor (PRD §5 trụ cột 1). Thứ tự & nhánh rẽ do graph quy định trước, không do agent quyết runtime.
-Scaffold: node là stub; checkpointer là MemorySaver in-memory.
+Nodes THẬT (intent/knowledge/decision/response); checkpointer MemorySaver in-memory (durable = slice 09b).
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def build_graph():
     g.add_edge("decision", "response")
     g.add_edge("response", END)
 
-    # Checkpointer in-memory (scaffold).
+    # Checkpointer in-memory (MemorySaver).
     # TODO (PRD §10 FR-ASYNC-3/§10 FR-ASYNC-6): checkpointer Redis/Postgres + interrupt cho suspend/resume
     #   human_handoff; wiring WebSocket↔graph + Redis pub/sub phát realtime.
     return g.compile(checkpointer=MemorySaver())
