@@ -70,7 +70,7 @@ async def generate_reply(
         return {"reply": FALLBACK_REPLY, "uncertainty_flags": ["hallucination_risk"]}
 
     user_msg = (
-        f"{format_history(history)}"
+        f"{format_history(history, settings.history_window)}"
         f"Câu hỏi của khách: {query!r}\n"
         f"(intent: {intent}; entities: {entities or {}})\n\n"
         f"ĐOẠN TRI THỨC:\n{_context_block(contexts)}"

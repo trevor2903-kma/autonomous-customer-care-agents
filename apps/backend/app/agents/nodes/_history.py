@@ -10,7 +10,11 @@ from typing import Any
 
 
 def format_history(history: list[dict[str, Any]] | None, limit: int = 6) -> str:
-    """Block "Lịch sử hội thoại gần đây" (rỗng nếu không có lịch sử). Gán nhãn Khách/Shop theo sender."""
+    """Block "Lịch sử hội thoại gần đây" (rỗng nếu không có lịch sử). Gán nhãn Khách/Shop theo sender.
+
+    `limit` = cửa sổ tin đưa vào prompt — production TRUYỀN `settings.history_window` (env, NFR-10) để khớp
+    số tin đã nạp từ DB; default 6 chỉ là fallback/test.
+    """
     if not history:
         return ""
     lines: list[str] = []

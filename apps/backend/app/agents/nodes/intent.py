@@ -73,7 +73,7 @@ async def _classify_llm(
         model=settings.llm_model,
         messages=[
             {"role": "system", "content": _system_prompt()},
-            {"role": "user", "content": f"{format_history(history)}Câu khách: {text!r}"},
+            {"role": "user", "content": f"{format_history(history, settings.history_window)}Câu khách: {text!r}"},
         ],
         response_format={"type": "json_object"},
         temperature=0,

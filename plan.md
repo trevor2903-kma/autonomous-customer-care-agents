@@ -1,136 +1,199 @@
-# PLAN — Happy-case pipeline (Agent 4 + Decision pass-through) + Cổng chat khách chạy thật
+# BIG PLAN — Agent 3 (slice 05) + Lưu trữ & Bộ nhớ đa lượt (slice 09a) + FE Pipeline Inspector
 
-> **Bản chất:** kịch bản ONE-SHOT, xong thì bỏ. Nguồn chân lý vẫn là **`PRD.md`** (§7.4 Response Generator;
-> §6/§16 chat & realtime; §5 trụ cột 3 + §14 FR-PIPE-5 grounding). Repo: Agent 1 + Agent 2 đã thật; Agent 3
-> **TẠM bỏ**, Agent 4 làm thật.
+> **Bản chất:** kịch bản ONE-SHOT gộp 2 slice + phần FE để test. Nguồn chân lý vẫn là **`PRD.md`** (§7.3 Decision
+> Engine; §12 Conversation Memory; §5 trụ cột 1 dự đoán/kiểm toán + trụ cột 3 an toàn; NFR-10 context window;
+> §9/§11 — **để dành 08a/08b/08c**; durable checkpointer/suspend-resume — **để dành 09b**).
 >
-> **Mục tiêu:** khách vào **cổng chat `/chat`**, hỏi một câu mà kho tri thức trả lời được → **agent tự trả lời
-> grounded, không người can thiệp**. Mô phỏng & quan sát một happy case chạy trọn pipeline
-> `intent → knowledge → decision(pass-through) → response`, và trả lời hiển thị ngay trên giao diện khách.
+> **Ba mục tiêu:**
 >
-> **Quyết định TẠM (ghi rõ để không lệch vai):** bỏ Agent 3 = `decision_node` **pass-through** (traffic thật →
-> luôn `auto_reply`). **Phanh an toàn chuyển vào Agent 4** (không có tri thức → không bịa → câu fallback). Khi
-> làm Agent 3 (ROADMAP slice 05), khôi phục logic quyết định (priority/severity + flags/confidence → handoff)
-> về đúng chỗ; Agent 4 quay lại chỉ lo sinh câu trả lời.
+> - **A · Agent 3 (05):** khôi phục Decision Engine THẬT (policy TẤT ĐỊNH) — bỏ pass-through; quyết `auto_reply`
+>   vs `human_handoff` + `priority`/`severity`/`escalation_reason`.
+> - **B · Persistence + Memory (09a):** LƯU conversation + message vào Postgres; **bộ nhớ đa lượt** (nạp lịch sử
+>   từ DB vào pipeline để hiểu ngữ cảnh).
+> - **C · FE Pipeline Inspector:** mở rộng panel ở `/rag` để **quan sát đủ 4 agent** cho một câu test (thấy quyết
+>   định Agent 3 + câu trả lời Agent 4) — công cụ test + minh chứng minh bạch cho ĐATN.
+>
+> **Ranh giới (đọc kỹ):** Agent 3 **CHỈ ra quyết định + gắn cờ**; pipeline **chạy tới cuối rồi THOÁT** (KHÔNG
+> suspend/resume, KHÔNG hàng đợi admin, KHÔNG duyệt nháp — 09b/08a-c). **Response Generator là điểm phát ngôn DUY
+> NHẤT** (phát cả câu trả lời lẫn thông báo handoff, luôn grounded từ `rag_contexts`). Bộ nhớ lấy từ **DB, KHÔNG
+> từ checkpointer**.
 
 ---
 
-## 0. In / Out scope
+## 0. Quyết định kiến trúc (gộp)
 
-**In scope:** Agent 4 (Response Generator, grounded + phanh anti-hallucination); Decision pass-through (giữ demo
-nhánh handoff cho run-demo/test); wire WebSocket `/ws/chat` chạy ĐỦ pipeline và trả câu trả lời; cổng chat khách
-`/chat` hiển thị câu trả lời AI.
-
-**Out of scope (để slice/phase sau — theo ROADMAP):** Agent 3 thật (05); gate/PENDING_APPROVAL (§9); human_handoff
-UI + EscalationCard + admin queue (Phase 2); **bộ nhớ hội thoại / context window đa lượt** (09a — giờ single-turn);
-Redis pub/sub multi-client (chỉ 1 khách → gửi thẳng qua WS là đủ); persist hội thoại/audit đầy đủ (Phase 4 —
-để tuỳ chọn, không bắt buộc cho demo).
-
----
-
-## 1. Kế hoạch theo Phase
-
-> Sau MỖI phase: chạy "Verify", cho tôi xem output, `git commit` (`feat(pipeline): phase N - ...`), tóm tắt 1 dòng, tiếp nếu không lỗi.
-
-### Phase 0 — Agent 4 · Response Generator (§7.4, FR-PIPE-5)
-
-- `app/agents/nodes/response.py` (viết thật, tách hàm thuần tái dùng):
-  - `async generate_reply(query, intent, entities, rag_contexts) -> {reply, uncertainty_flags}`:
-    - **Phanh grounding:** nếu `not rag_contexts` **hoặc** thiếu `settings.llm_api_key` → **KHÔNG gọi LLM bịa**;
-      trả câu fallback lịch sự (vd "Dạ câu hỏi này em xin phép chuyển tới nhân viên hỗ trợ để trả lời chính xác
-      hơn ạ.") + cờ `["hallucination_risk"]`.
-    - Có `rag_contexts`: gọi LLM (`AsyncOpenAI`, `settings.llm_model`) với prompt: _soạn câu trả lời CSKH tiếng
-      Việt, thân thiện, NGẮN GỌN, CHỈ dựa trên các đoạn tri thức được cung cấp (rag_contexts). KHÔNG bịa thông
-      tin ngoài context. Nếu context không đủ để trả lời chắc chắn thì nói sẽ chuyển nhân viên, KHÔNG bịa._
-      Truyền vào: `query`, `intent`, `entities`, và các đoạn `rag_contexts[].text` (kèm source). Cờ = [].
-  - `async response_node(state)`: gọi `generate_reply` với `query=state["input"]`, `intent`, `entities`,
-    `rag_contexts` từ state → ghi `draft_reply`, `messages:[{"sender":"ai","content":reply}]`,
-    `result:{"branch":"response","action":state.get("action"),"reply":reply}`, `status=REPLIED`,
-    `uncertainty_flags` (reducer add) + `trace`. **Node DUY NHẤT ghi tin nhắn AI** (PRD §7.4).
-
-**Verify:** unit — `generate_reply("shop cho đổi trả trong bao lâu?", "refund", {}, [<đoạn đổi trả>])` → câu trả
-lời có "7 ngày"; `generate_reply("x", "other", {}, [])` → fallback + `hallucination_risk`. `make test` xanh.
-Commit: `feat(pipeline): phase 0 - Agent 4 Response Generator (grounded + anti-hallucination)`.
-
-### Phase 1 — Decision pass-through (TẠM bỏ Agent 3)
-
-- `app/agents/nodes/decision.py`: **TẠM** bỏ đánh giá real flags/confidence. Chỉ giữ nhánh demo:
-  - `injected = (scratchpad or {}).get("injected_flags")`; `handoff = bool(injected)`;
-    `action = HUMAN_HANDOFF if handoff else AUTO_REPLY`; `require_human_handoff = handoff`.
-  - ⇒ traffic thật (không tiêm cờ) → **luôn `auto_reply`** (happy case); `run-demo force_handoff` (tiêm
-    `ambiguous_intent`) → vẫn `human_handoff` (giữ test 2 nhánh xanh).
-  - Ghi **TODO to** (PRD §7.3, ROADMAP 05): khôi phục priority/severity + quy tắc an toàn thật (accumulated
-    flags / `min(intent_confidence, retrieval_confidence)` < ngưỡng → handoff). Grounding hiện do Agent 4 giữ.
-
-**Verify:** `run_pipeline(input_text="phí ship đi tỉnh bao nhiêu?")` → `action=auto_reply`, đi nhánh `response`;
-`run-demo` với `force_handoff=True` → `human_handoff`. `make test` xanh. Commit:
-`feat(pipeline): phase 1 - decision pass-through (auto_reply) tạm bỏ Agent 3`.
-
-### Phase 2 — Realtime: wire WebSocket `/ws/chat` chạy ĐỦ pipeline (§6, §8, §16)
-
-- `app/api/ws/chat.py` (thay chế độ classification):
-  - Khi client kết nối: tạo `conversation_id = str(uuid4())` (giữ trong scope WS); gửi
-    `{"type":"system","message":"connected"}`.
-  - Mỗi tin nhắn khách: gửi `{"type":"typing"}` (UX) → `final = await run_pipeline(input_text=msg,
-conversation_id=conversation_id)` → `reply = final["result"]["reply"]` → gửi `{"type":"reply","content":reply}`.
-  - Bọc try/except: lỗi pipeline → gửi `{"type":"reply","content":"<câu xin lỗi + chuyển nhân viên>"}`, KHÔNG
-    rớt kết nối.
-  - **KHÔNG cần Redis pub/sub** (1 khách/1 kết nối — gửi thẳng). Persist hội thoại/message = TUỲ CHỌN (để Phase 4).
-
-**Verify:** dùng script/`wscat` gửi "shop cho đổi trả trong bao lâu?" → nhận `{"type":"typing"}` rồi
-`{"type":"reply","content":"...7 ngày..."}`. Commit: `feat(pipeline): phase 2 - WS chạy full pipeline + trả reply`.
-
-### Phase 3 — Cổng chat khách (FE) hiển thị câu trả lời AI (§16)
-
-- `apps/dashboard/components/chat/ChatWindow.tsx`: đổi type `from: "you" | "system" | "ai"` (bỏ `"echo"`); render
-  bong bóng `"ai"` (nền trắng viền); đổi empty-state copy → "Hỏi shop về sản phẩm, size, đổi trả, vận chuyển…".
-- `apps/dashboard/app/chat/page.tsx`: trong `ws.onmessage` xử lý:
-  - `data.type === "system"` → push `system`.
-  - `data.type === "typing"` → set `typing=true` (hiện "đang trả lời…").
-  - `data.type === "reply"` → `typing=false`, push `{from:"ai", text:data.content}`.
-  - Giữ `send` gửi raw text như cũ. Bỏ nhánh `echo`.
-- `apps/dashboard/components/chat/Header.tsx`: bỏ copy "echo — scaffold" → hiện "Đang hoạt động" khi connected.
-
-**Verify:** `make dev-backend` + `make dev-dashboard`; mở `http://localhost:3000/chat`, hỏi "shop cho đổi trả
-trong bao lâu?" → thấy "đang trả lời…" rồi bong bóng AI trả lời grounded. `pnpm -r build` pass. Commit:
-`feat(pipeline): phase 3 - cổng chat khách hiển thị câu trả lời AI`.
-
-### Phase 4 — Verify happy case end-to-end
-
-- Đảm bảo kho tri thức đã nạp: `/api/rag/info` có `knowledge_base_shop_quan_ao.pdf` (nếu trống → upload lại qua `/rag`).
-- Mở `/chat`, hỏi vài câu **KB trả lời được**: "đổi trả trong bao lâu?", "phí ship đi tỉnh?", "mình 1m60 50kg mặc
-  size gì?", "có mã giảm giá cho khách mới không?" → agent tự trả lời grounded.
-- Hỏi câu **ngoài KB**: "thời tiết hôm nay thế nào?" → câu fallback lịch sự (KHÔNG bịa).
-
-**Verify:** happy case chạy trọn không cần người; câu ngoài KB → fallback; `make test` xanh; `pnpm -r build` pass.
-Commit: `chore(pipeline): phase 4 - verify happy case e2e`.
+- **KHÔNG blend confidence.** `intent_confidence` (LLM tự khai) vs `retrieval_confidence` (cosine) là **hai thang
+  khác nhau** → đừng `min` rồi so một ngưỡng. Mỗi thang có ngưỡng riêng; **Agent 3 quyết trên CỜ**; giữ cả hai
+  confidence cho priority + audit.
+- **Agent 3 = LUẬT tất định — KHÔNG LLM cho phần an toàn; KHÔNG reasoning model** (thừa + hại NFR-1 latency). LLM
+  sentiment (nếu cần) = non-reasoning nhẹ, **để sau**.
+- **Sole egress:** graph `decision → response`; `response_node` branch theo `action`. `human_handoff` node đầy đủ
+  (EscalationCard + queue) = 08b — GIỮ file, đừng dựng ở đây.
+- **Tách `db_conversation_id` (persist) ≠ `thread_id` (checkpointer).** GIỮ `thread_id` sinh MỚI mỗi lượt
+  (MemorySaver in-memory sẽ tích luỹ reduce-channel nếu tái dùng) → **bộ nhớ từ DB**. Durable checkpointer = 09b.
+- **`history` là ĐẦU VÀO chỉ-đọc** (khác `messages` output). Lịch sử chỉ để _hiểu ngữ cảnh_, KHÔNG thay `rag_contexts`.
+- **Guest, không auth:** `customer_identifier` = query `?sid=` hoặc uuid sinh theo kết nối. Tài khoản = slice 11.
 
 ---
 
-## 2. Definition of Done
+## 1. In / Out scope
 
-- [ ] `/chat`: khách hỏi câu KB trả lời được → **agent tự trả lời grounded** (nội dung bám kho tri thức), có
-      indicator "đang trả lời…".
-- [ ] Câu ngoài KB / không có tri thức → **fallback lịch sự, KHÔNG bịa** (cờ `hallucination_risk`).
-- [ ] Pipeline chạy trọn `intent → knowledge → decision(auto_reply) → response`; Response Generator là điểm phát
-      ngôn DUY NHẤT (chỉ node này ghi tin AI).
-- [ ] `run-demo force_handoff` vẫn ra `human_handoff` (giữ 2 nhánh); `make test` xanh; `pnpm -r build` pass.
-- [ ] Decision pass-through có **TODO rõ** khôi phục Agent 3 (ROADMAP 05); không có logic quyết định "vĩnh viễn"
-      nằm trong Agent 4.
+**In:** tách `RETRIEVAL_THRESHOLD`; Agent 3 policy tất định + enums/state; sole-egress routing; persist
+conversation/message; multi-turn memory; endpoint + panel FE inspector đủ 4 agent; test FR + persist + e2e.
+**Out (để sau):** suspend/resume + durable checkpointer (09b); gate §9 / PENDING_APPROVAL (08a); human_handoff đầy
+đủ + EscalationCard + admin queue + takeover (08b/08c); pub/sub multi-client; màn danh sách hội thoại (10a); auth
+tài khoản (11); FE reload-lịch-sử-khi-reconnect.
 
 ---
 
-## 3. Ghi chú cho Claude Code
+## 2. Kế hoạch theo Phase
 
-- **Bỏ Agent 3 là TẠM:** `decision_node` chỉ handoff khi có `injected_flags` (demo); traffic thật → `auto_reply`.
-  KHÔNG xoá node/edges khỏi graph (để Agent 3 cắm lại). Ghi TODO trỏ PRD §7.3 + ROADMAP 05.
-- **Agent 4 grounded, KHÔNG bịa:** trả lời CHỈ từ `rag_contexts`; rag_contexts rỗng / thiếu key → fallback +
-  `hallucination_risk` (đây chính là phanh an toàn thay cho Agent 3 tạm thời). Response Generator = điểm phát
-  ngôn DUY NHẤT — chỉ node này ghi `messages` (sender=ai).
-- **Realtime:** 1 khách → gửi thẳng qua WS; **KHÔNG** thêm Redis pub/sub (đó là cho multi-client/admin ở HITL
-  phase sau, FR-ASYNC-7).
-- **Single-turn:** mỗi tin nhắn chạy pipeline độc lập; bộ nhớ hội thoại đa lượt (context window) là ROADMAP 09a.
-- **Chọn câu demo KB trả lời được** (đổi trả/ship/size/khuyến mãi). Tránh câu cần dữ liệu ngoài như trạng thái
-  đơn thật ("đơn 6578 tới đâu?") — chưa có tích hợp hệ thống đơn (tool Phase 2); Agent 4 chỉ trả được chính sách chung.
-- Async-first; config từ env; "sửa có phẫu thuật"; FE theo pattern sẵn có. Cần `LLM_API_KEY` + kho tri thức đã upload.
-- Sau slice này: Agent 3 thật (05) → chuyển quyết định về đúng chỗ; rồi HITL/gate (Phase 2), memory/async (Phase 3).
+> Sau MỖI phase: chạy "Verify", cho tôi xem output, `git commit`, tóm tắt 1 dòng, tiếp nếu không lỗi.
+
+### === PHẦN A · AGENT 3 (slice 05) ===
+
+### Phase 0 — Tách `RETRIEVAL_THRESHOLD` (sửa "hai thang một ngưỡng")
+
+- `app/core/config.py`: thêm `retrieval_threshold: float = 0.35` (env `RETRIEVAL_THRESHOLD`); GIỮ
+  `confidence_threshold`. Ghi chú: _"ngưỡng cosine — PHẢI đo trên KB (Chương 4); 0.35 là mặc định tạm"_.
+- `app/agents/nodes/knowledge.py`: `low_retrieval_score` dùng **`settings.retrieval_threshold`** (thay `confidence_threshold`).
+- (Tùy chọn) `scripts/measure_retrieval_threshold.py`: đo phân bố cosine top-1 trên KB (câu có/không đáp án).
+
+**Verify:** với KB đã nạp, `retrieve_knowledge("phí ship đi tỉnh?")` → KHÔNG `low_retrieval_score` oan;
+`retrieve_knowledge("asdf")` → `no_relevant_knowledge`. `make test` xanh. Commit:
+`feat(agent3): phase 0 - tách RETRIEVAL_THRESHOLD khỏi confidence_threshold`.
+
+### Phase 1 — Agent 3 policy TẤT ĐỊNH (bỏ pass-through)
+
+- `app/models/enums.py`: thêm `Priority(low/medium/high)`, `Severity(low/medium/high)`.
+- `app/agents/state.py`: thêm `priority: str | None`, `severity: str | None`.
+- Hằng **`BLOCKING_FLAGS`** (tập ĐÓNG cờ có mặt tại decision, từ Agent 1+2):
+  `{"ambiguous_intent","multi_intent","out_of_domain","no_relevant_knowledge","low_retrieval_score","llm_unavailable","search_error"}`.
+  _(KHÔNG gồm `hallucination_risk` — Agent 4 phát SAU; giữ là phanh dự phòng cuối ở Agent 4.)_
+- Viết lại `app/agents/nodes/decision.py` (bỏ pass-through):
+  - Đọc cờ tích luỹ `uncertainty_flags` + `intent` + `intent_confidence` + `retrieval_confidence` + `scratchpad.injected_flags`.
+  - **Safety gate (luật cứng, KHÔNG blend):** `blocking = (set(flags)|set(injected)) & BLOCKING_FLAGS`. ≠ ∅ →
+    `action=HUMAN_HANDOFF`, `require_human_handoff=True`, `escalation_reason=f"blocking_flags={sorted(blocking)}"`;
+    ngược lại → `AUTO_REPLY`.
+  - **Bảng priority/severity theo intent:** complaint→high/high; refund→high/medium; exchange→medium/low;
+    order*status→medium/low; product*\*/size/shipping/promotion→low/low; other/unknown→low/low.
+  - **KHÔNG** `min(confidence)`; ghi cả hai confidence + `blocking` vào `trace` (audit + Agent Monitoring).
+  - `uncertainty_flags` (reducer add): CHỈ trả cờ MỚI (thường rỗng) — tránh nhân đôi. `status=DECIDING`.
+  - **TODO rõ:** gate §9 (nhạy cảm → PENDING_APPROVAL) = 08a; LLM sentiment `frustrated_customer` = sau.
+  - Demo: `run-demo force_handoff` tiêm `ambiguous_intent` ∈ BLOCKING → handoff tự nhiên (test 2 nhánh xanh).
+
+**Verify:** unit `decision_node` (không cần network): `no_relevant_knowledge` → human_handoff + reason;
+`intent=complaint` không cờ → auto_reply + priority=high/severity=high; product_price sạch cờ → auto_reply low/low.
+`make test` xanh. Commit: `feat(agent3): phase 1 - deterministic policy (safety gate + priority/severity), bỏ pass-through`.
+
+### Phase 2 — Định tuyến SOLE-EGRESS (Response Generator phát cả trả lời lẫn thông báo handoff)
+
+> Hiện `response_node` chưa branch theo `action`; graph route sang `human_handoff` (ghi `result.notice`, không
+> `result.reply`) → WS `final["result"]["reply"]` sẽ vỡ ở ca handoff. Sửa:
+
+- `app/agents/graph.py`: route `decision → response` (bỏ conditional `should_handoff`→human_handoff cho slice
+  này); `response → END`. **GIỮ** `human_handoff.py` + `policy.should_handoff` (ghi chú để dành 08b re-wire thành
+  side-effect: EscalationCard + admin queue + suspend/resume).
+- `app/agents/nodes/response.py` — `response_node` branch theo `state["action"]`:
+  - `auto_reply` → `generate_reply(...)` grounded → `status=REPLIED`, `result.reply=<trả lời>`.
+  - `human_handoff` → KHÔNG gọi LLM; `reply=HANDOFF_NOTICE` ("Yêu cầu của bạn đã được chuyển tới nhân viên hỗ
+    trợ.") → `status=IN_HUMAN_QUEUE`, `result.reply=HANDOFF_NOTICE`, ghi `messages` (sender=ai).
+  - Cả hai set `result.reply` → **WS không phải sửa**. Response Generator là node DUY NHẤT ghi `messages`/`result.reply`.
+
+**Verify:** `run_pipeline("phí ship đi tỉnh?")` → auto_reply + reply grounded + REPLIED. `run_pipeline("asdf")` →
+no_relevant_knowledge → handoff → reply=HANDOFF_NOTICE + IN_HUMAN_QUEUE. run-demo 2 nhánh. `make test` xanh.
+Commit: `feat(agent3): phase 2 - sole-egress routing (Response Generator phát trả lời + handoff notice)`.
+
+### === PHẦN B · LƯU TRỮ + BỘ NHỚ ĐA LƯỢT (slice 09a) ===
+
+### Phase 3 — Persist conversation + message (WS lưu Postgres)
+
+- `app/agents/state.py`: thêm `history: list[dict[str, Any]]` (đầu vào chỉ-đọc — KHÔNG reducer).
+- `app/agents/graph.py`: `run_pipeline(..., history=None)` → `_initial_state` đặt `history=history or []`. GIỮ việc
+  sinh `thread_id` mỗi lượt.
+- `app/api/ws/chat.py` (bỏ TODO persist): connect → `sid` từ `websocket.query_params` hoặc `uuid4` →
+  `async with AsyncSessionLocal() as s: conv = await create_conversation(s, customer_identifier=sid)` → giữ
+  `db_conversation_id`. Mỗi tin: lưu message khách (session ngắn) → `run_pipeline` → lưu message AI + cập nhật
+  `conversation.status` theo `final["result"]`.
+
+**Verify:** `/chat` gửi 1 câu → DB có 1 conversation + 2 message (customer+ai), `customer_identifier` set.
+`make test` xanh. Commit: `feat(memory): phase 3 - persist conversation + messages qua WS`.
+
+### Phase 4 — Bộ nhớ đa lượt (nạp lịch sử từ DB vào pipeline)
+
+- `app/services/conversation_service.py`: `get_recent_messages(session, conversation_id, limit)` → N `{sender,content}` gần nhất.
+- `app/core/config.py`: `history_window: int = 8` (env `HISTORY_WINDOW`; NFR-10).
+- `app/api/ws/chat.py`: TRƯỚC `run_pipeline`, nạp `history` (các lượt trước) → truyền `run_pipeline(input_text, history=...)`.
+- `app/agents/nodes/intent.py`: `classify_intent(text, history=None)` — thêm lịch sử gần nhất vào prompt.
+- `app/agents/nodes/response.py`: `generate_reply(..., history=None)` — thêm lịch sử vào prompt (hiểu đại từ/tham
+  chiếu; vẫn grounded từ `rag_contexts`).
+
+**Verify:** `/chat`: "áo này còn size M không shop?" → "thế còn size L?" → hiểu **size L của cùng cái áo** (không
+hỏi lại). `make test` xanh. Commit: `feat(memory): phase 4 - multi-turn memory (history từ DB vào Agent 1 + Agent 4)`.
+
+### === PHẦN C · FE PIPELINE INSPECTOR + VERIFY ===
+
+### Phase 5 — FE Pipeline Inspector (quan sát đủ 4 agent cho một câu test)
+
+- Backend: `app/api/routes/agents.py` thêm `POST /pipeline` (body `{message}`) → `final = await run_pipeline(input_text=message)`
+  → trả `{intent, category, entities, intent_confidence, retrieval_confidence, rag_contexts, action, priority,
+severity, escalation_reason, uncertainty_flags, reply}` (rút từ final state). (schema `PipelineResult`.)
+- `packages/shared-types`: thêm `PipelineResult`.
+- `apps/dashboard/lib/api.ts`: `runPipeline(message): Promise<PipelineResult>`.
+- `apps/dashboard/components/rag/AnalyzePanel.tsx` (mở rộng — hoặc thêm `PipelinePanel.tsx`, theo pattern sẵn có
+  Tailwind + TanStack): dùng `runPipeline` → render **4 khối**:
+  - **Agent 1 · Intent**: intent, category, entities, intent_confidence.
+  - **Agent 2 · Knowledge**: retrieval_confidence + rag_contexts (source·score·snippet).
+  - **Agent 3 · Decision**: `action` (badge auto_reply/human_handoff), `priority`, `severity`, `escalation_reason`,
+    và cờ chặn (highlight). ← đây là chỗ _test Agent 3 trên FE_.
+  - **Agent 4 · Response**: `reply` (câu trả lời grounded hoặc thông báo handoff).
+- (Tùy chọn) `apps/dashboard/app/chat/page.tsx`: phân biệt bong bóng thông báo handoff (badge/màu khác) để demo dễ thấy.
+
+**Verify:** `/rag` inspector: "shop cho đổi trả trong bao lâu?" → Agent 3 `auto_reply` + Agent 4 câu trả lời
+grounded; "thời tiết hôm nay?" → Agent 3 `human_handoff` (out_of_domain/no_relevant_knowledge) + priority/severity
+
+- Agent 4 thông báo chuyển người. `pnpm -r build` pass. Commit:
+  `feat(ui): phase 5 - pipeline inspector đủ 4 agent (test Agent 3 + Agent 4 trên FE)`.
+
+### Phase 6 — Test FR + e2e verify (bỏ hẳn pass-through)
+
+- Test đơn vị `decision_node` (cờ→action; intent→priority/severity); persist (đúng sender); `get_recent_messages`
+  cap `history_window`; golden e2e (KB→auto_reply grounded; no-knowledge→handoff notice; complaint→priority high).
+- Không còn `pass_through` trong trace; `run-demo` 2 nhánh; `make test` xanh; `pnpm -r build` pass.
+
+**Verify:** `make test` xanh; `/chat` đa lượt + định tuyến đúng; `/rag` inspector hiển thị quyết định. Commit:
+`test(pipeline): phase 6 - FR tests + e2e verify`.
+
+---
+
+## 3. Definition of Done
+
+- [ ] `RETRIEVAL_THRESHOLD` tách riêng; Agent 2 dùng nó; ngưỡng đo trên KB (không escalate oan vì 0.6).
+- [ ] Agent 3 **tất định**: route bằng **cờ** (BLOCKING_FLAGS), **KHÔNG blend confidence**; có priority/severity;
+      **không LLM/reasoning**; pass-through đã bỏ; run-demo 2 nhánh đúng.
+- [ ] **Response Generator là điểm phát ngôn DUY NHẤT** — phát cả trả lời grounded lẫn handoff notice; status đúng
+      (REPLIED / IN_HUMAN_QUEUE); WS không phải sửa.
+- [ ] Hội thoại + message **lưu Postgres** (guest sid); **đa lượt hiểu ngữ cảnh**; chỉ nạp N tin (`history_window`);
+      bộ nhớ từ **DB** (thread_id vẫn sinh mỗi lượt).
+- [ ] **FE inspector `/rag`** hiển thị đủ 4 agent — thấy `action`/`priority`/`severity`/`escalation_reason` của
+      Agent 3 + câu trả lời Agent 4. `/chat` vẫn test được định tuyến + đa lượt.
+- [ ] `make test` xanh; `pnpm -r build` pass. Agent 3 CHỈ quyết định + gắn cờ; pipeline chạy hết rồi thoát.
+
+---
+
+## 4. Ghi chú cho Claude Code
+
+- **KHÔNG blend confidence — route trên CỜ.** Agent 2 phát `low_retrieval_score` bằng `RETRIEVAL_THRESHOLD`; Agent
+  3 đọc cờ; giữ cả hai confidence cho priority + audit. **Agent 3 tất định — KHÔNG LLM/reasoning cho an toàn.**
+- **`BLOCKING_FLAGS` là tập ĐÓNG** cờ tại decision (Agent 1+2); `hallucination_risk` KHÔNG thuộc (Agent 4 phát sau).
+- **Response Generator là điểm phát ngôn DUY NHẤT** — branch theo `action`; `human_handoff` node đầy đủ = 08b, GIỮ
+  file, đừng dựng.
+- **Tách `db_conversation_id` (persist) ≠ `thread_id` (checkpointer);** GIỮ thread_id sinh mỗi lượt; **bộ nhớ từ
+  DB**. `history` là đầu vào chỉ-đọc; lịch sử KHÔNG thay `rag_contexts` (phanh chống bịa còn nguyên).
+- **Session DB NGẮN** (`async with AsyncSessionLocal()` mỗi thao tác) — Neon free giới hạn connection.
+- **FE inspector** dùng `run_pipeline` (không persist — là công cụ dev); nó test Agent 3/Agent 4 **single-shot**
+  (KHÔNG test đa lượt — đa lượt test qua `/chat`). Theo pattern UI sẵn có (Tailwind + TanStack), KHÔNG shadcn.
+- **Ranh giới tuyệt đối:** Agent 3 chỉ quyết định + gắn cờ; pipeline chạy hết rồi thoát. "Chờ admin" (đóng băng
+  state rồi đánh thức) = 09b, KHÔNG làm ở đây. Async-first; config từ env; "sửa có phẫu thuật".
+- **Slice này mở khóa HITL:** kế tiếp 08b (human_handoff + EscalationCard + admin queue — nay có hội thoại
+  persisted) → 08c (admin chat/takeover, cần pub/sub) → 08a (gate §9) → 09b (durable checkpointer + suspend/resume).
