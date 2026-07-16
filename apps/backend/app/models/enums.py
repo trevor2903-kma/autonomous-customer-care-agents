@@ -73,6 +73,20 @@ class AgentAction(StrEnum):
     HUMAN_HANDOFF = "human_handoff"
 
 
+class Priority(StrEnum):
+    # Ưu tiên ca (Decision Engine — PRD §7.3, §5 trụ cột 1 Agent Monitoring). Theo intent, tất định.
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+class Severity(StrEnum):
+    # Mức nghiêm trọng ca (Decision Engine — PRD §7.3). Theo intent, tất định.
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class TicketStatus(StrEnum):
     # Cấp ticket — thô hơn conversation (PRD §15 ghi chú)
     OPEN = "open"

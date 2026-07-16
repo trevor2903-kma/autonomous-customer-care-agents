@@ -38,5 +38,7 @@ class ConversationState(TypedDict, total=False):
     entities: dict[str, Any]
     rag_contexts: list[dict[str, Any]]
     action: str | None  # auto_reply | human_handoff (Decision Engine, PRD §7.3)
+    priority: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)
+    severity: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)
     draft_reply: str | None
     awaiting_customer: bool  # PRD §10 FR-ASYNC-2 (clarification)

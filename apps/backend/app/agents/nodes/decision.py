@@ -1,46 +1,85 @@
-"""Node 3 — Decision Engine. PRD §7.3. **TẠM PASS-THROUGH** (Agent 3 bỏ tạm — xem ROADMAP 05).
+"""Node 3 — Decision Engine (Agent 3). NODE RA QUYẾT ĐỊNH — PRD §7.3, §5 trụ cột 3 (an toàn) + trụ cột 1 (audit).
 
-Bản chất đúng: đây là NODE RA QUYẾT ĐỊNH — nơi hội tụ tín hiệu an toàn (PRD §5 trụ cột 3), đánh giá
-priority/severity + cờ bất định/confidence → `auto_reply` vs `human_handoff`.
-
-TRONG SLICE HAPPY-CASE NÀY: bỏ tạm đánh giá thật. `decision_node` chỉ giữ **nhánh demo** — handoff KHI VÀ
-CHỈ KHI có `scratchpad.injected_flags` (do run-demo tiêm) — nên **traffic thật → luôn `auto_reply`**. Phanh
-an toàn (không có tri thức → không bịa) TẠM chuyển sang Agent 4 (`response.py` fallback + hallucination_risk).
+Policy **TẤT ĐỊNH** — KHÔNG LLM/reasoning cho phần an toàn (thừa + hại NFR-1 latency). Định tuyến trên **CỜ**,
+**KHÔNG blend confidence**: `intent_confidence` (LLM tự khai) và `retrieval_confidence` (cosine) là HAI THANG
+khác nhau → đừng `min` rồi so một ngưỡng. Safety gate: bất kỳ cờ nào ∈ `BLOCKING_FLAGS` (cờ có mặt TẠI decision,
+từ Agent 1+2) → `human_handoff`. `priority`/`severity` theo intent (cho Agent Monitoring + audit). Giữ CẢ HAI
+confidence trong `trace`.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from ...models.enums import AgentAction, ConversationStatus
+from ...models.enums import AgentAction, ConversationStatus, Priority, Severity
 from ..state import ConversationState
+
+# Tập ĐÓNG cờ bất định có mặt TẠI decision (Agent 1 + Agent 2). Bất kỳ cờ nào xuất hiện → human_handoff.
+# KHÔNG gồm `hallucination_risk`: Agent 4 phát cờ đó SAU decision (phanh dự phòng cuối, KHÔNG định tuyến ở đây).
+BLOCKING_FLAGS: frozenset[str] = frozenset(
+    {
+        "ambiguous_intent",
+        "multi_intent",
+        "out_of_domain",
+        "no_relevant_knowledge",
+        "low_retrieval_score",
+        "llm_unavailable",
+        "search_error",
+    }
+)
+
+# Bảng priority/severity theo intent (tất định). intent ngoài bảng (vd "unknown") → low/low.
+_PRIORITY_SEVERITY: dict[str, tuple[Priority, Severity]] = {
+    "complaint": (Priority.HIGH, Severity.HIGH),
+    "refund": (Priority.HIGH, Severity.MEDIUM),
+    "exchange": (Priority.MEDIUM, Severity.LOW),
+    "order_status": (Priority.MEDIUM, Severity.LOW),
+    "product_price": (Priority.LOW, Severity.LOW),
+    "product_information": (Priority.LOW, Severity.LOW),
+    "size_consulting": (Priority.LOW, Severity.LOW),
+    "shipping": (Priority.LOW, Severity.LOW),
+    "promotion": (Priority.LOW, Severity.LOW),
+    "other": (Priority.LOW, Severity.LOW),
+}
 
 
 def decision_node(state: ConversationState) -> dict[str, Any]:
-    # TẠM (ROADMAP 05): pass-through. Chỉ nhánh demo — run-demo tiêm scratchpad.injected_flags để ép handoff
-    # (giữ test 2 nhánh xanh). Traffic thật (không tiêm) → injected rỗng → auto_reply (happy case).
-    injected = list((state.get("scratchpad") or {}).get("injected_flags") or [])
-    handoff = bool(injected)
-    action = AgentAction.HUMAN_HANDOFF if handoff else AgentAction.AUTO_REPLY
-    escalation_reason = f"injected_flags={injected}" if handoff else None
+    accumulated = list(state.get("uncertainty_flags") or [])  # cờ tích luỹ Agent 1+2 (reducer add)
+    injected = list((state.get("scratchpad") or {}).get("injected_flags") or [])  # demo (run-demo)
 
-    # TODO (PRD §7.3, ROADMAP 05 — KHÔI PHỤC AGENT 3): đánh giá THẬT priority/severity + quy tắc an toàn bất
-    #   biến: cờ tích luỹ (uncertainty_flags từ Agent 1/2) HOẶC min(intent_confidence, retrieval_confidence)
-    #   < settings.confidence_threshold → human_handoff. Khi khôi phục, chuyển quyết định về ĐÂY; Agent 4 quay
-    #   lại chỉ lo sinh câu trả lời (KHÔNG để logic quyết định "vĩnh viễn" nằm trong Agent 4).
+    # Safety gate TẤT ĐỊNH (PRD §5 trụ cột 3): cờ ∈ BLOCKING_FLAGS → human_handoff. KHÔNG blend confidence.
+    blocking = sorted((set(accumulated) | set(injected)) & BLOCKING_FLAGS)
+    handoff = bool(blocking)
+    action = AgentAction.HUMAN_HANDOFF if handoff else AgentAction.AUTO_REPLY
+    escalation_reason = f"blocking_flags={blocking}" if handoff else None
+
+    intent = state.get("intent") or "other"
+    priority, severity = _PRIORITY_SEVERITY.get(intent, (Priority.LOW, Severity.LOW))
+
+    # TODO (PRD §9, slice 08a): gate auto-reply theo category nhạy cảm → PENDING_APPROVAL (duyệt nháp).
+    # TODO (sau): LLM sentiment nhẹ (non-reasoning) → cờ `frustrated_customer` nâng priority. KHÔNG làm ở đây.
     return {
         "status": ConversationStatus.DECIDING,
         "action": action,
-        # Reducer `add`: CHỈ trả cờ MỚI (injected của demo) — KHÔNG trả lại cờ đã tích luỹ (tránh nhân đôi).
-        "uncertainty_flags": injected,
+        "priority": str(priority),
+        "severity": str(severity),
         "require_human_handoff": handoff,
         "escalation_reason": escalation_reason,
+        # Reducer `add`: CHỈ trả cờ MỚI (injected của demo) — cờ tích luỹ đã có sẵn, đừng trả lại (tránh nhân đôi).
+        "uncertainty_flags": injected,
         "trace": [
             {
                 "node": "decision",
-                "confidence": state.get("confidence"),
+                "confidence": state.get("intent_confidence"),
                 "branch": str(action),
-                "detail": {"pass_through": True, "injected": injected},
+                "detail": {
+                    "blocking_flags": blocking,
+                    "priority": str(priority),
+                    "severity": str(severity),
+                    # Giữ CẢ HAI confidence (KHÔNG blend) cho audit + Agent Monitoring (PRD §5 trụ cột 1).
+                    "intent_confidence": state.get("intent_confidence"),
+                    "retrieval_confidence": state.get("retrieval_confidence"),
+                },
             }
         ],
     }
