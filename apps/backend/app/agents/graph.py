@@ -51,10 +51,13 @@ def build_graph():
 graph = build_graph()
 
 
-def _initial_state(*, input_text: str, conversation_id: str, force_handoff: bool) -> ConversationState:
+def _initial_state(
+    *, input_text: str, conversation_id: str, force_handoff: bool, history: list[dict[str, Any]] | None
+) -> ConversationState:
     return {
         "conversation_id": conversation_id,
         "input": input_text,
+        "history": history or [],  # đầu vào chỉ-đọc (lịch sử đa lượt từ DB)
         # Scaffold demo: tiêm cờ bất định để ép nhánh human_handoff (Decision đọc scratchpad).
         "scratchpad": {"injected_flags": ["ambiguous_intent"]} if force_handoff else {},
         "messages": [],
@@ -80,10 +83,18 @@ async def run_pipeline(
     input_text: str,
     force_handoff: bool = False,
     conversation_id: str | None = None,
+    history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Chạy pipeline 1 lượt, trả final state. force_handoff=True -> demo nhánh human_handoff."""
-    thread_id = conversation_id or str(uuid4())
+    """Chạy pipeline 1 lượt, trả final state. force_handoff=True -> demo nhánh human_handoff.
+
+    `thread_id` sinh MỚI mỗi lượt (MemorySaver in-memory tích luỹ reduce-channel nếu tái dùng) → bộ nhớ đa lượt
+    KHÔNG từ checkpointer mà từ `history` (nạp từ DB, đầu vào chỉ-đọc). Durable checkpointer = slice 09b.
+    """
+    thread_id = str(uuid4())
     state_in = _initial_state(
-        input_text=input_text, conversation_id=thread_id, force_handoff=force_handoff
+        input_text=input_text,
+        conversation_id=conversation_id or thread_id,
+        force_handoff=force_handoff,
+        history=history,
     )
     return await graph.ainvoke(state_in, config={"configurable": {"thread_id": thread_id}})

@@ -17,6 +17,9 @@ class ConversationState(TypedDict, total=False):
     # ── Lõi điều phối ─────────────────────────────────────────────────────────
     conversation_id: str | None
     input: str
+    # ĐẦU VÀO chỉ-đọc (KHÔNG reducer): lịch sử hội thoại các lượt TRƯỚC (từ DB) để hiểu ngữ cảnh đa lượt —
+    # KHÁC `messages` (output lượt này). Lịch sử KHÔNG thay `rag_contexts` (phanh chống bịa còn nguyên). PRD §12.
+    history: list[dict[str, Any]]
     scratchpad: dict[str, Any]
     messages: Annotated[list[dict[str, Any]], add]  # append-only (tin nhắn hội thoại)
     trace: Annotated[list[dict[str, Any]], add]  # append-only (agent-trace: node/confidence/branch)

@@ -1,25 +1,30 @@
-"""WebSocket chat — cổng chat khách chạy ĐỦ pipeline (PRD §6, §8, §16).
+"""WebSocket chat — cổng chat khách chạy ĐỦ pipeline + LƯU hội thoại (PRD §6, §8, §12, §16).
 
-Mỗi tin nhắn khách → gửi `{"type":"typing"}` (UX) → chạy `run_pipeline` (intent → knowledge →
-decision(pass-through) → response) → gửi `{"type":"reply", content}` (câu trả lời do RESPONSE GENERATOR sinh —
-điểm phát ngôn DUY NHẤT, PRD §7.4). Lỗi pipeline → câu xin lỗi, KHÔNG rớt kết nối.
+Mỗi tin khách → `{"type":"typing"}` → chạy pipeline (intent → knowledge → decision → response) → `{"type":"reply"}`
+(câu trả lời/thông báo handoff do RESPONSE GENERATOR sinh — điểm phát ngôn DUY NHẤT, PRD §7.4). Lỗi pipeline →
+câu xin lỗi, KHÔNG rớt kết nối.
 
-Phạm vi slice happy-case (xem plan): 1 khách/1 kết nối → gửi thẳng qua WS. **KHÔNG** Redis pub/sub (dành cho
-multi-client/Admin ở HITL phase sau, FR-ASYNC-7). Single-turn: mỗi tin chạy pipeline độc lập (bộ nhớ đa lượt —
-ROADMAP 09a). Persist hội thoại/message = TUỲ CHỌN (Phase 4).
+Persistence (slice 09a): guest `?sid=` (hoặc uuid) → tạo Conversation; lưu message khách & AI vào Postgres
+(session NGẮN — Neon free) + cập nhật `conversation.status`. Persist ĐƯỢC BỌC try/except: DB lỗi KHÔNG chặn chat.
+`db_conversation_id` (persist) TÁCH khỏi `thread_id` checkpointer (run_pipeline tự sinh mỗi lượt). Bộ nhớ đa lượt
+lấy từ DB (Phase 4), KHÔNG từ checkpointer.
 
-TODO (PRD §7.4, §10): persist Message + audit; khi hội thoại ở IN_HUMAN_QUEUE/HUMAN_HANDLING → định tuyến tin
-tới Admin, KHÔNG tới AI (FR-ASYNC-3); phát realtime qua Redis pub/sub.
+Phạm vi: 1 khách/1 kết nối → gửi thẳng qua WS (KHÔNG Redis pub/sub — FR-ASYNC-7, để dành). Định tuyến tin tới
+Admin khi IN_HUMAN_QUEUE/HUMAN_HANDLING = slice 08b/08c.
 """
 
 from __future__ import annotations
 
+import uuid
 from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ...agents.graph import run_pipeline
+from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
+from ...models.enums import MessageSender
+from ...services import conversation_service
 
 router = APIRouter()
 log = get_logger("ws.chat")
@@ -31,26 +36,60 @@ _ERROR_REPLY = (
 )
 
 
+async def _persist_message(conv_id: uuid.UUID | None, sender: str, content: str) -> None:
+    """Lưu 1 message (session NGẮN). Guarded: DB lỗi KHÔNG chặn chat (chỉ log)."""
+    if conv_id is None:
+        return
+    try:
+        async with AsyncSessionLocal() as s:
+            await conversation_service.add_message(s, conv_id, content=content, sender=sender)
+    except Exception as exc:  # noqa: BLE001 — persist là phụ, đừng để hỏng chat.
+        log.warning("persist message failed (bỏ qua): %s", exc)
+
+
+async def _persist_status(conv_id: uuid.UUID | None, status: str | None) -> None:
+    if conv_id is None or not status:
+        return
+    try:
+        async with AsyncSessionLocal() as s:
+            await conversation_service.set_status(s, conv_id, status)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("set status failed (bỏ qua): %s", exc)
+
+
 @router.websocket("/ws/chat")
 async def chat_ws(websocket: WebSocket) -> None:
     await websocket.accept()
-    conn_id = str(uuid4())  # NHÃN kết nối cho log (KHÔNG dùng làm thread_id — xem dưới).
+    sid = websocket.query_params.get("sid") or str(uuid4())  # guest, KHÔNG auth (tài khoản = slice 11)
+
+    # Tạo Conversation (session NGẮN). db_conversation_id TÁCH khỏi thread_id checkpointer.
+    db_conversation_id: uuid.UUID | None = None
+    try:
+        async with AsyncSessionLocal() as s:
+            conv = await conversation_service.create_conversation(s, customer_identifier=sid)
+            db_conversation_id = conv.id
+    except Exception as exc:  # noqa: BLE001 — không tạo được conversation -> chat vẫn chạy, chỉ không persist.
+        log.warning("create_conversation failed (chat vẫn chạy, KHÔNG persist): %s", exc)
+
     await websocket.send_json({"type": "system", "message": "connected"})
-    log.info("WebSocket client connected (conn_id=%s)", conn_id)
+    log.info("WebSocket client connected (sid=%s conv=%s)", sid, db_conversation_id)
     try:
         while True:
             msg = await websocket.receive_text()
             await websocket.send_json({"type": "typing"})  # UX: hiện "đang trả lời…"
+            await _persist_message(db_conversation_id, MessageSender.CUSTOMER, msg)
+
+            status: str | None = None
             try:
-                # Single-turn: MỖI tin chạy pipeline ĐỘC LẬP -> thread_id mới (run_pipeline tự sinh uuid).
-                # KHÔNG tái dùng 1 thread_id/kết nối: graph có MemorySaver checkpointer nên reduce-channel
-                # (messages/trace/uncertainty_flags, PRD §5) sẽ TÍCH LUỸ + rò cờ qua các lượt. Bộ nhớ đa
-                # lượt (dùng thread_id ổn định) là ROADMAP 09a.
                 final = await run_pipeline(input_text=msg)
                 reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
+                status = final.get("status")
             except Exception as exc:  # noqa: BLE001 — lỗi pipeline → xin lỗi, KHÔNG rớt kết nối.
                 log.warning("pipeline failed on WS message -> apology: %s", exc)
                 reply = _ERROR_REPLY
+
             await websocket.send_json({"type": "reply", "content": reply})
+            await _persist_message(db_conversation_id, MessageSender.AI, reply)
+            await _persist_status(db_conversation_id, status)
     except WebSocketDisconnect:
-        log.info("WebSocket client disconnected (conn_id=%s)", conn_id)
+        log.info("WebSocket client disconnected (sid=%s conv=%s)", sid, db_conversation_id)

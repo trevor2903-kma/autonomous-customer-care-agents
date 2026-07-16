@@ -67,6 +67,18 @@ async def add_message(
     return await get_conversation(session, conversation_id)
 
 
+async def set_status(
+    session: AsyncSession, conversation_id: uuid.UUID, status: str
+) -> Conversation | None:
+    """Cập nhật `conversation.status` (theo final state của pipeline). Session NGẮN (Neon free)."""
+    conversation = await get_conversation(session, conversation_id)
+    if conversation is None:
+        return None
+    conversation.status = status
+    await session.commit()
+    return conversation
+
+
 async def get_conversation(
     session: AsyncSession, conversation_id: uuid.UUID
 ) -> Conversation | None:
