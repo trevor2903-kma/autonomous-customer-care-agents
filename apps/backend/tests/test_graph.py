@@ -75,6 +75,33 @@ async def test_human_handoff_branch() -> None:
     assert any(m["sender"] == "ai" for m in final["messages"])
 
 
+async def test_golden_complaint_auto_reply_high_priority(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Golden e2e (mocked agents): complaint sạch cờ + có tri thức → auto_reply grounded, priority=high/high.
+    Xác nhận Agent 3 THẬT (không còn pass_through trong trace)."""
+
+    async def fake_classify(text: str, history=None) -> dict:  # type: ignore[no-untyped-def]
+        return {
+            "intent": "complaint",
+            "category": "after_sale",
+            "entities": {},
+            "confidence": 0.9,
+            "uncertainty_flags": [],
+        }
+
+    monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)
+    final = await run_pipeline(input_text="áo mình bị lỗi rách chỉ, shop xử lý sao?")
+
+    assert final["action"] == "auto_reply"
+    assert final["priority"] == "high"
+    assert final["severity"] == "high"
+    assert final["status"] == "REPLIED"
+    assert final["result"]["reply"]
+    # Agent 3 THẬT: decision trace có blocking_flags, KHÔNG còn pass_through (pass-through đã bỏ hẳn).
+    dec = next(t for t in final["trace"] if t["node"] == "decision")
+    assert "blocking_flags" in dec["detail"]
+    assert "pass_through" not in dec["detail"]
+
+
 async def test_blocking_flag_forces_handoff_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """Agent 3 TẤT ĐỊNH: cờ THẬT ∈ BLOCKING_FLAGS (Agent 1/2) → human_handoff (route trên CỜ, không blend
     confidence). Cờ vẫn tích luỹ đúng 1 lần (reducer `add`, decision không trả lại cờ đã tích luỹ)."""
