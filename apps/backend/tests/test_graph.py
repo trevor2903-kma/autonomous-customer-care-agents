@@ -18,7 +18,7 @@ def _offline_agents(monkeypatch: pytest.MonkeyPatch) -> None:
     """Giữ pipeline test offline: Agent 1 (classify_intent) + Agent 2 (retrieve_knowledge) + Agent 4
     (generate_reply) đều gọi network -> thay bằng stub tất định."""
 
-    async def fake_classify(text: str) -> dict:
+    async def fake_classify(text: str, history=None) -> dict:  # type: ignore[no-untyped-def]
         return {
             "intent": "product_information",
             "category": "pre_sale",
@@ -34,7 +34,7 @@ def _offline_agents(monkeypatch: pytest.MonkeyPatch) -> None:
             "uncertainty_flags": [],
         }
 
-    async def fake_generate(query, intent, entities, rag_contexts) -> dict:  # type: ignore[no-untyped-def]
+    async def fake_generate(query, intent, entities, rag_contexts, history=None) -> dict:  # type: ignore[no-untyped-def]
         return {"reply": "[stub] phản hồi grounded", "uncertainty_flags": []}
 
     monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)
@@ -79,7 +79,7 @@ async def test_blocking_flag_forces_handoff_once(monkeypatch: pytest.MonkeyPatch
     """Agent 3 TẤT ĐỊNH: cờ THẬT ∈ BLOCKING_FLAGS (Agent 1/2) → human_handoff (route trên CỜ, không blend
     confidence). Cờ vẫn tích luỹ đúng 1 lần (reducer `add`, decision không trả lại cờ đã tích luỹ)."""
 
-    async def fake_classify(text: str) -> dict:
+    async def fake_classify(text: str, history=None) -> dict:  # type: ignore[no-untyped-def]
         return {
             "intent": "other",
             "category": "general",

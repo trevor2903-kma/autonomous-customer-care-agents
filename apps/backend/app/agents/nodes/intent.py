@@ -23,6 +23,7 @@ from ...core.logging import get_logger
 from ...models.enums import INTENT_CATEGORY, ConversationStatus, Intent
 from ..state import ConversationState
 from ._entities import extract_entities_rule
+from ._history import format_history
 from .taxonomy import render_taxonomy
 
 log = get_logger("agent.intent")
@@ -63,13 +64,16 @@ def _system_prompt() -> str:
     )
 
 
-async def _classify_llm(text: str, rule: dict[str, str]) -> dict[str, Any]:
-    """LLM phân loại intent + trích entities từ message + taxonomy (KHÔNG dùng RAG)."""
+async def _classify_llm(
+    text: str, rule: dict[str, str], history: list[dict[str, Any]] | None
+) -> dict[str, Any]:
+    """LLM phân loại intent + trích entities từ message + taxonomy (KHÔNG dùng RAG). Lịch sử (nếu có) giúp
+    hiểu tham chiếu đa lượt (vd "thế còn size L?" → cùng sản phẩm ở lượt trước)."""
     resp = await get_openai().chat.completions.create(
         model=settings.llm_model,
         messages=[
             {"role": "system", "content": _system_prompt()},
-            {"role": "user", "content": f"Câu khách: {text!r}"},
+            {"role": "user", "content": f"{format_history(history)}Câu khách: {text!r}"},
         ],
         response_format={"type": "json_object"},
         temperature=0,
@@ -111,14 +115,17 @@ async def _classify_llm(text: str, rule: dict[str, str]) -> dict[str, Any]:
     }
 
 
-async def classify_intent(text: str) -> dict[str, Any]:
-    """Phân loại intent + trích entities từ message (taxonomy prompt, KHÔNG retrieval). Trả
-    {intent, category, entities, confidence, uncertainty_flags}. Degrade an toàn khi offline."""
+async def classify_intent(
+    text: str, history: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
+    """Phân loại intent + trích entities từ message (taxonomy prompt, KHÔNG retrieval). `history` (đầu vào
+    chỉ-đọc) giúp hiểu ngữ cảnh đa lượt. Trả {intent, category, entities, confidence, uncertainty_flags}.
+    Degrade an toàn khi offline."""
     rule = extract_entities_rule(text)  # tính sớm — dùng cho MỌI nhánh (order_id không mất)
     if not settings.llm_api_key or not settings.enable_llm:
         return _degrade(rule, ["llm_unavailable"])
     try:
-        return await _classify_llm(text, rule)
+        return await _classify_llm(text, rule, history)
     except Exception as exc:  # noqa: BLE001 — LLM lỗi -> degrade + cờ (đừng im lặng), entities = regex.
         log.warning("intent.llm failed -> degrade llm_unavailable: %s", exc)
         return _degrade(rule, ["llm_unavailable"])
@@ -127,7 +134,7 @@ async def classify_intent(text: str) -> dict[str, Any]:
 async def intent_node(state: ConversationState) -> dict[str, Any]:
     """Node graph: classify_intent rồi ghi state + trace. Ghi `intent_confidence` (Agent 1) — KHÔNG ghi
     `rag_contexts` (của Agent 2) hay `confidence` chung (Decision tính min)."""
-    result = await classify_intent(state.get("input", ""))
+    result = await classify_intent(state.get("input", ""), history=state.get("history"))
     return {
         "status": ConversationStatus.CLASSIFYING,
         "intent": result["intent"],

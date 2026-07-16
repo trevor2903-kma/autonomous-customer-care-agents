@@ -93,6 +93,22 @@ async def get_conversation(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def get_recent_messages(
+    session: AsyncSession, conversation_id: uuid.UUID, limit: int
+) -> list[dict[str, str]]:
+    """N tin GẦN NHẤT của hội thoại (cap `limit` = history_window, NFR-10), trả theo thứ tự THỜI GIAN
+    (cũ → mới) dạng `{sender, content}` cho bộ nhớ đa lượt. Session NGẮN."""
+    stmt = (
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.desc())
+        .limit(limit)
+    )
+    rows = list((await session.execute(stmt)).scalars().all())
+    rows.reverse()  # desc (mới→cũ) → thứ tự thời gian (cũ→mới) cho prompt
+    return [{"sender": m.sender, "content": m.content} for m in rows]
+
+
 async def list_conversations(session: AsyncSession, *, limit: int = 50) -> list[Conversation]:
     stmt = (
         select(Conversation)

@@ -18,6 +18,7 @@ from ...core.embeddings import get_openai
 from ...core.logging import get_logger
 from ...models.enums import AgentAction, ConversationStatus
 from ..state import ConversationState
+from ._history import format_history
 
 log = get_logger("agent.response")
 
@@ -57,8 +58,10 @@ async def generate_reply(
     intent: str | None,
     entities: dict[str, Any] | None,
     rag_contexts: list[dict[str, Any]] | None,
+    history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Sinh câu trả lời GROUNDED chỉ từ `rag_contexts`. Trả `{reply, uncertainty_flags}`.
+    """Sinh câu trả lời GROUNDED chỉ từ `rag_contexts`. Trả `{reply, uncertainty_flags}`. `history` (đầu vào
+    chỉ-đọc) giúp hiểu tham chiếu đa lượt — NHƯNG nội dung vẫn grounded từ `rag_contexts`, KHÔNG từ lịch sử.
 
     Phanh: rag_contexts rỗng HOẶC thiếu llm_api_key → fallback + `hallucination_risk` (KHÔNG gọi LLM bịa)."""
     contexts = rag_contexts or []
@@ -67,6 +70,7 @@ async def generate_reply(
         return {"reply": FALLBACK_REPLY, "uncertainty_flags": ["hallucination_risk"]}
 
     user_msg = (
+        f"{format_history(history)}"
         f"Câu hỏi của khách: {query!r}\n"
         f"(intent: {intent}; entities: {entities or {}})\n\n"
         f"ĐOẠN TRI THỨC:\n{_context_block(contexts)}"
@@ -109,6 +113,7 @@ async def response_node(state: ConversationState) -> dict[str, Any]:
             intent=state.get("intent"),
             entities=state.get("entities") or {},
             rag_contexts=state.get("rag_contexts") or [],
+            history=state.get("history"),
         )
         reply = result["reply"]
         status = ConversationStatus.REPLIED

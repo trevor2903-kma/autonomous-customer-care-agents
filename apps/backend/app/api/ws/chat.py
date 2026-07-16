@@ -21,6 +21,7 @@ from uuid import uuid4
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ...agents.graph import run_pipeline
+from ...core.config import settings
 from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
 from ...models.enums import MessageSender
@@ -57,6 +58,18 @@ async def _persist_status(conv_id: uuid.UUID | None, status: str | None) -> None
         log.warning("set status failed (bỏ qua): %s", exc)
 
 
+async def _load_history(conv_id: uuid.UUID | None) -> list[dict[str, str]]:
+    """Nạp N tin gần nhất (history_window) từ DB — bộ nhớ đa lượt. Guarded: DB lỗi → [] (chat vẫn chạy)."""
+    if conv_id is None:
+        return []
+    try:
+        async with AsyncSessionLocal() as s:
+            return await conversation_service.get_recent_messages(s, conv_id, settings.history_window)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("load history failed (bỏ qua): %s", exc)
+        return []
+
+
 @router.websocket("/ws/chat")
 async def chat_ws(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -77,11 +90,13 @@ async def chat_ws(websocket: WebSocket) -> None:
         while True:
             msg = await websocket.receive_text()
             await websocket.send_json({"type": "typing"})  # UX: hiện "đang trả lời…"
+            # Nạp lịch sử các lượt TRƯỚC (từ DB) — TRƯỚC khi lưu tin hiện tại (history = lượt trước, không gồm msg).
+            history = await _load_history(db_conversation_id)
             await _persist_message(db_conversation_id, MessageSender.CUSTOMER, msg)
 
             status: str | None = None
             try:
-                final = await run_pipeline(input_text=msg)
+                final = await run_pipeline(input_text=msg, history=history)
                 reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
                 status = final.get("status")
             except Exception as exc:  # noqa: BLE001 — lỗi pipeline → xin lỗi, KHÔNG rớt kết nối.
