@@ -43,16 +43,17 @@ async def test_retrieve_no_hits_flags_no_relevant(monkeypatch: pytest.MonkeyPatc
 
 async def test_retrieve_low_score_flags_low_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(kn.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(kn.settings, "retrieval_threshold", 0.35)
 
     async def hits(*args: object, **kwargs: object) -> list[dict]:
-        return [{"text": "đổi trả trong 7 ngày", "source": "kb.pdf", "chunk_index": 0, "score": 0.42}]
+        return [{"text": "đổi trả trong 7 ngày", "source": "kb.pdf", "chunk_index": 0, "score": 0.30}]
 
     monkeypatch.setattr(kn.rag_service, "search", hits)
     r = await kn.retrieve_knowledge("đổi trả")
     assert r["rag_contexts"][0]["source"] == "kb.pdf"
     assert r["rag_contexts"][0]["text"] == "đổi trả trong 7 ngày"
-    assert r["retrieval_confidence"] == 0.42
-    assert "low_retrieval_score" in r["uncertainty_flags"]  # 0.42 < 0.6
+    assert r["retrieval_confidence"] == 0.30
+    assert "low_retrieval_score" in r["uncertainty_flags"]  # 0.30 < retrieval_threshold 0.35
 
 
 async def test_retrieve_high_score_no_flag(monkeypatch: pytest.MonkeyPatch) -> None:

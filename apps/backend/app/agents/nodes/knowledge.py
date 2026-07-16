@@ -47,7 +47,8 @@ async def retrieve_knowledge(query: str, top_k: int = 4) -> dict[str, Any]:
     ]
     retrieval_confidence = float(hits[0]["score"])
     flags: list[str] = []
-    if retrieval_confidence < settings.confidence_threshold:
+    # Ngưỡng RIÊNG cho cosine (retrieval_threshold) — KHÔNG dùng confidence_threshold (thang intent LLM).
+    if retrieval_confidence < settings.retrieval_threshold:
         flags.append("low_retrieval_score")
 
     return {
