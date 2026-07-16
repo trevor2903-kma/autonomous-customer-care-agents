@@ -49,3 +49,19 @@ class AnalyzeResult(BaseModel):
     retrieval_confidence: float  # Agent 2
     uncertainty_flags: list[str] = []  # gộp cờ Agent 1 + Agent 2
     rag_contexts: list[dict[str, Any]] = []  # Agent 2
+
+
+class PipelineResult(BaseModel):
+    # FULL pipeline slice (4 agent) cho FE inspector — dev metadata để QUAN SÁT quyết định, KHÔNG persist.
+    intent: str  # Agent 1
+    category: str | None = None  # Agent 1
+    entities: dict[str, Any] = {}  # Agent 1
+    intent_confidence: float  # Agent 1
+    retrieval_confidence: float  # Agent 2
+    rag_contexts: list[dict[str, Any]] = []  # Agent 2
+    action: str | None = None  # Agent 3 (auto_reply | human_handoff)
+    priority: str | None = None  # Agent 3
+    severity: str | None = None  # Agent 3
+    escalation_reason: str | None = None  # Agent 3
+    uncertainty_flags: list[str] = []  # cờ tích luỹ (Agent 1+2, + demo)
+    reply: str | None = None  # Agent 4 (câu trả lời grounded HOẶC thông báo handoff)

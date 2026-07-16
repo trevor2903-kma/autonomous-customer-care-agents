@@ -3,6 +3,7 @@ import type {
   Conversation,
   HealthStatus,
   IntentClassification,
+  PipelineResult,
   RagInfo,
   RagUploadResult,
   RunDemoResult,
@@ -77,5 +78,16 @@ export async function analyzeMessage(message: string): Promise<AnalyzeResult> {
     body: JSON.stringify({ message }),
   });
   if (!res.ok) throw new Error(`analyze ${res.status}`);
+  return res.json();
+}
+
+// FULL pipeline (4 agent) cho inspector — quan sát Agent 3 (quyết định) + Agent 4 (reply). Single-shot, KHÔNG persist.
+export async function runPipeline(message: string): Promise<PipelineResult> {
+  const res = await fetch(`${API_BASE}/api/agents/pipeline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok) throw new Error(`pipeline ${res.status}`);
   return res.json();
 }

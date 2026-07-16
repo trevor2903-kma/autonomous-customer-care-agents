@@ -97,6 +97,22 @@ export interface AnalyzeResult {
   rag_contexts: { text?: string; source: string; score: number }[]; // Agent 2
 }
 
+// FULL pipeline slice (4 agent) cho inspector — quan sát quyết định Agent 3 + câu trả lời Agent 4.
+export interface PipelineResult {
+  intent: string; // Agent 1
+  category: string | null; // Agent 1
+  entities: Record<string, unknown>; // Agent 1
+  intent_confidence: number; // Agent 1
+  retrieval_confidence: number; // Agent 2
+  rag_contexts: { text?: string; source: string; score: number }[]; // Agent 2
+  action: string | null; // Agent 3 (auto_reply | human_handoff)
+  priority: string | null; // Agent 3
+  severity: string | null; // Agent 3
+  escalation_reason: string | null; // Agent 3
+  uncertainty_flags: string[];
+  reply: string | null; // Agent 4
+}
+
 export interface ServiceProbe {
   ok: boolean;
   detail: unknown;

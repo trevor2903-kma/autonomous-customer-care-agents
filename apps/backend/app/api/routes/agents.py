@@ -12,13 +12,26 @@ from fastapi import APIRouter, Query
 from ...agents.graph import run_pipeline
 from ...agents.nodes.intent import classify_intent
 from ...agents.nodes.knowledge import retrieve_knowledge
+from ...models.enums import INTENT_CATEGORY, Intent
 from ...schemas.agent import (
     AgentTraceStep,
     AnalyzeResult,
     ClassifyRequest,
     ClassifyResult,
+    PipelineResult,
     RunDemoResult,
 )
+
+
+def _category_of(intent: str | None) -> str | None:
+    """Suy category từ intent (INTENT_CATEGORY) — state không lưu category. intent ngoài enum -> None."""
+    if not intent:
+        return None
+    try:
+        cat = INTENT_CATEGORY.get(Intent(intent))
+    except ValueError:
+        return None
+    return cat.value if cat else None
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -43,6 +56,29 @@ async def analyze(req: ClassifyRequest) -> AnalyzeResult:
         retrieval_confidence=know["retrieval_confidence"],
         uncertainty_flags=intent["uncertainty_flags"] + know["uncertainty_flags"],
         rag_contexts=know["rag_contexts"],
+    )
+
+
+@router.post("/pipeline", response_model=PipelineResult)
+async def pipeline(req: ClassifyRequest) -> PipelineResult:
+    """Chạy ĐỦ pipeline cho 1 câu test (FE inspector, single-shot) — KHÔNG persist (công cụ dev). Trả slice
+    của cả 4 agent: Agent 1 (intent/entities) · Agent 2 (retrieval) · Agent 3 (quyết định) · Agent 4 (reply)."""
+    final = await run_pipeline(input_text=req.message)
+    result = final.get("result") or {}
+    intent = final.get("intent") or "unknown"
+    return PipelineResult(
+        intent=intent,
+        category=_category_of(final.get("intent")),
+        entities=final.get("entities") or {},
+        intent_confidence=float(final.get("intent_confidence") or 0.0),
+        retrieval_confidence=float(final.get("retrieval_confidence") or 0.0),
+        rag_contexts=final.get("rag_contexts") or [],
+        action=final.get("action"),
+        priority=final.get("priority"),
+        severity=final.get("severity"),
+        escalation_reason=final.get("escalation_reason"),
+        uncertainty_flags=final.get("uncertainty_flags") or [],
+        reply=result.get("reply"),
     )
 
 
