@@ -1,199 +1,178 @@
-# BIG PLAN — Agent 3 (slice 05) + Lưu trữ & Bộ nhớ đa lượt (slice 09a) + FE Pipeline Inspector
+# BIG PLAN — HITL Admin: Escalation Queue (08b) + Takeover & Live Reply (08c) + Gates & Draft Approval (08a) + FE Admin
 
-> **Bản chất:** kịch bản ONE-SHOT gộp 2 slice + phần FE để test. Nguồn chân lý vẫn là **`PRD.md`** (§7.3 Decision
-> Engine; §12 Conversation Memory; §5 trụ cột 1 dự đoán/kiểm toán + trụ cột 3 an toàn; NFR-10 context window;
-> §9/§11 — **để dành 08a/08b/08c**; durable checkpointer/suspend-resume — **để dành 09b**).
+> **Bản chất:** kịch bản ONE-SHOT LỚN (3 slice + FE admin), chạy phase-by-phase — Claude Code có thể dừng/tiếp
+> giữa các phase. Nguồn chân lý: **`PRD.md`** (§11 EscalationCard/takeover; §9 gate/PENDING_APPROVAL; §10 realtime
+> FR-ASYNC-7; §17 dashboard). Sau khi xong = **vòng HITL trọn vẹn, demo được**.
 >
-> **Ba mục tiêu:**
+> **Mục tiêu:** hội thoại escalate → **admin thấy trong hàng đợi kèm EscalationCard** (08b) → **admin tiếp quản,
+> trả lời khách trực tiếp** (08c) → và **ca nhạy cảm: AI soạn nháp, admin duyệt trước khi gửi** (08a). Kèm **FE admin**.
 >
-> - **A · Agent 3 (05):** khôi phục Decision Engine THẬT (policy TẤT ĐỊNH) — bỏ pass-through; quyết `auto_reply`
->   vs `human_handoff` + `priority`/`severity`/`escalation_reason`.
-> - **B · Persistence + Memory (09a):** LƯU conversation + message vào Postgres; **bộ nhớ đa lượt** (nạp lịch sử
->   từ DB vào pipeline để hiểu ngữ cảnh).
-> - **C · FE Pipeline Inspector:** mở rộng panel ở `/rag` để **quan sát đủ 4 agent** cho một câu test (thấy quyết
->   định Agent 3 + câu trả lời Agent 4) — công cụ test + minh chứng minh bạch cho ĐATN.
+> **Quyết định kiến trúc (đọc kỹ):**
 >
-> **Ranh giới (đọc kỹ):** Agent 3 **CHỈ ra quyết định + gắn cờ**; pipeline **chạy tới cuối rồi THOÁT** (KHÔNG
-> suspend/resume, KHÔNG hàng đợi admin, KHÔNG duyệt nháp — 09b/08a-c). **Response Generator là điểm phát ngôn DUY
-> NHẤT** (phát cả câu trả lời lẫn thông báo handoff, luôn grounded từ `rag_contexts`). Bộ nhớ lấy từ **DB, KHÔNG
-> từ checkpointer**.
+> - **Pub/sub TRONG-PROCESS** (1 worker) qua một `hub` nhỏ (dict `conversation_id → set WS`), **event-driven, KHÔNG
+>   polling**. Redis pub/sub (PRD §10) là bản nâng cấp **đa-worker** — swap sau, không làm ở đây. Giữ 1 worker.
+> - **Takeover ≠ suspend/resume.** Dùng **status-gate**: khi hội thoại đang có người xử lý (IN_HUMAN_QUEUE/
+>   HUMAN_HANDLING/PENDING_APPROVAL) thì **AI KHÔNG chạy** — tin khách route sang admin. KHÔNG cần LangGraph
+>   interrupt/checkpointer (đó là 09b).
+> - **EscalationCard dựng từ final state** (không cần re-wire graph): WS/service gom intent/entities/rag_context/
+>   reason/priority/severity (+ nháp cho ca PENDING_APPROVAL) → lưu lên conversation.
+> - **Gate:** `auto_reply` + category **nhạy cảm** → **PENDING_APPROVAL** (giữ nháp Agent 4 chờ admin duyệt).
+>   `human_handoff` LUÔN escalate (bất biến FR-GATE-2). Response Generator vẫn là egress TỰ ĐỘNG duy nhất; tin
+>   admin là egress-người riêng (qua hub).
+> - **Admin identity tối giản:** chưa có admin auth (slice 11) → dùng một "demo admin" (id cố định / query param).
 
 ---
 
-## 0. Quyết định kiến trúc (gộp)
+## 0. In / Out scope
 
-- **KHÔNG blend confidence.** `intent_confidence` (LLM tự khai) vs `retrieval_confidence` (cosine) là **hai thang
-  khác nhau** → đừng `min` rồi so một ngưỡng. Mỗi thang có ngưỡng riêng; **Agent 3 quyết trên CỜ**; giữ cả hai
-  confidence cho priority + audit.
-- **Agent 3 = LUẬT tất định — KHÔNG LLM cho phần an toàn; KHÔNG reasoning model** (thừa + hại NFR-1 latency). LLM
-  sentiment (nếu cần) = non-reasoning nhẹ, **để sau**.
-- **Sole egress:** graph `decision → response`; `response_node` branch theo `action`. `human_handoff` node đầy đủ
-  (EscalationCard + queue) = 08b — GIỮ file, đừng dựng ở đây.
-- **Tách `db_conversation_id` (persist) ≠ `thread_id` (checkpointer).** GIỮ `thread_id` sinh MỚI mỗi lượt
-  (MemorySaver in-memory sẽ tích luỹ reduce-channel nếu tái dùng) → **bộ nhớ từ DB**. Durable checkpointer = 09b.
-- **`history` là ĐẦU VÀO chỉ-đọc** (khác `messages` output). Lịch sử chỉ để _hiểu ngữ cảnh_, KHÔNG thay `rag_contexts`.
-- **Guest, không auth:** `customer_identifier` = query `?sid=` hoặc uuid sinh theo kết nối. Tài khoản = slice 11.
+**In:** cột conversation (priority/severity/escalation_card) + migration; endpoint + UI hàng đợi escalation;
+pub/sub in-process + status-gating + admin WS + takeover; UI admin chat/takeover; gate config + PENDING_APPROVAL +
+duyệt/sửa/gửi nháp + UI; e2e + test.
+**Out (để sau):** Redis pub/sub đa-worker; durable checkpointer + suspend/resume + AWAITING_CUSTOMER (09b);
+auto-resolve/offline (09c); admin auth/RBAC thật (11); danh sách TẤT CẢ hội thoại (10a — queue này chỉ escalation);
+monitoring/analytics (10b/c); push/badge notification thật (nay chỉ hiện trong queue khi refresh).
 
 ---
 
-## 1. In / Out scope
+## 1. Kế hoạch theo Phase
 
-**In:** tách `RETRIEVAL_THRESHOLD`; Agent 3 policy tất định + enums/state; sole-egress routing; persist
-conversation/message; multi-turn memory; endpoint + panel FE inspector đủ 4 agent; test FR + persist + e2e.
-**Out (để sau):** suspend/resume + durable checkpointer (09b); gate §9 / PENDING_APPROVAL (08a); human_handoff đầy
-đủ + EscalationCard + admin queue + takeover (08b/08c); pub/sub multi-client; màn danh sách hội thoại (10a); auth
-tài khoản (11); FE reload-lịch-sử-khi-reconnect.
+> Mỗi phase để `make test` (backend) / `pnpm -r build` (frontend) XANH rồi `git commit`, tóm tắt 1 dòng, tiếp nếu không lỗi.
 
----
+### === PHẦN A · 08b — HÀNG ĐỢI ESCALATION + ESCALATIONCARD ===
 
-## 2. Kế hoạch theo Phase
+### Phase 0 — Model + service (lưu card/priority/severity)
 
-> Sau MỖI phase: chạy "Verify", cho tôi xem output, `git commit`, tóm tắt 1 dòng, tiếp nếu không lỗi.
+- `app/models/conversation.py`: thêm `priority: str | None`, `severity: str | None`, `escalation_card: dict|None`
+  (JSONB, nullable). Tạo **migration Alembic**.
+- `app/services/escalation_service.py` (mới): `build_escalation_card(final_state, trigger_message) -> dict`
+  (summary = tin khách kích hoạt + intent; intent/entities/rag_context (top nguồn); escalation_reason; priority;
+  severity; `suggested_reply` = nháp — rỗng cho handoff, có cho PENDING_APPROVAL); `persist_escalation(session,
+conv_id, card, priority, severity, reason)`; `list_escalations(session, statuses, limit)` (lọc theo status, **sắp
+  giảm dần theo priority** high→low rồi `last_message_at`).
 
-### === PHẦN A · AGENT 3 (slice 05) ===
+**Verify:** unit `build_escalation_card` từ một final-state mẫu → card đủ trường; `list_escalations` sắp đúng thứ tự.
+`make test` xanh. Commit: `feat(hitl): phase 0 - conversation escalation cols + escalation_service`.
 
-### Phase 0 — Tách `RETRIEVAL_THRESHOLD` (sửa "hai thang một ngưỡng")
+### Phase 1 — WS lưu card khi handoff + endpoint queue
 
-- `app/core/config.py`: thêm `retrieval_threshold: float = 0.35` (env `RETRIEVAL_THRESHOLD`); GIỮ
-  `confidence_threshold`. Ghi chú: _"ngưỡng cosine — PHẢI đo trên KB (Chương 4); 0.35 là mặc định tạm"_.
-- `app/agents/nodes/knowledge.py`: `low_retrieval_score` dùng **`settings.retrieval_threshold`** (thay `confidence_threshold`).
-- (Tùy chọn) `scripts/measure_retrieval_threshold.py`: đo phân bố cosine top-1 trên KB (câu có/không đáp án).
+- `app/api/ws/chat.py`: sau `run_pipeline`, nếu `status == IN_HUMAN_QUEUE` → `build_escalation_card` +
+  `persist_escalation` (card + priority + severity + reason từ final state).
+- `app/api/routes/admin.py` (mới, prefix `/admin`): `GET /escalations` → `list_escalations([IN_HUMAN_QUEUE,
+PENDING_APPROVAL])` → danh sách `{conversation_id, customer_identifier, status, priority, severity,
+escalation_reason, escalation_card, last_message_at}`. `GET /conversations/{id}` → hội thoại + messages (cho UI).
+- `packages/shared-types`: `Escalation`, `AdminConversation` (+ message). `apps/dashboard/lib/api.ts`:
+  `getEscalations()`, `getAdminConversation(id)`.
 
-**Verify:** với KB đã nạp, `retrieve_knowledge("phí ship đi tỉnh?")` → KHÔNG `low_retrieval_score` oan;
-`retrieve_knowledge("asdf")` → `no_relevant_knowledge`. `make test` xanh. Commit:
-`feat(agent3): phase 0 - tách RETRIEVAL_THRESHOLD khỏi confidence_threshold`.
+**Verify:** `/chat` hỏi câu vô nghĩa → escalate → `GET /api/admin/escalations` có ca đó, đúng priority/card.
+`make test` xanh; `pnpm -r build` pass. Commit: `feat(hitl): phase 1 - persist card + GET /api/admin/escalations`.
 
-### Phase 1 — Agent 3 policy TẤT ĐỊNH (bỏ pass-through)
+### Phase 2 — FE trang hàng đợi admin
 
-- `app/models/enums.py`: thêm `Priority(low/medium/high)`, `Severity(low/medium/high)`.
-- `app/agents/state.py`: thêm `priority: str | None`, `severity: str | None`.
-- Hằng **`BLOCKING_FLAGS`** (tập ĐÓNG cờ có mặt tại decision, từ Agent 1+2):
-  `{"ambiguous_intent","multi_intent","out_of_domain","no_relevant_knowledge","low_retrieval_score","llm_unavailable","search_error"}`.
-  _(KHÔNG gồm `hallucination_risk` — Agent 4 phát SAU; giữ là phanh dự phòng cuối ở Agent 4.)_
-- Viết lại `app/agents/nodes/decision.py` (bỏ pass-through):
-  - Đọc cờ tích luỹ `uncertainty_flags` + `intent` + `intent_confidence` + `retrieval_confidence` + `scratchpad.injected_flags`.
-  - **Safety gate (luật cứng, KHÔNG blend):** `blocking = (set(flags)|set(injected)) & BLOCKING_FLAGS`. ≠ ∅ →
-    `action=HUMAN_HANDOFF`, `require_human_handoff=True`, `escalation_reason=f"blocking_flags={sorted(blocking)}"`;
-    ngược lại → `AUTO_REPLY`.
-  - **Bảng priority/severity theo intent:** complaint→high/high; refund→high/medium; exchange→medium/low;
-    order*status→medium/low; product*\*/size/shipping/promotion→low/low; other/unknown→low/low.
-  - **KHÔNG** `min(confidence)`; ghi cả hai confidence + `blocking` vào `trace` (audit + Agent Monitoring).
-  - `uncertainty_flags` (reducer add): CHỈ trả cờ MỚI (thường rỗng) — tránh nhân đôi. `status=DECIDING`.
-  - **TODO rõ:** gate §9 (nhạy cảm → PENDING_APPROVAL) = 08a; LLM sentiment `frustrated_customer` = sau.
-  - Demo: `run-demo force_handoff` tiêm `ambiguous_intent` ∈ BLOCKING → handoff tự nhiên (test 2 nhánh xanh).
+- `apps/dashboard/app/admin/page.tsx`: trang **Hàng đợi** — `getEscalations()` (TanStack, refetch nút/định kỳ),
+  **danh sách sắp theo priority** (badge màu theo priority/severity), mỗi mục hiện tóm tắt EscalationCard (intent,
+  reason, tin khách). Chọn một mục → mở hội thoại (Phần B). Link "Admin" ở trang chủ.
 
-**Verify:** unit `decision_node` (không cần network): `no_relevant_knowledge` → human_handoff + reason;
-`intent=complaint` không cờ → auto_reply + priority=high/severity=high; product_price sạch cờ → auto_reply low/low.
-`make test` xanh. Commit: `feat(agent3): phase 1 - deterministic policy (safety gate + priority/severity), bỏ pass-through`.
+**Verify:** mở `/admin` → thấy ca escalate, ưu tiên cao lên trước, card hiển thị. `pnpm -r build` pass. Commit:
+`feat(ui): phase 2 - trang hàng đợi escalation admin`.
 
-### Phase 2 — Định tuyến SOLE-EGRESS (Response Generator phát cả trả lời lẫn thông báo handoff)
+### === PHẦN B · 08c — TIẾP QUẢN + TRẢ LỜI TRỰC TIẾP (pub/sub in-process + status-gate) ===
 
-> Hiện `response_node` chưa branch theo `action`; graph route sang `human_handoff` (ghi `result.notice`, không
-> `result.reply`) → WS `final["result"]["reply"]` sẽ vỡ ở ca handoff. Sửa:
+### Phase 3 — Pub/sub hub + status-gating cho WS khách
 
-- `app/agents/graph.py`: route `decision → response` (bỏ conditional `should_handoff`→human_handoff cho slice
-  này); `response → END`. **GIỮ** `human_handoff.py` + `policy.should_handoff` (ghi chú để dành 08b re-wire thành
-  side-effect: EscalationCard + admin queue + suspend/resume).
-- `app/agents/nodes/response.py` — `response_node` branch theo `state["action"]`:
-  - `auto_reply` → `generate_reply(...)` grounded → `status=REPLIED`, `result.reply=<trả lời>`.
-  - `human_handoff` → KHÔNG gọi LLM; `reply=HANDOFF_NOTICE` ("Yêu cầu của bạn đã được chuyển tới nhân viên hỗ
-    trợ.") → `status=IN_HUMAN_QUEUE`, `result.reply=HANDOFF_NOTICE`, ghi `messages` (sender=ai).
-  - Cả hai set `result.reply` → **WS không phải sửa**. Response Generator là node DUY NHẤT ghi `messages`/`result.reply`.
+- `app/api/ws/hub.py` (mới): `ConnectionHub` — `register(conv_id, ws)`/`unregister`; `publish(conv_id, payload,
+exclude=ws)` gửi tới các WS khác cùng hội thoại (mỗi kết nối một `asyncio.Queue`). In-process, không Redis.
+- `app/api/ws/chat.py` refactor (WS khách): đăng ký hub theo `db_conversation_id`; chạy **HAI task**
+  `asyncio.gather`: (a) `_reader` đọc tin khách; (b) `_hub_listener` đọc từ hub → đẩy xuống socket khách.
+  - `_reader`: **status-gate** — nạp `conversation.status`; nếu ∈ {IN_HUMAN_QUEUE, HUMAN_HANDLING,
+    PENDING_APPROVAL} → **KHÔNG chạy AI**: lưu tin khách + `hub.publish(conv_id, {type:"message", from:"customer",
+content})` (admin thấy). Ngược lại (ACTIVE_AI/REPLIED…) → chạy pipeline như cũ + trả lời + lưu.
+  - `_hub_listener`: nhận payload (tin admin) → `websocket.send_json({type:"message", from:"admin", content})`.
 
-**Verify:** `run_pipeline("phí ship đi tỉnh?")` → auto_reply + reply grounded + REPLIED. `run_pipeline("asdf")` →
-no_relevant_knowledge → handoff → reply=HANDOFF_NOTICE + IN_HUMAN_QUEUE. run-demo 2 nhánh. `make test` xanh.
-Commit: `feat(agent3): phase 2 - sole-egress routing (Response Generator phát trả lời + handoff notice)`.
+**Verify:** khi status IN_HUMAN_QUEUE, gửi tin ở `/chat` → KHÔNG có reply AI (được publish lên hub thay vì chạy
+pipeline). `make test` xanh. Commit: `feat(hitl): phase 3 - in-process pub/sub hub + status-gate WS khách`.
 
-### === PHẦN B · LƯU TRỮ + BỘ NHỚ ĐA LƯỢT (slice 09a) ===
+### Phase 4 — Admin WS + tiếp quản
 
-### Phase 3 — Persist conversation + message (WS lưu Postgres)
+- `app/api/ws/admin.py` (mới): `/ws/admin/{conversation_id}` — admin connect → gửi lịch sử hiện có; đăng ký hub
+  theo conv_id; hai task tương tự (reader tin admin ↔ hub listener tin khách).
+  - Takeover: khi admin connect (hoặc gửi `{type:"takeover"}`) → `set_status(HUMAN_HANDLING)` + `assigned_admin_id`
+    (demo admin).
+  - `_reader` admin: tin admin → lưu (sender=ADMIN) + `hub.publish(conv_id, {from:"admin", content})` (→ khách).
+  - `_hub_listener`: tin khách (từ hub) → đẩy xuống socket admin.
+- (Tùy chọn) `POST /api/admin/conversations/{id}/resolve` → `set_status(RESOLVED)`.
 
-- `app/agents/state.py`: thêm `history: list[dict[str, Any]]` (đầu vào chỉ-đọc — KHÔNG reducer).
-- `app/agents/graph.py`: `run_pipeline(..., history=None)` → `_initial_state` đặt `history=history or []`. GIỮ việc
-  sinh `thread_id` mỗi lượt.
-- `app/api/ws/chat.py` (bỏ TODO persist): connect → `sid` từ `websocket.query_params` hoặc `uuid4` →
-  `async with AsyncSessionLocal() as s: conv = await create_conversation(s, customer_identifier=sid)` → giữ
-  `db_conversation_id`. Mỗi tin: lưu message khách (session ngắn) → `run_pipeline` → lưu message AI + cập nhật
-  `conversation.status` theo `final["result"]`.
+**Verify:** kịch bản: khách escalate → admin mở `/ws/admin/{id}`, takeover → gửi tin → **khách nhận tin admin
+trực tiếp**; khách gửi lại → **admin nhận**. `make test` xanh. Commit: `feat(hitl): phase 4 - admin WS + takeover + live 2 chiều`.
 
-**Verify:** `/chat` gửi 1 câu → DB có 1 conversation + 2 message (customer+ai), `customer_identifier` set.
-`make test` xanh. Commit: `feat(memory): phase 3 - persist conversation + messages qua WS`.
+### Phase 5 — FE màn admin tiếp quản
 
-### Phase 4 — Bộ nhớ đa lượt (nạp lịch sử từ DB vào pipeline)
+- `apps/dashboard/app/admin/[conversationId]/page.tsx` (hoặc panel trong `/admin`): mở hội thoại → hiện **lịch sử
+  đầy đủ** (customer/ai/admin, phân biệt màu) + **EscalationCard** (context để admin nắm nhanh); kết nối
+  `ws://.../ws/admin/{id}`; nút **"Tiếp quản"** → HUMAN_HANDLING; ô nhập → gửi tin (tới khách trực tiếp); nhận tin
+  khách realtime. Tái dùng pattern chat sẵn có.
 
-- `app/services/conversation_service.py`: `get_recent_messages(session, conversation_id, limit)` → N `{sender,content}` gần nhất.
-- `app/core/config.py`: `history_window: int = 8` (env `HISTORY_WINDOW`; NFR-10).
-- `app/api/ws/chat.py`: TRƯỚC `run_pipeline`, nạp `history` (các lượt trước) → truyền `run_pipeline(input_text, history=...)`.
-- `app/agents/nodes/intent.py`: `classify_intent(text, history=None)` — thêm lịch sử gần nhất vào prompt.
-- `app/agents/nodes/response.py`: `generate_reply(..., history=None)` — thêm lịch sử vào prompt (hiểu đại từ/tham
-  chiếu; vẫn grounded từ `rag_contexts`).
+**Verify:** mở hai cửa sổ (khách `/chat` + admin `/admin/{id}`) → chat qua lại realtime sau khi admin tiếp quản.
+`pnpm -r build` pass. Commit: `feat(ui): phase 5 - màn admin tiếp quản + chat realtime`.
 
-**Verify:** `/chat`: "áo này còn size M không shop?" → "thế còn size L?" → hiểu **size L của cùng cái áo** (không
-hỏi lại). `make test` xanh. Commit: `feat(memory): phase 4 - multi-turn memory (history từ DB vào Agent 1 + Agent 4)`.
+### === PHẦN C · 08a — GATE + DUYỆT NHÁP (PENDING_APPROVAL) ===
 
-### === PHẦN C · FE PIPELINE INSPECTOR + VERIFY ===
+### Phase 6 — Gate config + giữ nháp + duyệt/sửa/gửi
 
-### Phase 5 — FE Pipeline Inspector (quan sát đủ 4 agent cho một câu test)
+- `app/core/config.py`: `sensitive_intents` (mặc định `{refund, complaint, exchange}`) + `auto_reply_review: bool
+= True` (env). (Tùy chọn: 1 dòng DB `GateConfig` + toggle — nếu không, dùng config.)
+- `app/api/ws/chat.py` (nhánh AI-active, sau pipeline): nếu `action == auto_reply` **và** category/intent ∈
+  sensitive **và** `auto_reply_review` → **KHÔNG gửi thẳng**: `set_status(PENDING_APPROVAL)` + `build/persist card`
+  với `suggested_reply = <nháp Agent 4>` (vào hàng đợi). Ngược lại gửi như cũ. `human_handoff` LUÔN escalate (bất biến).
+- `app/api/routes/admin.py`: `POST /conversations/{id}/approve` (body `{content?}`) → gửi `content` (nháp đã duyệt/
+  sửa) tới khách qua `hub.publish` + lưu (sender=AI) + `set_status(REPLIED)`. `POST /conversations/{id}/reject` →
+  chuyển `IN_HUMAN_QUEUE` (admin tự xử lý).
 
-- Backend: `app/api/routes/agents.py` thêm `POST /pipeline` (body `{message}`) → `final = await run_pipeline(input_text=message)`
-  → trả `{intent, category, entities, intent_confidence, retrieval_confidence, rag_contexts, action, priority,
-severity, escalation_reason, uncertainty_flags, reply}` (rút từ final state). (schema `PipelineResult`.)
-- `packages/shared-types`: thêm `PipelineResult`.
-- `apps/dashboard/lib/api.ts`: `runPipeline(message): Promise<PipelineResult>`.
-- `apps/dashboard/components/rag/AnalyzePanel.tsx` (mở rộng — hoặc thêm `PipelinePanel.tsx`, theo pattern sẵn có
-  Tailwind + TanStack): dùng `runPipeline` → render **4 khối**:
-  - **Agent 1 · Intent**: intent, category, entities, intent_confidence.
-  - **Agent 2 · Knowledge**: retrieval_confidence + rag_contexts (source·score·snippet).
-  - **Agent 3 · Decision**: `action` (badge auto_reply/human_handoff), `priority`, `severity`, `escalation_reason`,
-    và cờ chặn (highlight). ← đây là chỗ _test Agent 3 trên FE_.
-  - **Agent 4 · Response**: `reply` (câu trả lời grounded hoặc thông báo handoff).
-- (Tùy chọn) `apps/dashboard/app/chat/page.tsx`: phân biệt bong bóng thông báo handoff (badge/màu khác) để demo dễ thấy.
+**Verify:** hỏi câu `refund` KB trả lời được → **KHÔNG gửi thẳng**, vào PENDING_APPROVAL với nháp; `approve` →
+khách nhận nháp. `make test` xanh. Commit: `feat(hitl): phase 6 - gate sensitive → PENDING_APPROVAL + duyệt/sửa/gửi nháp`.
 
-**Verify:** `/rag` inspector: "shop cho đổi trả trong bao lâu?" → Agent 3 `auto_reply` + Agent 4 câu trả lời
-grounded; "thời tiết hôm nay?" → Agent 3 `human_handoff` (out_of_domain/no_relevant_knowledge) + priority/severity
+### Phase 7 — FE duyệt nháp
 
-- Agent 4 thông báo chuyển người. `pnpm -r build` pass. Commit:
-  `feat(ui): phase 5 - pipeline inspector đủ 4 agent (test Agent 3 + Agent 4 trên FE)`.
+- `apps/dashboard/app/admin/[conversationId]/page.tsx`: nếu status `PENDING_APPROVAL` → hiện **nháp AI** + nút
+  **Duyệt & gửi** / **Sửa & gửi** (textarea) / **Từ chối** (→ tiếp quản). (Tùy chọn) toggle gate ở trang admin.
 
-### Phase 6 — Test FR + e2e verify (bỏ hẳn pass-through)
+**Verify:** ca PENDING_APPROVAL trên `/admin` → admin duyệt/sửa/gửi → khách nhận. `pnpm -r build` pass. Commit:
+`feat(ui): phase 7 - duyệt/sửa/gửi nháp (PENDING_APPROVAL)`.
 
-- Test đơn vị `decision_node` (cờ→action; intent→priority/severity); persist (đúng sender); `get_recent_messages`
-  cap `history_window`; golden e2e (KB→auto_reply grounded; no-knowledge→handoff notice; complaint→priority high).
-- Không còn `pass_through` trong trace; `run-demo` 2 nhánh; `make test` xanh; `pnpm -r build` pass.
+### Phase 8 — Test + e2e verify (vòng HITL trọn vẹn)
 
-**Verify:** `make test` xanh; `/chat` đa lượt + định tuyến đúng; `/rag` inspector hiển thị quyết định. Commit:
-`test(pipeline): phase 6 - FR tests + e2e verify`.
+- Test: `build_escalation_card`/`list_escalations`; gate → PENDING_APPROVAL đúng; status-gate (human-handling →
+  không chạy AI). e2e tay: (1) câu vô nghĩa → escalate → queue → admin takeover → chat realtime; (2) câu refund →
+  PENDING_APPROVAL → admin duyệt/gửi.
+
+**Verify:** `make test` xanh; `pnpm -r build` pass; hai kịch bản demo chạy. Commit: `test(hitl): phase 8 - e2e HITL loop`.
 
 ---
 
-## 3. Definition of Done
+## 2. Definition of Done
 
-- [ ] `RETRIEVAL_THRESHOLD` tách riêng; Agent 2 dùng nó; ngưỡng đo trên KB (không escalate oan vì 0.6).
-- [ ] Agent 3 **tất định**: route bằng **cờ** (BLOCKING_FLAGS), **KHÔNG blend confidence**; có priority/severity;
-      **không LLM/reasoning**; pass-through đã bỏ; run-demo 2 nhánh đúng.
-- [ ] **Response Generator là điểm phát ngôn DUY NHẤT** — phát cả trả lời grounded lẫn handoff notice; status đúng
-      (REPLIED / IN_HUMAN_QUEUE); WS không phải sửa.
-- [ ] Hội thoại + message **lưu Postgres** (guest sid); **đa lượt hiểu ngữ cảnh**; chỉ nạp N tin (`history_window`);
-      bộ nhớ từ **DB** (thread_id vẫn sinh mỗi lượt).
-- [ ] **FE inspector `/rag`** hiển thị đủ 4 agent — thấy `action`/`priority`/`severity`/`escalation_reason` của
-      Agent 3 + câu trả lời Agent 4. `/chat` vẫn test được định tuyến + đa lượt.
-- [ ] `make test` xanh; `pnpm -r build` pass. Agent 3 CHỈ quyết định + gắn cờ; pipeline chạy hết rồi thoát.
+- [ ] Escalate → conversation có priority/severity/escalation_card; `GET /api/admin/escalations` liệt kê **sắp theo priority**.
+- [ ] `/admin`: hàng đợi hiện ca escalate + PENDING_APPROVAL (ưu tiên cao trước) + EscalationCard.
+- [ ] **Admin tiếp quản + chat realtime 2 chiều** với khách (pub/sub in-process); khi có người xử lý, **AI KHÔNG chạy** (status-gate).
+- [ ] Ca nhạy cảm (refund/complaint/exchange) → **PENDING_APPROVAL**, AI soạn nháp, admin **duyệt/sửa/gửi**; handoff luôn escalate.
+- [ ] Response Generator vẫn là egress tự động duy nhất; tin admin qua hub. `make test` xanh; `pnpm -r build` pass.
+- [ ] 1 worker; KHÔNG suspend/resume, KHÔNG Redis pub/sub, KHÔNG admin auth (đã note để dành 09b/11).
 
 ---
 
-## 4. Ghi chú cho Claude Code
+## 3. Ghi chú cho Claude Code
 
-- **KHÔNG blend confidence — route trên CỜ.** Agent 2 phát `low_retrieval_score` bằng `RETRIEVAL_THRESHOLD`; Agent
-  3 đọc cờ; giữ cả hai confidence cho priority + audit. **Agent 3 tất định — KHÔNG LLM/reasoning cho an toàn.**
-- **`BLOCKING_FLAGS` là tập ĐÓNG** cờ tại decision (Agent 1+2); `hallucination_risk` KHÔNG thuộc (Agent 4 phát sau).
-- **Response Generator là điểm phát ngôn DUY NHẤT** — branch theo `action`; `human_handoff` node đầy đủ = 08b, GIỮ
-  file, đừng dựng.
-- **Tách `db_conversation_id` (persist) ≠ `thread_id` (checkpointer);** GIỮ thread_id sinh mỗi lượt; **bộ nhớ từ
-  DB**. `history` là đầu vào chỉ-đọc; lịch sử KHÔNG thay `rag_contexts` (phanh chống bịa còn nguyên).
-- **Session DB NGẮN** (`async with AsyncSessionLocal()` mỗi thao tác) — Neon free giới hạn connection.
-- **FE inspector** dùng `run_pipeline` (không persist — là công cụ dev); nó test Agent 3/Agent 4 **single-shot**
-  (KHÔNG test đa lượt — đa lượt test qua `/chat`). Theo pattern UI sẵn có (Tailwind + TanStack), KHÔNG shadcn.
-- **Ranh giới tuyệt đối:** Agent 3 chỉ quyết định + gắn cờ; pipeline chạy hết rồi thoát. "Chờ admin" (đóng băng
-  state rồi đánh thức) = 09b, KHÔNG làm ở đây. Async-first; config từ env; "sửa có phẫu thuật".
-- **Slice này mở khóa HITL:** kế tiếp 08b (human_handoff + EscalationCard + admin queue — nay có hội thoại
-  persisted) → 08c (admin chat/takeover, cần pub/sub) → 08a (gate §9) → 09b (durable checkpointer + suspend/resume).
+- **Pub/sub IN-PROCESS** (`hub.py`, 1 worker) — event-driven, KHÔNG polling; đằng sau interface nhỏ để sau swap
+  Redis (đa-worker, PRD §10). ĐỪNG dựng Redis pub/sub ở đây.
+- **WS khách + admin cần HAI task** (`asyncio.gather`: reader socket + hub listener) để nhận realtime từ phía kia;
+  `hub.publish(..., exclude=self)` để không tự nghe lại tin mình.
+- **Status-gate, KHÔNG suspend/resume:** human-handling → AI không chạy (chỉ định tuyến). LangGraph interrupt +
+  durable checkpointer = 09b.
+- **EscalationCard dựng từ final state** (không re-wire graph). `human_handoff.py` node cứ để nguyên (không dùng
+  trong graph) — hoặc bỏ; KHÔNG bắt buộc.
+- **Gate chỉ đổi DELIVERY** (auto_reply nhạy cảm → PENDING_APPROVAL giữ nháp); **handoff LUÔN escalate** (FR-GATE-2).
+  Response Generator vẫn là egress tự động duy nhất.
+- **Admin identity tối giản** (demo admin id) — admin auth/RBAC thật = slice 11. Guest khách = 11.
+- Session DB NGẮN (Neon free); async-first; config từ env; UI theo pattern sẵn có (Tailwind + TanStack, KHÔNG shadcn);
+  "sửa có phẫu thuật". Migration Alembic cho cột mới.
+- **Đây là big plan** — chạy phase-by-phase, commit từng phase, dừng hỏi khi lỗi/mơ hồ. Sau đây (ROADMAP): 10a
+  danh sách hội thoại → 10b/c monitoring/analytics → 11 auth → 09b suspend/resume + Redis pub/sub khi scale.
