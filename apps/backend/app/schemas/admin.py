@@ -24,6 +24,12 @@ class EscalationOut(BaseModel):
     last_message_at: datetime | None = None
 
 
+class ApproveRequest(BaseModel):
+    """Duyệt nháp (08a): `content` = nháp đã sửa (nếu admin chỉnh); bỏ trống → dùng suggested_reply trong card."""
+
+    content: str | None = None
+
+
 class AdminConversationOut(BaseModel):
     """Hội thoại đầy đủ cho màn admin — kèm EscalationCard + toàn bộ tin nhắn (customer/ai/admin)."""
 

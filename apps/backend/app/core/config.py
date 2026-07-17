@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     # Intent Classifier (PRD §7.1): 2 ứng viên RAG đầu chênh score < margin -> cờ ambiguous_intent.
     intent_ambiguous_margin: float = 0.05
 
+    # ── Gate duyệt nháp (08a, PRD §9) ─────────────────────────────────────────
+    # Intent NHẠY CẢM (csv): auto_reply vẫn PHẢI admin duyệt trước khi gửi → PENDING_APPROVAL (giữ nháp Agent 4).
+    # human_handoff LUÔN escalate (bất biến FR-GATE-2) — gate chỉ đổi DELIVERY của ca auto_reply.
+    sensitive_intents: str = "refund,complaint,exchange"
+    auto_reply_review: bool = True  # tắt (env=false) -> auto_reply gửi thẳng kể cả intent nhạy cảm
+
     # ── Postgres (Neon) ───────────────────────────────────────────────────────
     # SSL bật qua connect_args={"ssl": ...} (CLAUDE.md). URL KHÔNG mang '?sslmode='.
     database_url: str
@@ -70,6 +76,11 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.backend_cors_origins.split(",") if o.strip()]
+
+    @property
+    def sensitive_intent_set(self) -> set[str]:
+        """Tập intent nhạy cảm (từ csv `sensitive_intents`) — auto_reply cần duyệt nháp (08a)."""
+        return {i.strip() for i in self.sensitive_intents.split(",") if i.strip()}
 
     @property
     def cors_origin_regex(self) -> str | None:

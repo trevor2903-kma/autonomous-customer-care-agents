@@ -51,6 +51,16 @@ def should_run_ai(status: str | None) -> bool:
     return status not in HUMAN_HANDLED_STATUSES
 
 
+def gate_holds(status_out: str | None, intent: str | None) -> bool:
+    """Gate duyệt nháp (08a, FR-GATE): auto_reply (status REPLIED) + intent NHẠY CẢM + review bật → GIỮ nháp
+    (PENDING_APPROVAL, chờ admin duyệt). human_handoff (IN_HUMAN_QUEUE) KHÔNG qua đây (luôn escalate). Hàm thuần."""
+    return (
+        settings.auto_reply_review
+        and status_out == ConversationStatus.REPLIED
+        and (intent or "") in settings.sensitive_intent_set
+    )
+
+
 # ── Persist / load helpers (guarded — DB lỗi KHÔNG chặn chat) ─────────────────
 async def _persist_message(conv_id: uuid.UUID | None, sender: str, content: str) -> None:
     """Lưu 1 message (session NGẮN)."""
@@ -74,13 +84,14 @@ async def _persist_status(conv_id: uuid.UUID | None, status: str | None) -> None
 
 
 async def _persist_escalation_card(
-    conv_id: uuid.UUID | None, final: dict[str, Any], trigger_message: str
+    conv_id: uuid.UUID | None, final: dict[str, Any], trigger_message: str, suggested_reply: str = ""
 ) -> None:
-    """Handoff → lưu EscalationCard (dựng từ final state) + priority/severity/reason lên conversation (08b)."""
+    """Lưu EscalationCard (dựng từ final state) + priority/severity/reason lên conversation. `suggested_reply`
+    rỗng cho handoff (08b); = nháp Agent 4 cho ca PENDING_APPROVAL (08a)."""
     if conv_id is None:
         return
     try:
-        card = escalation_service.build_escalation_card(final, trigger_message)
+        card = escalation_service.build_escalation_card(final, trigger_message, suggested_reply)
         async with AsyncSessionLocal() as s:
             await escalation_service.persist_escalation(
                 s,
@@ -149,11 +160,19 @@ async def _customer_reader(
                     conv_key, {"type": "message", "from": "customer", "content": msg}, exclude=self_queue
                 )
                 continue
-            # AI-active: pipeline đầy đủ + trả lời. history = lượt TRƯỚC (nạp trước khi lưu tin hiện tại).
+            # AI-active: pipeline đầy đủ. history = lượt TRƯỚC (nạp trước khi lưu tin hiện tại).
             await websocket.send_json({"type": "typing"})
             history = await _load_history(conv_id)
             await _persist_message(conv_id, MessageSender.CUSTOMER, msg)
             status_out, final, reply = await _run_pipeline_safe(msg, history)
+
+            # Gate 08a: auto_reply nhạy cảm → GIỮ nháp (PENDING_APPROVAL), KHÔNG gửi thẳng cho khách.
+            if final is not None and gate_holds(status_out, final.get("intent")):
+                await websocket.send_json({"type": "pending"})  # gỡ typing ở FE (KHÔNG gửi nội dung — sole-egress)
+                await _persist_status(conv_id, ConversationStatus.PENDING_APPROVAL)
+                await _persist_escalation_card(conv_id, final, msg, suggested_reply=reply)
+                continue  # nháp giữ trong card, chờ admin duyệt/sửa/gửi
+
             await websocket.send_json({"type": "reply", "content": reply})
             await _persist_message(conv_id, MessageSender.AI, reply)
             await _persist_status(conv_id, status_out)
