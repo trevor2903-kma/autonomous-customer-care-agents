@@ -113,3 +113,21 @@ export async function getAdminConversation(id: string): Promise<AdminConversatio
   if (!res.ok) throw new Error(`admin conversation ${res.status}`);
   return res.json();
 }
+
+// Duyệt nháp (08a): gửi nháp (đã duyệt/sửa) tới khách. Bỏ trống content → dùng nháp trong card.
+export async function approveDraft(id: string, content?: string): Promise<AdminConversation> {
+  const res = await fetch(`${API_BASE}/api/admin/conversations/${id}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: content ?? null }),
+  });
+  if (!res.ok) throw new Error(`approve ${res.status}`);
+  return res.json();
+}
+
+// Từ chối nháp (08a) → IN_HUMAN_QUEUE (admin tự tiếp quản xử lý).
+export async function rejectDraft(id: string): Promise<AdminConversation> {
+  const res = await fetch(`${API_BASE}/api/admin/conversations/${id}/reject`, { method: "POST" });
+  if (!res.ok) throw new Error(`reject ${res.status}`);
+  return res.json();
+}

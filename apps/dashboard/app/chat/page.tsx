@@ -40,6 +40,10 @@ export default function ChatPage() {
           // Tin từ nhân viên (admin đã tiếp quản) — realtime qua hub. Gỡ typing nếu còn.
           setTyping(false);
           push({ from: data.from === "admin" ? "admin" : "ai", text: String(data.content) });
+        } else if (data.type === "pending") {
+          // Ca nhạy cảm: nháp đang chờ nhân viên duyệt (08a) — gỡ typing, báo khách chờ.
+          setTyping(false);
+          push({ from: "system", text: "Tin của bạn đang được nhân viên xem xét, sẽ phản hồi sớm ạ." });
         }
       } catch {
         // Bỏ qua frame không phải JSON hợp lệ.

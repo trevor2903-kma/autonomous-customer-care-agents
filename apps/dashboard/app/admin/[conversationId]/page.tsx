@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { AdminConversation, EscalationCard } from "shared-types";
-import { API_BASE, adminWsUrl, getAdminConversation } from "@/lib/api";
+import { API_BASE, adminWsUrl, approveDraft, getAdminConversation, rejectDraft } from "@/lib/api";
 import { Badge } from "@/components/rag/ClassifyTester";
 
 // Màn admin tiếp quản (08c, PRD §11/§17): lịch sử (REST) + EscalationCard + chat realtime 2 chiều với khách (WS).
@@ -75,7 +75,9 @@ export default function AdminConversationPage({ params }: { params: { conversati
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [draftEdit, setDraftEdit] = useState(""); // nháp AI để duyệt/sửa (PENDING_APPROVAL)
   const wsRef = useRef<WebSocket | null>(null);
+  const effectiveStatus = status ?? conv?.status ?? null;
 
   useEffect(() => {
     const ws = new WebSocket(adminWsUrl(id));
@@ -93,6 +95,21 @@ export default function AdminConversationPage({ params }: { params: { conversati
     };
     return () => ws.close();
   }, [id]);
+
+  useEffect(() => {
+    const sr = conv?.escalation_card?.suggested_reply;
+    if (sr) setDraftEdit(sr); // seed textarea duyệt bằng nháp Agent 4
+  }, [conv?.escalation_card?.suggested_reply]);
+
+  async function onApprove() {
+    await approveDraft(id, draftEdit.trim() || undefined);
+    setStatus("REPLIED"); // nháp đã duyệt → khách nhận qua hub (hub_listener tự append)
+  }
+
+  async function onReject() {
+    await rejectDraft(id);
+    setStatus("IN_HUMAN_QUEUE"); // từ chối → admin tự tiếp quản/chat
+  }
 
   function send() {
     const text = draft.trim();
@@ -138,6 +155,35 @@ export default function AdminConversationPage({ params }: { params: { conversati
       {conv?.escalation_card && (
         <div className="mb-4">
           <CardPanel card={conv.escalation_card} />
+        </div>
+      )}
+
+      {effectiveStatus === "PENDING_APPROVAL" && (
+        <div className="mb-4 rounded-lg border border-emerald-300 bg-emerald-50 p-4">
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            Nháp AI chờ duyệt (ca nhạy cảm)
+          </div>
+          <textarea
+            value={draftEdit}
+            onChange={(e) => setDraftEdit(e.target.value)}
+            rows={3}
+            className="w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm"
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              onClick={onApprove}
+              disabled={!draftEdit.trim()}
+              className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            >
+              Duyệt &amp; gửi
+            </button>
+            <button
+              onClick={onReject}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+            >
+              Từ chối (tự xử lý)
+            </button>
+          </div>
         </div>
       )}
 

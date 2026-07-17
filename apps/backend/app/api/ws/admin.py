@@ -30,13 +30,17 @@ DEMO_ADMIN_ID = uuid.UUID("00000000-0000-0000-0000-0000000000ad")
 
 
 async def _takeover(conv_id: uuid.UUID) -> str | None:
-    """Tiếp quản: HUMAN_HANDLING + gán demo admin (session NGẮN, guarded). Trả status mới (hoặc None nếu lỗi)."""
+    """Tiếp quản khi admin mở kết nối: IN_HUMAN_QUEUE → HUMAN_HANDLING + gán admin. PENDING_APPROVAL GIỮ NGUYÊN
+    (đang chờ DUYỆT nháp, không phải tiếp quản chat — approve/reject mới chuyển trạng thái). Trả status hiện tại."""
     try:
         async with AsyncSessionLocal() as s:
-            conv = await conversation_service.assign_admin(
-                s, conv_id, DEMO_ADMIN_ID, status=ConversationStatus.HUMAN_HANDLING
-            )
-            return conv.status if conv else None
+            current = await conversation_service.get_status(s, conv_id)
+            if current == ConversationStatus.IN_HUMAN_QUEUE:
+                conv = await conversation_service.assign_admin(
+                    s, conv_id, DEMO_ADMIN_ID, status=ConversationStatus.HUMAN_HANDLING
+                )
+                return conv.status if conv else current
+            return current
     except Exception as exc:  # noqa: BLE001 — takeover lỗi → vẫn cho admin chat (chỉ log).
         log.warning("takeover failed (conv=%s): %s", conv_id, exc)
         return None
