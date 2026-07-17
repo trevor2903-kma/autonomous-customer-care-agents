@@ -49,3 +49,14 @@ async def get_admin_conversation(
     if conv is None:
         raise HTTPException(status_code=404, detail="conversation not found")
     return conv
+
+
+@router.post("/conversations/{conversation_id}/resolve", response_model=AdminConversationOut)
+async def resolve_conversation(
+    conversation_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+) -> AdminConversationOut:
+    """Đóng ca sau khi admin xử lý xong → status RESOLVED (08c)."""
+    conv = await conversation_service.set_status(session, conversation_id, ConversationStatus.RESOLVED)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return await conversation_service.get_conversation(session, conversation_id)

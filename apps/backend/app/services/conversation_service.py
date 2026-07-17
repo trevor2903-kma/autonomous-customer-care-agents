@@ -85,6 +85,19 @@ async def get_status(session: AsyncSession, conversation_id: uuid.UUID) -> str |
     return conv.status if conv else None
 
 
+async def assign_admin(
+    session: AsyncSession, conversation_id: uuid.UUID, admin_id: uuid.UUID, *, status: str
+) -> Conversation | None:
+    """Takeover (08c): gán admin + đổi status trong MỘT ghi (session NGẮN). Nhẹ — KHÔNG load messages."""
+    conv = await session.get(Conversation, conversation_id)
+    if conv is None:
+        return None
+    conv.assigned_admin_id = admin_id
+    conv.status = status
+    await session.commit()
+    return conv
+
+
 async def get_conversation(
     session: AsyncSession, conversation_id: uuid.UUID
 ) -> Conversation | None:

@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.routes import admin, agents, conversations, health, rag
+from .api.ws import admin as admin_ws
 from .api.ws import chat
 from .core.config import settings
 from .core.embeddings import close_openai
@@ -54,6 +55,7 @@ app.include_router(agents.router, prefix="/api")
 app.include_router(rag.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(chat.router)
+app.include_router(admin_ws.router)
 
 
 @app.get("/")
