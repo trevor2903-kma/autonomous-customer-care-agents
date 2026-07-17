@@ -79,6 +79,12 @@ async def set_status(
     return conversation
 
 
+async def get_status(session: AsyncSession, conversation_id: uuid.UUID) -> str | None:
+    """`conversation.status` — nhẹ (KHÔNG load messages) cho status-gate WS (08c). Session NGẮN."""
+    conv = await session.get(Conversation, conversation_id)
+    return conv.status if conv else None
+
+
 async def get_conversation(
     session: AsyncSession, conversation_id: uuid.UUID
 ) -> Conversation | None:

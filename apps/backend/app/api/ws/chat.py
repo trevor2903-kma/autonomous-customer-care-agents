@@ -1,20 +1,18 @@
-"""WebSocket chat — cổng chat khách chạy ĐỦ pipeline + LƯU hội thoại (PRD §6, §8, §12, §16).
+"""WebSocket chat khách — pipeline + persist + REALTIME 2 chiều (hub) + STATUS-GATE (PRD §6/§8/§10/§12/§16).
 
-Mỗi tin khách → `{"type":"typing"}` → chạy pipeline (intent → knowledge → decision → response) → `{"type":"reply"}`
-(câu trả lời/thông báo handoff do RESPONSE GENERATOR sinh — điểm phát ngôn DUY NHẤT, PRD §7.4). Lỗi pipeline →
-câu xin lỗi, KHÔNG rớt kết nối.
+Mỗi kết nối khách chạy HAI task (`asyncio.wait` FIRST_COMPLETED):
+- `_customer_reader`: đọc tin khách. **STATUS-GATE (08c):** nếu hội thoại đang có người xử lý (IN_HUMAN_QUEUE/
+  HUMAN_HANDLING/PENDING_APPROVAL) → AI KHÔNG chạy; lưu tin + đẩy lên admin qua hub. Ngược lại chạy ĐỦ pipeline
+  (intent→knowledge→decision→response) rồi trả lời (Response Generator = điểm phát ngôn TỰ ĐỘNG duy nhất, §7.4).
+- `_hub_listener`: nhận tin admin (từ hub) → đẩy xuống socket khách (`{type:"message", from:"admin"}`).
 
-Persistence (slice 09a): guest `?sid=` (hoặc uuid) → tạo Conversation; lưu message khách & AI vào Postgres
-(session NGẮN — Neon free) + cập nhật `conversation.status`. Persist ĐƯỢC BỌC try/except: DB lỗi KHÔNG chặn chat.
-`db_conversation_id` (persist) TÁCH khỏi `thread_id` checkpointer (run_pipeline tự sinh mỗi lượt). Bộ nhớ đa lượt
-lấy từ DB (Phase 4), KHÔNG từ checkpointer.
-
-Phạm vi: 1 khách/1 kết nối → gửi thẳng qua WS (KHÔNG Redis pub/sub — FR-ASYNC-7, để dành). Định tuyến tin tới
-Admin khi IN_HUMAN_QUEUE/HUMAN_HANDLING = slice 08b/08c.
+Persist guarded (DB lỗi KHÔNG chặn chat). `db_conversation_id` = khoá hub (TÁCH khỏi thread_id checkpointer).
+Hub IN-PROCESS 1 worker (Redis pub/sub đa-worker = sau, FR-ASYNC-7). Handoff → EscalationCard vào hàng đợi (08b).
 """
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 from uuid import uuid4
@@ -27,6 +25,7 @@ from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
 from ...models.enums import ConversationStatus, MessageSender
 from ...services import conversation_service, escalation_service
+from .hub import hub
 
 router = APIRouter()
 log = get_logger("ws.chat")
@@ -37,9 +36,24 @@ _ERROR_REPLY = (
     "Mong anh/chị thông cảm."
 )
 
+# Status-gate (08c): hội thoại đang có người xử lý → AI KHÔNG chạy (chỉ định tuyến tin khách sang admin).
+HUMAN_HANDLED_STATUSES = frozenset(
+    {
+        ConversationStatus.IN_HUMAN_QUEUE,
+        ConversationStatus.HUMAN_HANDLING,
+        ConversationStatus.PENDING_APPROVAL,
+    }
+)
 
+
+def should_run_ai(status: str | None) -> bool:
+    """AI chỉ chạy khi hội thoại KHÔNG ở trạng thái người-đang-xử-lý (status-gate 08c). Hàm thuần (test offline)."""
+    return status not in HUMAN_HANDLED_STATUSES
+
+
+# ── Persist / load helpers (guarded — DB lỗi KHÔNG chặn chat) ─────────────────
 async def _persist_message(conv_id: uuid.UUID | None, sender: str, content: str) -> None:
-    """Lưu 1 message (session NGẮN). Guarded: DB lỗi KHÔNG chặn chat (chỉ log)."""
+    """Lưu 1 message (session NGẮN)."""
     if conv_id is None:
         return
     try:
@@ -62,8 +76,7 @@ async def _persist_status(conv_id: uuid.UUID | None, status: str | None) -> None
 async def _persist_escalation_card(
     conv_id: uuid.UUID | None, final: dict[str, Any], trigger_message: str
 ) -> None:
-    """Handoff → lưu EscalationCard (dựng từ final state) + priority/severity/reason lên conversation (08b).
-    Guarded: DB lỗi KHÔNG chặn chat."""
+    """Handoff → lưu EscalationCard (dựng từ final state) + priority/severity/reason lên conversation (08b)."""
     if conv_id is None:
         return
     try:
@@ -93,12 +106,88 @@ async def _load_history(conv_id: uuid.UUID | None) -> list[dict[str, str]]:
         return []
 
 
+async def _load_status(conv_id: uuid.UUID | None) -> str | None:
+    """conversation.status cho status-gate (nhẹ). Guarded: DB lỗi → None (coi như AI-active, an toàn UX)."""
+    if conv_id is None:
+        return None
+    try:
+        async with AsyncSessionLocal() as s:
+            return await conversation_service.get_status(s, conv_id)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("load status failed (bỏ qua): %s", exc)
+        return None
+
+
+async def _run_pipeline_safe(
+    msg: str, history: list[dict[str, str]] | None
+) -> tuple[str | None, dict[str, Any] | None, str]:
+    """Chạy pipeline → (status, final, reply). Lỗi → (None, None, _ERROR_REPLY), KHÔNG rớt WS."""
+    try:
+        final = await run_pipeline(input_text=msg, history=history)
+        reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
+        return final.get("status"), final, reply
+    except Exception as exc:  # noqa: BLE001 — lỗi pipeline → xin lỗi, KHÔNG rớt kết nối.
+        log.warning("pipeline failed on WS message -> apology: %s", exc)
+        return None, None, _ERROR_REPLY
+
+
+# ── Hai task cho một kết nối khách ───────────────────────────────────────────
+async def _customer_reader(
+    websocket: WebSocket,
+    conv_id: uuid.UUID,
+    conv_key: str,
+    self_queue: asyncio.Queue[dict[str, Any]],
+) -> None:
+    """Đọc tin khách. STATUS-GATE: người đang xử lý → route sang admin (hub); ngược lại chạy pipeline + trả lời."""
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            if not should_run_ai(await _load_status(conv_id)):
+                # Đang có người xử lý → KHÔNG chạy AI: lưu tin khách + đẩy lên admin qua hub.
+                await _persist_message(conv_id, MessageSender.CUSTOMER, msg)
+                await hub.publish(
+                    conv_key, {"type": "message", "from": "customer", "content": msg}, exclude=self_queue
+                )
+                continue
+            # AI-active: pipeline đầy đủ + trả lời. history = lượt TRƯỚC (nạp trước khi lưu tin hiện tại).
+            await websocket.send_json({"type": "typing"})
+            history = await _load_history(conv_id)
+            await _persist_message(conv_id, MessageSender.CUSTOMER, msg)
+            status_out, final, reply = await _run_pipeline_safe(msg, history)
+            await websocket.send_json({"type": "reply", "content": reply})
+            await _persist_message(conv_id, MessageSender.AI, reply)
+            await _persist_status(conv_id, status_out)
+            # Handoff → EscalationCard vào hàng đợi admin (08b). Chỉ khi pipeline chạy xong (final có).
+            if status_out == ConversationStatus.IN_HUMAN_QUEUE and final is not None:
+                await _persist_escalation_card(conv_id, final, msg)
+    except WebSocketDisconnect:
+        log.info("customer WS disconnected (conv=%s)", conv_id)
+
+
+async def _hub_listener(websocket: WebSocket, queue: asyncio.Queue[dict[str, Any]]) -> None:
+    """Nhận payload (tin admin) từ hub → đẩy xuống socket khách."""
+    while True:
+        payload = await queue.get()
+        await websocket.send_json(payload)
+
+
+async def _customer_ai_only(websocket: WebSocket) -> None:
+    """Degrade: KHÔNG tạo được conversation → chạy AI trực tiếp, KHÔNG persist/hub/status-gate."""
+    try:
+        while True:
+            msg = await websocket.receive_text()
+            await websocket.send_json({"type": "typing"})
+            _, _, reply = await _run_pipeline_safe(msg, None)
+            await websocket.send_json({"type": "reply", "content": reply})
+    except WebSocketDisconnect:
+        log.info("customer WS (ai-only) disconnected")
+
+
 @router.websocket("/ws/chat")
 async def chat_ws(websocket: WebSocket) -> None:
     await websocket.accept()
     sid = websocket.query_params.get("sid") or str(uuid4())  # guest, KHÔNG auth (tài khoản = slice 11)
 
-    # Tạo Conversation (session NGẮN). db_conversation_id TÁCH khỏi thread_id checkpointer.
     db_conversation_id: uuid.UUID | None = None
     try:
         async with AsyncSessionLocal() as s:
@@ -108,30 +197,22 @@ async def chat_ws(websocket: WebSocket) -> None:
         log.warning("create_conversation failed (chat vẫn chạy, KHÔNG persist): %s", exc)
 
     await websocket.send_json({"type": "system", "message": "connected"})
-    log.info("WebSocket client connected (sid=%s conv=%s)", sid, db_conversation_id)
+    log.info("customer WS connected (sid=%s conv=%s)", sid, db_conversation_id)
+
+    if db_conversation_id is None:  # không persist được → không có khoá hub → chạy AI-only.
+        await _customer_ai_only(websocket)
+        return
+
+    # Realtime 2 chiều: đăng ký hub theo conversation, chạy reader + hub-listener song song.
+    conv_key = str(db_conversation_id)
+    queue = hub.register(conv_key)
+    reader = asyncio.create_task(_customer_reader(websocket, db_conversation_id, conv_key, queue))
+    listener = asyncio.create_task(_hub_listener(websocket, queue))
     try:
-        while True:
-            msg = await websocket.receive_text()
-            await websocket.send_json({"type": "typing"})  # UX: hiện "đang trả lời…"
-            # Nạp lịch sử các lượt TRƯỚC (từ DB) — TRƯỚC khi lưu tin hiện tại (history = lượt trước, không gồm msg).
-            history = await _load_history(db_conversation_id)
-            await _persist_message(db_conversation_id, MessageSender.CUSTOMER, msg)
-
-            status: str | None = None
-            final: dict[str, Any] | None = None
-            try:
-                final = await run_pipeline(input_text=msg, history=history)
-                reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
-                status = final.get("status")
-            except Exception as exc:  # noqa: BLE001 — lỗi pipeline → xin lỗi, KHÔNG rớt kết nối.
-                log.warning("pipeline failed on WS message -> apology: %s", exc)
-                reply = _ERROR_REPLY
-
-            await websocket.send_json({"type": "reply", "content": reply})
-            await _persist_message(db_conversation_id, MessageSender.AI, reply)
-            await _persist_status(db_conversation_id, status)
-            # Handoff → EscalationCard vào hàng đợi admin (08b). Chỉ khi pipeline chạy xong (final có).
-            if status == ConversationStatus.IN_HUMAN_QUEUE and final is not None:
-                await _persist_escalation_card(db_conversation_id, final, msg)
-    except WebSocketDisconnect:
-        log.info("WebSocket client disconnected (sid=%s conv=%s)", sid, db_conversation_id)
+        _, pending = await asyncio.wait({reader, listener}, return_when=asyncio.FIRST_COMPLETED)
+        for task in pending:  # một task xong (rớt kết nối) → huỷ task còn lại
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+    finally:
+        hub.unregister(conv_key, queue)
+        log.info("customer WS closed (conv=%s)", db_conversation_id)
