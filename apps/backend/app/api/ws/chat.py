@@ -16,6 +16,7 @@ Admin khi IN_HUMAN_QUEUE/HUMAN_HANDLING = slice 08b/08c.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -24,8 +25,8 @@ from ...agents.graph import run_pipeline
 from ...core.config import settings
 from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
-from ...models.enums import MessageSender
-from ...services import conversation_service
+from ...models.enums import ConversationStatus, MessageSender
+from ...services import conversation_service, escalation_service
 
 router = APIRouter()
 log = get_logger("ws.chat")
@@ -56,6 +57,28 @@ async def _persist_status(conv_id: uuid.UUID | None, status: str | None) -> None
             await conversation_service.set_status(s, conv_id, status)
     except Exception as exc:  # noqa: BLE001
         log.warning("set status failed (bỏ qua): %s", exc)
+
+
+async def _persist_escalation_card(
+    conv_id: uuid.UUID | None, final: dict[str, Any], trigger_message: str
+) -> None:
+    """Handoff → lưu EscalationCard (dựng từ final state) + priority/severity/reason lên conversation (08b).
+    Guarded: DB lỗi KHÔNG chặn chat."""
+    if conv_id is None:
+        return
+    try:
+        card = escalation_service.build_escalation_card(final, trigger_message)
+        async with AsyncSessionLocal() as s:
+            await escalation_service.persist_escalation(
+                s,
+                conv_id,
+                card=card,
+                priority=final.get("priority"),
+                severity=final.get("severity"),
+                reason=final.get("escalation_reason"),
+            )
+    except Exception as exc:  # noqa: BLE001 — persist card là phụ, đừng để hỏng chat.
+        log.warning("persist escalation card failed (bỏ qua): %s", exc)
 
 
 async def _load_history(conv_id: uuid.UUID | None) -> list[dict[str, str]]:
@@ -95,6 +118,7 @@ async def chat_ws(websocket: WebSocket) -> None:
             await _persist_message(db_conversation_id, MessageSender.CUSTOMER, msg)
 
             status: str | None = None
+            final: dict[str, Any] | None = None
             try:
                 final = await run_pipeline(input_text=msg, history=history)
                 reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
@@ -106,5 +130,8 @@ async def chat_ws(websocket: WebSocket) -> None:
             await websocket.send_json({"type": "reply", "content": reply})
             await _persist_message(db_conversation_id, MessageSender.AI, reply)
             await _persist_status(db_conversation_id, status)
+            # Handoff → EscalationCard vào hàng đợi admin (08b). Chỉ khi pipeline chạy xong (final có).
+            if status == ConversationStatus.IN_HUMAN_QUEUE and final is not None:
+                await _persist_escalation_card(db_conversation_id, final, msg)
     except WebSocketDisconnect:
         log.info("WebSocket client disconnected (sid=%s conv=%s)", sid, db_conversation_id)

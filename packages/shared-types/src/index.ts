@@ -113,6 +113,43 @@ export interface PipelineResult {
   reply: string | null; // Agent 4
 }
 
+// HITL admin (08b, PRD §11/§17) — EscalationCard + hàng đợi + hội thoại cho màn admin.
+export interface EscalationCard {
+  summary: string;
+  intent: string | null;
+  entities: Record<string, unknown>;
+  rag_context: { source: string; score?: number | null; snippet: string }[];
+  escalation_reason: string | null;
+  priority: string | null;
+  severity: string | null;
+  suggested_reply: string;
+}
+
+export interface Escalation {
+  conversation_id: string;
+  customer_identifier?: string | null;
+  status: ConversationStatus | string;
+  priority?: string | null;
+  severity?: string | null;
+  escalation_reason?: string | null;
+  escalation_card?: EscalationCard | null;
+  last_message_at?: string | null;
+}
+
+export interface AdminConversation {
+  id: string;
+  customer_identifier?: string | null;
+  status: ConversationStatus | string;
+  priority?: string | null;
+  severity?: string | null;
+  escalation_reason?: string | null;
+  escalation_card?: EscalationCard | null;
+  assigned_admin_id?: string | null;
+  created_at: string;
+  last_message_at?: string | null;
+  messages: Message[];
+}
+
 export interface ServiceProbe {
   ok: boolean;
   detail: unknown;

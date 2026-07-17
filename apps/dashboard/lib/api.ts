@@ -1,6 +1,8 @@
 import type {
+  AdminConversation,
   AnalyzeResult,
   Conversation,
+  Escalation,
   HealthStatus,
   IntentClassification,
   PipelineResult,
@@ -89,5 +91,20 @@ export async function runPipeline(message: string): Promise<PipelineResult> {
     body: JSON.stringify({ message }),
   });
   if (!res.ok) throw new Error(`pipeline ${res.status}`);
+  return res.json();
+}
+
+// ── Admin HITL (08b, PRD §11/§17) ────────────────────────────────────────────
+// Hàng đợi escalation (sắp theo priority ở backend).
+export async function getEscalations(): Promise<Escalation[]> {
+  const res = await fetch(`${API_BASE}/api/admin/escalations`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`escalations ${res.status}`);
+  return res.json();
+}
+
+// Hội thoại đầy đủ (messages + EscalationCard) cho màn admin tiếp quản/duyệt.
+export async function getAdminConversation(id: string): Promise<AdminConversation> {
+  const res = await fetch(`${API_BASE}/api/admin/conversations/${id}`, { cache: "no-store" });
+  if (!res.ok) throw new Error(`admin conversation ${res.status}`);
   return res.json();
 }
