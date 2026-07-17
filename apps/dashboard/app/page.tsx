@@ -17,6 +17,12 @@ export default function DashboardPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
+            href="/admin"
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
+          >
+            Hàng đợi Admin →
+          </Link>
+          <Link
             href="/rag"
             className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-100"
           >
