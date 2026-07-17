@@ -15,6 +15,11 @@ export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 export const WS_URL =
   process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/chat";
+// Base WS (bỏ đuôi /ws/chat) để dựng URL admin: {base}/ws/admin/{id}.
+export const WS_BASE = WS_URL.replace(/\/ws\/chat$/, "");
+export function adminWsUrl(conversationId: string): string {
+  return `${WS_BASE}/ws/admin/${conversationId}`;
+}
 
 export async function getHealth(): Promise<HealthStatus> {
   const res = await fetch(`${API_BASE}/api/health`, { cache: "no-store" });

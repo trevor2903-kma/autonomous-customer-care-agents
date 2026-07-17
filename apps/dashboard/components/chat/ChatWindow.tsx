@@ -1,8 +1,16 @@
 export type ChatMessage = {
   id: number;
-  from: "you" | "system" | "ai";
+  from: "you" | "system" | "ai" | "admin";
   text: string;
 };
+
+// Màu bong bóng theo người gửi. admin = nhân viên (egress-người, PRD §7.4) → nổi bật khác AI.
+function bubbleClass(from: ChatMessage["from"]): string {
+  if (from === "you") return "bg-neutral-900 text-white";
+  if (from === "system") return "bg-amber-50 text-amber-700";
+  if (from === "admin") return "bg-emerald-600 text-white";
+  return "bg-white text-neutral-800 border border-neutral-200"; // ai
+}
 
 export function ChatWindow({
   messages,
@@ -21,19 +29,12 @@ export function ChatWindow({
       {messages.map((m) => (
         <div
           key={m.id}
-          className={
-            m.from === "you" ? "flex justify-end" : "flex justify-start"
-          }
+          className={m.from === "you" ? "flex justify-end" : "flex flex-col items-start"}
         >
-          <span
-            className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
-              m.from === "you"
-                ? "bg-neutral-900 text-white"
-                : m.from === "system"
-                  ? "bg-amber-50 text-amber-700"
-                  : "bg-white text-neutral-800 border border-neutral-200"
-            }`}
-          >
+          {m.from === "admin" && (
+            <span className="mb-0.5 text-[10px] font-medium text-emerald-700">Nhân viên hỗ trợ</span>
+          )}
+          <span className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${bubbleClass(m.from)}`}>
             {m.text}
           </span>
         </div>

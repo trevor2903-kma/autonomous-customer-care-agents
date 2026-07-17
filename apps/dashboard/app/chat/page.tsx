@@ -36,6 +36,10 @@ export default function ChatPage() {
         } else if (data.type === "reply") {
           setTyping(false);
           push({ from: "ai", text: String(data.content) });
+        } else if (data.type === "message") {
+          // Tin từ nhân viên (admin đã tiếp quản) — realtime qua hub. Gỡ typing nếu còn.
+          setTyping(false);
+          push({ from: data.from === "admin" ? "admin" : "ai", text: String(data.content) });
         }
       } catch {
         // Bỏ qua frame không phải JSON hợp lệ.
