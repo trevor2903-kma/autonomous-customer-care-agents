@@ -32,7 +32,7 @@ export default function AdminQueuePage() {
   });
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
+    <main className="w-full flex-1 overflow-y-auto px-6 py-10">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Hàng đợi Escalation</h1>

@@ -7,6 +7,8 @@ const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
   theme: {
     extend: {
+      // Ngưỡng mobile của design (max-width:820px) → dùng như `mob:hidden`, `mob:w-full`.
+      screens: { mob: { max: "820px" } },
       colors: {
         page: "#FBFAF7",
         panel: "#FDFCFA",

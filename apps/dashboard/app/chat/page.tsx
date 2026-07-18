@@ -58,7 +58,7 @@ export default function ChatPage() {
   }
 
   return (
-    <main className="mx-auto flex h-screen max-w-2xl flex-col border-x border-neutral-200 bg-neutral-50">
+    <main className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col border-x border-neutral-200 bg-neutral-50">
       <Header connected={connected} />
       <ChatWindow messages={messages} typing={typing} />
       <MessageInput disabled={!connected} onSend={send} />

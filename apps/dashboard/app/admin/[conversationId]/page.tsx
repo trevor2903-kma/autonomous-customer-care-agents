@@ -125,7 +125,7 @@ export default function AdminConversationPage({ params }: { params: { conversati
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-6 py-8">
+    <main className="w-full flex-1 overflow-y-auto px-6 py-8">
       <header className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold">Tiếp quản hội thoại</h1>

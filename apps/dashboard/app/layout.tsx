@@ -3,6 +3,7 @@ import { Be_Vietnam_Pro, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 import { PWARegister } from "./PWARegister";
+import { TopBar } from "@/components/shell/TopBar";
 
 // Hệ chữ ThriftYourStyle (docs/design): serif hiển thị cho brand/heading, sans cho body/UI.
 // THAY font gốc của design (Instrument Serif/Sans) vì cả hai KHÔNG có subset `vietnamese` —
@@ -45,7 +46,13 @@ export default function RootLayout({
   return (
     <html lang="vi" className={`${sans.variable} ${serif.variable}`}>
       <body className="font-sans">
-        <Providers>{children}</Providers>
+        <Providers>
+          {/* Vỏ app (design): cột dọc 100vh — top bar 53px + vùng nội dung co giãn. */}
+          <div className="flex min-h-screen flex-col bg-page">
+            <TopBar />
+            {children}
+          </div>
+        </Providers>
         <PWARegister />
       </body>
     </html>
