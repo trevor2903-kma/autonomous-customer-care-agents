@@ -2,11 +2,14 @@
 
 import { useState } from "react";
 
+// Ô nhập màn khách (design): hộp trắng bo 14px + nút "Gửi" olive + dòng ghi chú dưới.
 export function MessageInput({
   disabled,
+  placeholder,
   onSend,
 }: {
   disabled: boolean;
+  placeholder: string;
   onSend: (text: string) => void;
 }) {
   const [text, setText] = useState("");
@@ -20,23 +23,29 @@ export function MessageInput({
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="flex gap-2 border-t border-neutral-200 bg-white p-3"
-    >
-      <input
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Nhập tin nhắn…"
-        className="flex-1 rounded-md border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-neutral-500"
-      />
-      <button
-        type="submit"
-        disabled={disabled}
-        className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 disabled:opacity-50"
+    <div className="flex-none px-1 pb-[22px]">
+      <form
+        onSubmit={submit}
+        className="flex items-center gap-2.5 rounded-[14px] border border-line bg-white py-2 pl-[18px] pr-2 shadow-soft focus-within:border-line-olive"
       >
-        Gửi
-      </button>
-    </form>
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder={placeholder}
+          aria-label="Nội dung tin nhắn"
+          className="flex-1 border-none bg-transparent text-[15px] text-ink outline-none placeholder:text-dim"
+        />
+        <button
+          type="submit"
+          disabled={disabled || !text.trim()}
+          className="rounded-[9px] bg-olive px-5 py-2.5 text-sm font-semibold text-white hover:bg-olive-dark disabled:opacity-50"
+        >
+          Gửi
+        </button>
+      </form>
+      <p className="mt-[11px] text-center text-[11.5px] text-dimmer">
+        Trợ lý AI trả lời dựa trên tài liệu chính thức của shop · phản hồi tự động ≤ 5 giây
+      </p>
+    </div>
   );
 }

@@ -1,22 +1,32 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatWindow, type ChatMessage } from "@/components/chat/ChatWindow";
-import { Header } from "@/components/chat/Header";
 import { MessageInput } from "@/components/chat/MessageInput";
+import { QuickReplies } from "@/components/chat/QuickReplies";
+import { CUST_PLACEHOLDER, type CustStatus } from "@/components/chat/custStatus";
 import { WS_URL } from "@/lib/api";
 
-// Cổng chat khách (PRD §6, §16): Header · ChatWindow · MessageInput nối WebSocket.
-// Mỗi tin khách chạy ĐỦ pipeline ở backend; câu trả lời tới khách CHỈ đến từ Response Generator (PRD §7.4).
+// Cổng chat khách (PRD §6, §16). Câu trả lời tự động CHỈ đến từ Response Generator (§7.4);
+// tin nhân viên tới qua hub sau khi admin tiếp quản.
+//
+// Thông báo chuyển người là tin do BE phát (HANDOFF_NOTICE / câu xin lỗi khi pipeline lỗi) — cả hai đều
+// mang nghĩa "đang chờ người". Nhận diện theo cụm chung để hiển thị dạng system + trạng thái chờ.
+const HANDOFF_HINT = "nhân viên hỗ trợ";
+
+const now = () => new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+
 export default function ChatPage() {
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typing, setTyping] = useState(false);
+  const [status, setStatus] = useState<CustStatus>("ai");
   const wsRef = useRef<WebSocket | null>(null);
   const idRef = useRef(0);
 
-  const push = (m: Omit<ChatMessage, "id">) =>
-    setMessages((prev) => [...prev, { ...m, id: idRef.current++ }]);
+  const push = (m: Omit<ChatMessage, "id" | "time">) =>
+    setMessages((prev) => [...prev, { ...m, id: idRef.current++, time: now() }]);
 
   useEffect(() => {
     const ws = new WebSocket(WS_URL);
@@ -24,26 +34,28 @@ export default function ChatPage() {
     ws.onopen = () => setConnected(true);
     ws.onclose = () => {
       setConnected(false);
-      setTyping(false); // rớt kết nối giữa typing→reply -> gỡ indicator "đang trả lời…" (không kẹt)
+      setTyping(false); // rớt kết nối giữa typing→reply → không kẹt "đang trả lời…"
     };
     ws.onmessage = (ev) => {
       try {
         const data = JSON.parse(ev.data);
-        if (data.type === "system") {
-          push({ from: "system", text: String(data.message) });
-        } else if (data.type === "typing") {
-          setTyping(true); // hiện "đang trả lời…"
+        if (data.type === "typing") {
+          setTyping(true);
         } else if (data.type === "reply") {
           setTyping(false);
-          push({ from: "ai", text: String(data.content) });
-        } else if (data.type === "message") {
-          // Tin từ nhân viên (admin đã tiếp quản) — realtime qua hub. Gỡ typing nếu còn.
-          setTyping(false);
-          push({ from: data.from === "admin" ? "admin" : "ai", text: String(data.content) });
+          const text = String(data.content);
+          const handoff = text.toLowerCase().includes(HANDOFF_HINT);
+          push({ from: handoff ? "system" : "ai", text });
+          setStatus(handoff ? "waiting" : "ai");
         } else if (data.type === "pending") {
-          // Ca nhạy cảm: nháp đang chờ nhân viên duyệt (08a) — gỡ typing, báo khách chờ.
+          // Ca nhạy cảm: nháp đang chờ nhân viên duyệt (08a) — gỡ typing, đổi trạng thái, KHÔNG kẹt chờ.
           setTyping(false);
-          push({ from: "system", text: "Tin của bạn đang được nhân viên xem xét, sẽ phản hồi sớm ạ." });
+          setStatus("review");
+        } else if (data.type === "message") {
+          setTyping(false);
+          const isAdmin = data.from === "admin";
+          push({ from: isAdmin ? "admin" : "ai", text: String(data.content) });
+          if (isAdmin) setStatus("human");
         }
       } catch {
         // Bỏ qua frame không phải JSON hợp lệ.
@@ -53,15 +65,27 @@ export default function ChatPage() {
   }, []);
 
   function send(text: string) {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     push({ from: "you", text });
-    wsRef.current?.send(text);
+    wsRef.current.send(text);
   }
 
   return (
-    <main className="mx-auto flex min-h-0 w-full max-w-2xl flex-1 flex-col border-x border-neutral-200 bg-neutral-50">
-      <Header connected={connected} />
-      <ChatWindow messages={messages} typing={typing} />
-      <MessageInput disabled={!connected} onSend={send} />
+    <main className="flex min-h-0 w-full flex-1 justify-center overflow-hidden">
+      <div className="flex w-full max-w-[840px] flex-1 flex-col overflow-hidden px-6 mob:px-3.5">
+        <div className="flex flex-none flex-col gap-3.5 px-1 pb-4 pt-[22px]">
+          <ChatHeader status={status} />
+          <QuickReplies disabled={!connected} onPick={send} />
+        </div>
+
+        <ChatWindow messages={messages} typing={typing} waiting={status === "waiting"} />
+
+        <MessageInput
+          disabled={!connected}
+          placeholder={CUST_PLACEHOLDER[status]}
+          onSend={send}
+        />
+      </div>
     </main>
   );
 }
