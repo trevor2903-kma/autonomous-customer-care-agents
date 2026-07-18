@@ -7,12 +7,17 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_session
 from ...models.enums import ConversationStatus, MessageSender
-from ...schemas.admin import AdminConversationOut, ApproveRequest, EscalationOut
+from ...schemas.admin import (
+    AdminConversationOut,
+    ApproveRequest,
+    ConversationListItem,
+    EscalationOut,
+)
 from ...services import conversation_service, escalation_service
 from ..ws.hub import hub
 
@@ -20,6 +25,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 # Hàng đợi = ca đang chờ người: escalate (IN_HUMAN_QUEUE) + chờ duyệt nháp (PENDING_APPROVAL, slice 08a).
 _QUEUE_STATUSES = [ConversationStatus.IN_HUMAN_QUEUE, ConversationStatus.PENDING_APPROVAL]
+
+# Admin demo (auth/RBAC thật = slice 11). Đặt ở đây vì TIẾP QUẢN nay là hành động REST tường minh (08c).
+DEMO_ADMIN_ID = uuid.UUID("00000000-0000-0000-0000-0000000000ad")
 
 
 @router.get("/escalations", response_model=list[EscalationOut])
@@ -41,6 +49,28 @@ async def get_escalations(session: AsyncSession = Depends(get_session)) -> list[
     ]
 
 
+@router.get("/conversations", response_model=list[ConversationListItem])
+async def get_conversations(
+    status: list[str] | None = Query(default=None, description="lọc theo status; lặp lại để lọc nhiều"),
+    limit: int = Query(default=50, le=200),
+    session: AsyncSession = Depends(get_session),
+) -> list[ConversationListItem]:
+    """Danh sách TẤT CẢ hội thoại (10a) + lọc theo nhóm status. `preview` = tin cuối cùng."""
+    convs = await conversation_service.list_conversations(session, statuses=status, limit=limit)
+    return [
+        ConversationListItem(
+            id=c.id,
+            customer_identifier=c.customer_identifier,
+            status=c.status,
+            # current_intent chưa được pipeline ghi xuống conversation → lấy tạm từ card của ca đã escalate.
+            current_intent=c.current_intent or (c.escalation_card or {}).get("intent"),
+            last_message_at=c.last_message_at,
+            preview=c.messages[-1].content if c.messages else None,
+        )
+        for c in convs
+    ]
+
+
 @router.get("/conversations/{conversation_id}", response_model=AdminConversationOut)
 async def get_admin_conversation(
     conversation_id: uuid.UUID, session: AsyncSession = Depends(get_session)
@@ -50,6 +80,22 @@ async def get_admin_conversation(
     if conv is None:
         raise HTTPException(status_code=404, detail="conversation not found")
     return conv
+
+
+@router.post("/conversations/{conversation_id}/takeover", response_model=AdminConversationOut)
+async def takeover_conversation(
+    conversation_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+) -> AdminConversationOut:
+    """Tiếp quản TƯỜNG MINH (fix 08c): chỉ đổi status khi admin BẤM NÚT.
+
+    Mở hội thoại để xem KHÔNG còn đổi status — ca escalate vẫn nằm trong hàng đợi cho tới khi có người nhận.
+    """
+    conv = await conversation_service.assign_admin(
+        session, conversation_id, DEMO_ADMIN_ID, status=ConversationStatus.HUMAN_HANDLING
+    )
+    if conv is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return await conversation_service.get_conversation(session, conversation_id)
 
 
 @router.post("/conversations/{conversation_id}/resolve", response_model=AdminConversationOut)

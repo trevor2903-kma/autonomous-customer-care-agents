@@ -2,6 +2,7 @@ import type {
   AdminConversation,
   AnalyzeResult,
   Conversation,
+  ConversationListItem,
   Escalation,
   HealthStatus,
   IntentClassification,
@@ -111,6 +112,28 @@ export async function getEscalations(): Promise<Escalation[]> {
 export async function getAdminConversation(id: string): Promise<AdminConversation> {
   const res = await fetch(`${API_BASE}/api/admin/conversations/${id}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`admin conversation ${res.status}`);
+  return res.json();
+}
+
+// Danh sách hội thoại (10a) — truyền nhiều status để lọc theo nhóm.
+export async function getConversations(
+  statuses?: string[],
+  limit = 50,
+): Promise<ConversationListItem[]> {
+  const qs = new URLSearchParams();
+  for (const s of statuses ?? []) qs.append("status", s);
+  qs.set("limit", String(limit));
+  const res = await fetch(`${API_BASE}/api/admin/conversations?${qs.toString()}`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`conversations ${res.status}`);
+  return res.json();
+}
+
+// Tiếp quản TƯỜNG MINH (08c) — mở hội thoại chỉ là xem, đổi trạng thái chỉ khi bấm nút này.
+export async function takeoverConversation(id: string): Promise<AdminConversation> {
+  const res = await fetch(`${API_BASE}/api/admin/conversations/${id}/takeover`, { method: "POST" });
+  if (!res.ok) throw new Error(`takeover ${res.status}`);
   return res.json();
 }
 

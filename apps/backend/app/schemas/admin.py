@@ -24,6 +24,17 @@ class EscalationOut(BaseModel):
     last_message_at: datetime | None = None
 
 
+class ConversationListItem(BaseModel):
+    """Một dòng trong danh sách hội thoại admin (10a). `preview` = nội dung tin cuối cùng."""
+
+    id: uuid.UUID
+    customer_identifier: str | None = None
+    status: str
+    current_intent: str | None = None
+    last_message_at: datetime | None = None
+    preview: str | None = None
+
+
 class ApproveRequest(BaseModel):
     """Duyệt nháp (08a): `content` = nháp đã sửa (nếu admin chỉnh); bỏ trống → dùng suggested_reply trong card."""
 

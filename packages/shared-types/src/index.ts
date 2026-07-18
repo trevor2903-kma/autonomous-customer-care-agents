@@ -136,6 +136,16 @@ export interface Escalation {
   last_message_at?: string | null;
 }
 
+// Một dòng danh sách hội thoại admin (10a) — preview = tin cuối.
+export interface ConversationListItem {
+  id: string;
+  customer_identifier?: string | null;
+  status: ConversationStatus | string;
+  current_intent?: string | null;
+  last_message_at?: string | null;
+  preview?: string | null;
+}
+
 export interface AdminConversation {
   id: string;
   customer_identifier?: string | null;

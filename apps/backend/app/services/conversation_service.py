@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -128,11 +128,19 @@ async def get_recent_messages(
     return [{"sender": m.sender, "content": m.content} for m in rows]
 
 
-async def list_conversations(session: AsyncSession, *, limit: int = 50) -> list[Conversation]:
+async def list_conversations(
+    session: AsyncSession, *, statuses: list[str] | None = None, limit: int = 50
+) -> list[Conversation]:
+    """Danh sách hội thoại (10a) — lọc theo NHÓM status (tùy chọn), hoạt động gần nhất lên đầu.
+
+    coalesce(last_message_at, created_at): hội thoại chưa có tin vẫn xếp đúng chỗ (không rơi về cuối vì NULL).
+    """
     stmt = (
         select(Conversation)
-        .order_by(Conversation.created_at.desc())
+        .order_by(func.coalesce(Conversation.last_message_at, Conversation.created_at).desc())
         .limit(limit)
         .options(selectinload(Conversation.messages))
     )
+    if statuses:
+        stmt = stmt.where(Conversation.status.in_(statuses))
     return list((await session.execute(stmt)).scalars().all())
