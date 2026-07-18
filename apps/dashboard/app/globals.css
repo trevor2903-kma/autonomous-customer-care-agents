@@ -2,10 +2,95 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Design tokens ThriftYourStyle — nguồn: docs/design/ThriftYourStyle CSKH.dc.html.
+   Tên token khớp tailwind.config.ts (bg-page, text-ink, border-line, bg-olive…). */
 :root {
-  color-scheme: light dark;
+  color-scheme: light; /* hệ thị giác chỉ có sáng (tông kem) */
+
+  /* nền */
+  --bg-page: #fbfaf7;
+  --bg-panel: #fdfcfa;
+  --bg-card: #ffffff;
+  --bg-cream: #f4f2ec;
+  --bg-cream-soft: #f9f8f4;
+
+  /* chữ */
+  --text-ink: #211f1b;
+  --text-ink-2: #332f29;
+  --text-muted: #57534a;
+  --text-faint: #8e887b;
+  --text-dim: #b0a99b;
+  --text-dimmer: #c4beb1;
+  --text-paper: #f7f5f0;
+
+  /* viền */
+  --line: #e7e2d8;
+  --line-soft: #f0ede6;
+  --line-olive: #dde1d0;
+
+  /* olive — primary (nút Gửi, link, AI) */
+  --olive: #6b7a4f;
+  --olive-dark: #5a6743;
+  --olive-soft: #eef0e6;
+
+  /* terracotta — chuyển người / cảnh báo */
+  --terracotta: #b25b3c;
+  --terracotta-soft: #f6e7df;
+  --terracotta-line: #ead4c7;
+  --terracotta-ink: #8a4e33;
+
+  /* gold — cần làm rõ / chờ duyệt nháp */
+  --gold: #b98534;
+  --gold-soft: #f7efdd;
+
+  /* steel — nhân viên (NV) */
+  --steel: #42536b;
+  --steel-2: #5a6b84;
+  --steel-soft: #e8ecf3;
+  --steel-line: #d4dae6;
+
+  /* sage — đã trả lời / đang trực tuyến */
+  --sage: #5b7a5b;
+  --sage-soft: #e8efe6;
 }
 
 body {
-  @apply bg-neutral-50 text-neutral-900;
+  background: var(--bg-page);
+  color: var(--text-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 3 chấm "đang trả lời…" (design: @keyframes blink) */
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+.animate-blink {
+  animation: blink 1.3s infinite;
+}
+
+/* scrollbar mảnh tông kem */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-thumb {
+  background: #e0dbcf;
+  border-radius: 9px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* tôn trọng người dùng tắt hiệu ứng */
+@media (prefers-reduced-motion: reduce) {
+  .animate-blink {
+    animation: none;
+  }
 }
