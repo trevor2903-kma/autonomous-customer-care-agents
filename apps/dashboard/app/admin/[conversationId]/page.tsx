@@ -164,7 +164,7 @@ export default function AdminConversationPage({ params }: { params: { conversati
             <button
               onClick={() => act(() => resolveConversation(id), "RESOLVED")}
               disabled={busy}
-              className="rounded-[8px] border border-line bg-white px-3 py-1.5 text-[13px] text-muted hover:bg-cream disabled:opacity-50 mob:hidden"
+              className="whitespace-nowrap rounded-[8px] border border-line bg-white px-3 py-1.5 text-[13px] text-muted hover:bg-cream disabled:opacity-50 mob:hidden"
             >
               Đóng ca
             </button>
@@ -198,25 +198,37 @@ export default function AdminConversationPage({ params }: { params: { conversati
       </div>
 
       <footer className="flex-none border-t border-line bg-white px-[26px] py-3.5 mob:px-4">
-        {isHandling ? (
-          <div className="mb-2.5 flex items-center gap-2 rounded-lg border border-steel-line bg-steel-soft px-3 py-[7px] text-xs text-steel">
-            <span className="h-1.5 w-1.5 rounded-full bg-steel" />
-            AI đã tạm dừng cho hội thoại này — bạn đang trực tiếp trả lời khách.
-          </div>
-        ) : (
-          <div className="mb-2.5 flex flex-wrap items-center gap-2.5">
+        <div className="mb-2.5 flex flex-wrap items-center gap-2.5">
+          {isHandling ? (
+            <div className="flex flex-1 items-center gap-2 rounded-lg border border-steel-line bg-steel-soft px-3 py-[7px] text-xs text-steel">
+              <span className="h-1.5 w-1.5 flex-none rounded-full bg-steel" />
+              AI đã tạm dừng cho hội thoại này — bạn đang trực tiếp trả lời khách.
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => act(() => takeoverConversation(id), "HUMAN_HANDLING")}
+                disabled={busy || status === "RESOLVED"}
+                className="rounded-[9px] bg-olive px-[18px] py-2.5 text-sm font-semibold text-white hover:bg-olive-dark disabled:opacity-50"
+              >
+                Tiếp quản
+              </button>
+              <span className="flex-1 text-xs text-faint">
+                Đang ở chế độ xem — ca vẫn nằm trong hàng đợi cho tới khi bạn tiếp quản.
+              </span>
+            </>
+          )}
+          {/* Mobile: "Đóng ca" chuyển xuống đây vì header hẹp (tên khách bị cắt nếu nhồi thêm nút). */}
+          {status !== "RESOLVED" && (
             <button
-              onClick={() => act(() => takeoverConversation(id), "HUMAN_HANDLING")}
-              disabled={busy || status === "RESOLVED"}
-              className="rounded-[9px] bg-olive px-[18px] py-2.5 text-sm font-semibold text-white hover:bg-olive-dark disabled:opacity-50"
+              onClick={() => act(() => resolveConversation(id), "RESOLVED")}
+              disabled={busy}
+              className="hidden whitespace-nowrap rounded-[8px] border border-line bg-white px-3 py-2 text-[13px] text-muted disabled:opacity-50 mob:inline-flex"
             >
-              Tiếp quản
+              Đóng ca
             </button>
-            <span className="text-xs text-faint">
-              Đang ở chế độ xem — ca vẫn nằm trong hàng đợi cho tới khi bạn tiếp quản.
-            </span>
-          </div>
-        )}
+          )}
+        </div>
 
         <div className="flex items-center gap-2.5 rounded-[12px] border border-line bg-cream-soft py-[7px] pl-4 pr-[7px]">
           <input

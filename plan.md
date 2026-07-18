@@ -1,178 +1,169 @@
-# BIG PLAN — HITL Admin: Escalation Queue (08b) + Takeover & Live Reply (08c) + Gates & Draft Approval (08a) + FE Admin
+# BIG PLAN — Fix 08c + Slice 10a (Conversation List) + UI Redesign (ThriftYourStyle)
 
-> **Bản chất:** kịch bản ONE-SHOT LỚN (3 slice + FE admin), chạy phase-by-phase — Claude Code có thể dừng/tiếp
-> giữa các phase. Nguồn chân lý: **`PRD.md`** (§11 EscalationCard/takeover; §9 gate/PENDING_APPROVAL; §10 realtime
-> FR-ASYNC-7; §17 dashboard). Sau khi xong = **vòng HITL trọn vẹn, demo được**.
+> **Bản chất:** kịch bản ONE-SHOT LỚN — chạy phase-by-phase, có thể dừng/tiếp. Ba việc: **(A) fix bug 08c**
+> (takeover-on-view) + polish `{type:pending}`; **(B) slice 10a** (danh sách hội thoại + bộ lọc); **(C) redesign
+> UI** cho khách + admin theo bản **ThriftYourStyle**, có responsive/mobile. Nguồn chân lý: `PRD.md` + **file
+> design** `ThriftYourStyle_CSKH.dc.html`.
 >
-> **Mục tiêu:** hội thoại escalate → **admin thấy trong hàng đợi kèm EscalationCard** (08b) → **admin tiếp quản,
-> trả lời khách trực tiếp** (08c) → và **ca nhạy cảm: AI soạn nháp, admin duyệt trước khi gửi** (08a). Kèm **FE admin**.
+> **QUAN TRỌNG:** đặt file design vào repo (vd `docs/design/ThriftYourStyle.dc.html`) để Claude Code **đọc trực
+> tiếp lấy chi tiết pixel** (màu/spacing/bố cục từng màn). Bảng token dưới đây là bản tóm tắt để bám nhanh.
 >
-> **Quyết định kiến trúc (đọc kỹ):**
->
-> - **Pub/sub TRONG-PROCESS** (1 worker) qua một `hub` nhỏ (dict `conversation_id → set WS`), **event-driven, KHÔNG
->   polling**. Redis pub/sub (PRD §10) là bản nâng cấp **đa-worker** — swap sau, không làm ở đây. Giữ 1 worker.
-> - **Takeover ≠ suspend/resume.** Dùng **status-gate**: khi hội thoại đang có người xử lý (IN_HUMAN_QUEUE/
->   HUMAN_HANDLING/PENDING_APPROVAL) thì **AI KHÔNG chạy** — tin khách route sang admin. KHÔNG cần LangGraph
->   interrupt/checkpointer (đó là 09b).
-> - **EscalationCard dựng từ final state** (không cần re-wire graph): WS/service gom intent/entities/rag_context/
->   reason/priority/severity (+ nháp cho ca PENDING_APPROVAL) → lưu lên conversation.
-> - **Gate:** `auto_reply` + category **nhạy cảm** → **PENDING_APPROVAL** (giữ nháp Agent 4 chờ admin duyệt).
->   `human_handoff` LUÔN escalate (bất biến FR-GATE-2). Response Generator vẫn là egress TỰ ĐỘNG duy nhất; tin
->   admin là egress-người riêng (qua hub).
-> - **Admin identity tối giản:** chưa có admin auth (slice 11) → dùng một "demo admin" (id cố định / query param).
+> Ràng buộc UI: **Tailwind thuần + TanStack Query, KHÔNG shadcn**. Giữ **khách `/chat`** và **admin `/admin`** là
+> hai URL riêng (toggle Khách/Admin trong design chỉ là công cụ mockup — khách KHÔNG thấy admin).
 
 ---
 
-## 0. In / Out scope
+## 0. DESIGN SYSTEM (tóm tắt — chi tiết xem file HTML)
 
-**In:** cột conversation (priority/severity/escalation_card) + migration; endpoint + UI hàng đợi escalation;
-pub/sub in-process + status-gating + admin WS + takeover; UI admin chat/takeover; gate config + PENDING_APPROVAL +
-duyệt/sửa/gửi nháp + UI; e2e + test.
-**Out (để sau):** Redis pub/sub đa-worker; durable checkpointer + suspend/resume + AWAITING_CUSTOMER (09b);
-auto-resolve/offline (09c); admin auth/RBAC thật (11); danh sách TẤT CẢ hội thoại (10a — queue này chỉ escalation);
-monitoring/analytics (10b/c); push/badge notification thật (nay chỉ hiện trong queue khi refresh).
+**Fonts (Google Fonts):** `Instrument Serif` (display/heading/brand, có italic) · `Instrument Sans` (400/500/600, body/UI).
+
+**Màu (tông kem · olive · terracotta):**
+
+- Nền: page `#FBFAF7` · panel/list `#FDFCFA` · card/white `#FFFFFF`.
+- Chữ: `#211F1B` (chính) · `#57534A` (phụ) · `#8E887B` (mờ) · `#B0A99B` · `#C4BEB1`.
+- Viền: `#E7E2D8` (mặc định) · `#DDE1D0` (xanh nhạt) · `#F0EDE6` (nhạt).
+- **Primary olive:** `#6B7A4F` (nút Gửi/link) · hover `#5A6743` · soft `#EEF0E6` (avatar AI, chip tri thức) · border `#DDE1D0`.
+- Bong bóng khách: nền `#211F1B`, chữ `#F7F5F0`. Bong bóng AI: nền `#FFFFFF`, viền `#E7E2D8`.
+- Nhân viên (NV): chữ `#42536B`/`#5A6B84`, nền `#E8ECF3`, viền `#D4DAE6`.
+- Thông báo chuyển người / system: nền `#F6E7DF`, viền `#EAD4C7`, chữ `#8A4E33` (căn giữa).
+- Badge đếm/alert: `#B25B3C`. "Cần làm rõ"/amber: chữ `#B98534`, nền `#F7EFDD`. Chấm online: `#5B7A5B`.
+
+**Map status → {nhãn, màu, nền}** (dùng cho pill khắp admin + custStatus):
+| status | nhãn | color | soft |
+|---|---|---|---|
+| ACTIVE_AI | AI đang xử lý | #6B7A4F | #EEF0E6 |
+| REPLIED | Đã trả lời | #5B7A5B | #E8EFE6 |
+| PENDING_APPROVAL | Chờ duyệt nháp | #B98534 | #F7EFDD |
+| IN_HUMAN_QUEUE | Chờ nhận ca | #B25B3C | #F6E7DF |
+| HUMAN_HANDLING | Nhân viên đang xử lý | #5A6B84 | #E8ECF3 |
+| RESOLVED | Đã đóng | #8E887B | #F0EDE6 |
+
+**Bo góc:** card 11–14px · nút 6–9px · bong bóng 16px (góc "đuôi" 5px: khách `16px 16px 5px 16px`, AI/NV
+`5px 16px 16px 16px`) · pill 6–7px · badge 10px. **Shadow:** `0 2px 8–10px rgba(33,31,27,.03–.04)`.
+
+**Bố cục:** top bar 53px (trắng, viền dưới `#E7E2D8`). Admin: sidebar 250px + listpane 340px + detailpane (flex).
+**Responsive ≤820px:** sidebar → **drawer** (translateX + scrim + hamburger topbar `mtopbar`); listpane full-width;
+detailpane ẩn (điều hướng master-detail).
 
 ---
 
 ## 1. Kế hoạch theo Phase
 
-> Mỗi phase để `make test` (backend) / `pnpm -r build` (frontend) XANH rồi `git commit`, tóm tắt 1 dòng, tiếp nếu không lỗi.
+> Mỗi phase: `pnpm -r build` (và `make test` nếu chạm BE) XANH → `git commit` → tóm tắt 1 dòng → tiếp nếu không lỗi.
 
-### === PHẦN A · 08b — HÀNG ĐỢI ESCALATION + ESCALATIONCARD ===
+### Phase 0 — Nền design (fonts + tokens)
 
-### Phase 0 — Model + service (lưu card/priority/severity)
+- `apps/dashboard/app/layout.tsx`: nạp **Instrument Serif + Instrument Sans** (next/font/google hoặc `<link>`).
+- `apps/dashboard/app/globals.css`: khai báo **CSS variables** cho toàn bộ token màu ở trên (vd `--bg-page`,
+  `--primary`, `--text-muted`, …) + font families; tiện ích nhỏ (bong bóng, pill, shadow) nếu cần. (Có thể map vào
+  `tailwind.config` theme, hoặc dùng CSS vars trực tiếp — tuỳ pattern hiện có.)
 
-- `app/models/conversation.py`: thêm `priority: str | None`, `severity: str | None`, `escalation_card: dict|None`
-  (JSONB, nullable). Tạo **migration Alembic**.
-- `app/services/escalation_service.py` (mới): `build_escalation_card(final_state, trigger_message) -> dict`
-  (summary = tin khách kích hoạt + intent; intent/entities/rag_context (top nguồn); escalation_reason; priority;
-  severity; `suggested_reply` = nháp — rỗng cho handoff, có cho PENDING_APPROVAL); `persist_escalation(session,
-conv_id, card, priority, severity, reason)`; `list_escalations(session, statuses, limit)` (lọc theo status, **sắp
-  giảm dần theo priority** high→low rồi `last_message_at`).
+**Verify:** app build; trang bất kỳ đổi font/nền sang tông ThriftYourStyle. Commit: `feat(ui): phase 0 - design tokens (Instrument fonts + bảng màu ThriftYourStyle)`.
 
-**Verify:** unit `build_escalation_card` từ một final-state mẫu → card đủ trường; `list_escalations` sắp đúng thứ tự.
-`make test` xanh. Commit: `feat(hitl): phase 0 - conversation escalation cols + escalation_service`.
+### Phase 1 — App shell (top bar + admin sidebar + responsive)
 
-### Phase 1 — WS lưu card khi handoff + endpoint queue
+- **Top bar** (dùng chung): brand "T" (ô vuông `#211F1B`, chữ serif) + "ThriftYourStyle" (serif) + tag "Demo" +
+  bên phải "Pipeline 4 agent · HITL". (Khách và admin dùng biến thể phù hợp; KHÔNG lộ nav admin cho khách.)
+- **Admin layout** (`apps/dashboard/app/admin/layout.tsx` hoặc shell component): **sidebar 250px** (brand + "Bảng
+  điều hành CSKH" + nav: **Hội thoại** / **Chuyển nhân viên** (badge đếm IN_HUMAN_QUEUE) / **Duyệt nháp** (badge
+  PENDING_APPROVAL) / **Kho tri thức (RAG)** + user profile "NG · Đang trực tuyến") + **responsive drawer** (≤820px:
+  off-canvas + scrim + `mtopbar` hamburger + module title).
 
-- `app/api/ws/chat.py`: sau `run_pipeline`, nếu `status == IN_HUMAN_QUEUE` → `build_escalation_card` +
-  `persist_escalation` (card + priority + severity + reason từ final state).
-- `app/api/routes/admin.py` (mới, prefix `/admin`): `GET /escalations` → `list_escalations([IN_HUMAN_QUEUE,
-PENDING_APPROVAL])` → danh sách `{conversation_id, customer_identifier, status, priority, severity,
-escalation_reason, escalation_card, last_message_at}`. `GET /conversations/{id}` → hội thoại + messages (cho UI).
-- `packages/shared-types`: `Escalation`, `AdminConversation` (+ message). `apps/dashboard/lib/api.ts`:
-  `getEscalations()`, `getAdminConversation(id)`.
+**Verify:** `/admin` có sidebar đúng style; thu nhỏ <820px → sidebar thành drawer mở/đóng bằng hamburger.
+Commit: `feat(ui): phase 1 - app shell (top bar + admin sidebar + drawer responsive)`.
 
-**Verify:** `/chat` hỏi câu vô nghĩa → escalate → `GET /api/admin/escalations` có ca đó, đúng priority/card.
-`make test` xanh; `pnpm -r build` pass. Commit: `feat(hitl): phase 1 - persist card + GET /api/admin/escalations`.
+### Phase 2 — Redesign màn khách `/chat` (+ polish pending)
 
-### Phase 2 — FE trang hàng đợi admin
+- `apps/dashboard/app/chat/page.tsx` + `components/chat/*`: dựng lại theo design —
+  - Header: avatar "T" + "Trợ lý ThriftYourStyle" (serif) + **custStatus** (chấm màu + nhãn theo trạng thái:
+    "Đang trò chuyện với Trợ lý AI"/#6B7A4F, "Đang chờ nhân viên hỗ trợ"/#B25B3C, "… (CSKH) đang hỗ trợ bạn"/#5A6B84).
+  - **Quick-reply chips** (pill đậm primary / pill trắng). Bong bóng: **khách** (nền đậm, phải), **AI** (trắng +
+    avatar "AI", trái) kèm chip **"Căn cứ tri thức"** (nguồn, monospace) + tag **"Cần làm rõ · hỏi lại 1 lần"** (amber);
+    **NV** (avatar "NV" xanh-xám); **thông báo chuyển người/system** (căn giữa, terracotta). **Typing** 3 chấm nhấp nháy.
+  - Ô nhập trắng bo tròn + nút **"Gửi"** olive. Footer: "Trợ lý AI trả lời dựa trên tài liệu chính thức của shop ·
+    phản hồi tự động ≤ 5 giây".
+  - **Polish (fix):** xử lý `{type:"pending"}` — gỡ typing + hiện trạng thái "Trợ lý AI cần thêm thông tin"/chờ duyệt
+    (đúng lúc ca vào PENDING_APPROVAL), KHÔNG kẹt "đang trả lời…".
 
-- `apps/dashboard/app/admin/page.tsx`: trang **Hàng đợi** — `getEscalations()` (TanStack, refetch nút/định kỳ),
-  **danh sách sắp theo priority** (badge màu theo priority/severity), mỗi mục hiện tóm tắt EscalationCard (intent,
-  reason, tin khách). Chọn một mục → mở hội thoại (Phần B). Link "Admin" ở trang chủ.
+**Verify:** `/chat` đúng giao diện design; chat happy case + ca chuyển người + (nếu test) ca pending hiển thị đúng.
+`pnpm -r build` pass. Commit: `feat(ui): phase 2 - redesign màn khách + xử lý pending`.
 
-**Verify:** mở `/admin` → thấy ca escalate, ưu tiên cao lên trước, card hiển thị. `pnpm -r build` pass. Commit:
-`feat(ui): phase 2 - trang hàng đợi escalation admin`.
+### Phase 3 — Backend: 10a (list + filter) + FIX bug 08c
 
-### === PHẦN B · 08c — TIẾP QUẢN + TRẢ LỜI TRỰC TIẾP (pub/sub in-process + status-gate) ===
+- **10a:** `app/api/routes/admin.py` — `GET /admin/conversations?status=<optional>&limit=` → dùng
+  `conversation_service.list_conversations` (thêm tham số lọc theo status/nhóm nếu chưa có). Trả `{id, customer_identifier,
+status, current_intent, last_message_at, preview}` (preview = tin cuối). Schema + `lib/api.ts:getConversations(filter)`.
+- **FIX 08c:** `app/api/ws/admin.py` — **BỎ `_takeover()` khỏi lúc connect** (mở kết nối = chỉ xem, KHÔNG đổi
+  status). Thêm **tiếp quản tường minh**: `POST /admin/conversations/{id}/takeover` (IN_HUMAN_QUEUE → HUMAN_HANDLING
+  - assigned_admin) **hoặc** WS `{type:"takeover"}` trong `_admin_reader`. `lib/api.ts:takeover(id)`.
 
-### Phase 3 — Pub/sub hub + status-gating cho WS khách
+**Verify:** mở admin WS KHÔNG còn tự đổi status (ca vẫn ở IN_HUMAN_QUEUE trong hàng đợi); `GET /admin/conversations?status=`
+lọc đúng. `make test` xanh. Commit: `feat(hitl): phase 3 - conversation list endpoint (10a) + fix takeover-on-view (08c)`.
 
-- `app/api/ws/hub.py` (mới): `ConnectionHub` — `register(conv_id, ws)`/`unregister`; `publish(conv_id, payload,
-exclude=ws)` gửi tới các WS khác cùng hội thoại (mỗi kết nối một `asyncio.Queue`). In-process, không Redis.
-- `app/api/ws/chat.py` refactor (WS khách): đăng ký hub theo `db_conversation_id`; chạy **HAI task**
-  `asyncio.gather`: (a) `_reader` đọc tin khách; (b) `_hub_listener` đọc từ hub → đẩy xuống socket khách.
-  - `_reader`: **status-gate** — nạp `conversation.status`; nếu ∈ {IN_HUMAN_QUEUE, HUMAN_HANDLING,
-    PENDING_APPROVAL} → **KHÔNG chạy AI**: lưu tin khách + `hub.publish(conv_id, {type:"message", from:"customer",
-content})` (admin thấy). Ngược lại (ACTIVE_AI/REPLIED…) → chạy pipeline như cũ + trả lời + lưu.
-  - `_hub_listener`: nhận payload (tin admin) → `websocket.send_json({type:"message", from:"admin", content})`.
+### Phase 4 — Admin: Danh sách hội thoại (10a) theo design
 
-**Verify:** khi status IN_HUMAN_QUEUE, gửi tin ở `/chat` → KHÔNG có reply AI (được publish lên hub thay vì chạy
-pipeline). `make test` xanh. Commit: `feat(hitl): phase 3 - in-process pub/sub hub + status-gate WS khách`.
+- `apps/dashboard/app/admin/page.tsx` (hoặc module "Hội thoại"): **listpane** —
+  - Tiêu đề "Hội thoại" (serif 24px) + ô **search** "Tìm theo tên khách, mã đơn…".
+  - **Filter chips** (pill đậm active / trắng inactive): vd **Tất cả · Đang xử lý (AI) · Cần xử lý · Đã đóng**
+    (map nhóm: active=[ACTIVE_AI,REPLIED,AWAITING_CUSTOMER]; cần-xử-lý=[IN_HUMAN_QUEUE,PENDING_APPROVAL,HUMAN_HANDLING];
+    đóng=[RESOLVED,CLOSED]).
+  - **Conversation cards:** tên/định danh khách + time + **preview** (ellipsis 1 dòng) + **status pill** (chấm màu +
+    nhãn theo bảng map). Chọn card → mở detail (Phase 5). Dùng `getConversations(filter)` (TanStack).
 
-### Phase 4 — Admin WS + tiếp quản
+**Verify:** `/admin` hiện danh sách tất cả hội thoại + lọc theo chip + pill đúng màu. `pnpm -r build` pass.
+Commit: `feat(ui): phase 4 - danh sách hội thoại + bộ lọc (10a) theo design`.
 
-- `app/api/ws/admin.py` (mới): `/ws/admin/{conversation_id}` — admin connect → gửi lịch sử hiện có; đăng ký hub
-  theo conv_id; hai task tương tự (reader tin admin ↔ hub listener tin khách).
-  - Takeover: khi admin connect (hoặc gửi `{type:"takeover"}`) → `set_status(HUMAN_HANDLING)` + `assigned_admin_id`
-    (demo admin).
-  - `_reader` admin: tin admin → lưu (sender=ADMIN) + `hub.publish(conv_id, {from:"admin", content})` (→ khách).
-  - `_hub_listener`: tin khách (từ hub) → đẩy xuống socket admin.
-- (Tùy chọn) `POST /api/admin/conversations/{id}/resolve` → `set_status(RESOLVED)`.
+### Phase 5 — Admin: Detail (tiếp quản + hàng đợi + duyệt nháp) theo design + hoàn tất fix
 
-**Verify:** kịch bản: khách escalate → admin mở `/ws/admin/{id}`, takeover → gửi tin → **khách nhận tin admin
-trực tiếp**; khách gửi lại → **admin nhận**. `make test` xanh. Commit: `feat(hitl): phase 4 - admin WS + takeover + live 2 chiều`.
+- `apps/dashboard/app/admin/[conversationId]/page.tsx` (detailpane) — theo design:
+  - **Lịch sử** hội thoại (khách/AI/NV/system, đúng bong bóng + màu) qua `getAdminConversation(id)` (đọc-only) + WS
+    `/ws/admin/{id}` cho tin realtime mới.
+  - **EscalationCard** (khi IN_HUMAN_QUEUE): tên + định danh (mono) + pill **"Ưu tiên {priority}"** (màu) + **"Mức độ
+    {severity}"** (xám) + hộp **lý do** (terracotta) + **intent** + **flags** + **"Nháp phản hồi gợi ý"** (nếu có).
+  - **Điều khiển (fix 08c):** nút **"Tiếp quản"** tường minh → `takeover(id)` (IN_HUMAN_QUEUE→HUMAN_HANDLING); ô trả
+    lời + nút **Gửi** (bật sau khi tiếp quản, hoặc gửi tự tiếp quản); nút **"Đóng ca"** → `resolve(id)`.
+  - **Duyệt nháp (PENDING_APPROVAL):** khối "Duyệt nháp phản hồi" (serif) + "Căn cứ" (nguồn) + nút **"Duyệt & gửi"**
+    (olive) / **"Sửa & gửi"** (trắng, textarea) / **"Chuyển xử lý tay"** → `approveDraft`/`rejectDraft`.
 
-### Phase 5 — FE màn admin tiếp quản
+**Verify:** mở một ca IN_HUMAN_QUEUE **chỉ xem** (không tự rời hàng đợi) → bấm **Tiếp quản** → chat realtime với khách →
+**Đóng ca**; ca PENDING_APPROVAL → duyệt/sửa/gửi. `pnpm -r build` + `make test` pass. Commit:
+`feat(ui): phase 5 - detail admin (tiếp quản + EscalationCard + duyệt nháp) + explicit takeover`.
 
-- `apps/dashboard/app/admin/[conversationId]/page.tsx` (hoặc panel trong `/admin`): mở hội thoại → hiện **lịch sử
-  đầy đủ** (customer/ai/admin, phân biệt màu) + **EscalationCard** (context để admin nắm nhanh); kết nối
-  `ws://.../ws/admin/{id}`; nút **"Tiếp quản"** → HUMAN_HANDLING; ô nhập → gửi tin (tới khách trực tiếp); nhận tin
-  khách realtime. Tái dùng pattern chat sẵn có.
+### Phase 6 — Responsive/mobile + e2e verify
 
-**Verify:** mở hai cửa sổ (khách `/chat` + admin `/admin/{id}`) → chat qua lại realtime sau khi admin tiếp quản.
-`pnpm -r build` pass. Commit: `feat(ui): phase 5 - màn admin tiếp quản + chat realtime`.
+- ≤820px: sidebar → drawer (scrim + hamburger); top bar gọn (ẩn tag + phải); listpane full-width; **detailpane ẩn**
+  → chọn hội thoại mới hiện detail (nút "‹ Hàng đợi"/"‹ Danh sách" quay lại). Màn khách `/chat` co gọn đúng design.
+- **e2e:** (1) khách happy case; (2) escalate → hàng đợi → **xem không rời queue** → Tiếp quản → chat realtime →
+  Đóng ca; (3) refund → PENDING_APPROVAL → duyệt/gửi; (4) danh sách + lọc; (5) toàn bộ trên mobile.
 
-### === PHẦN C · 08a — GATE + DUYỆT NHÁP (PENDING_APPROVAL) ===
-
-### Phase 6 — Gate config + giữ nháp + duyệt/sửa/gửi
-
-- `app/core/config.py`: `sensitive_intents` (mặc định `{refund, complaint, exchange}`) + `auto_reply_review: bool
-= True` (env). (Tùy chọn: 1 dòng DB `GateConfig` + toggle — nếu không, dùng config.)
-- `app/api/ws/chat.py` (nhánh AI-active, sau pipeline): nếu `action == auto_reply` **và** category/intent ∈
-  sensitive **và** `auto_reply_review` → **KHÔNG gửi thẳng**: `set_status(PENDING_APPROVAL)` + `build/persist card`
-  với `suggested_reply = <nháp Agent 4>` (vào hàng đợi). Ngược lại gửi như cũ. `human_handoff` LUÔN escalate (bất biến).
-- `app/api/routes/admin.py`: `POST /conversations/{id}/approve` (body `{content?}`) → gửi `content` (nháp đã duyệt/
-  sửa) tới khách qua `hub.publish` + lưu (sender=AI) + `set_status(REPLIED)`. `POST /conversations/{id}/reject` →
-  chuyển `IN_HUMAN_QUEUE` (admin tự xử lý).
-
-**Verify:** hỏi câu `refund` KB trả lời được → **KHÔNG gửi thẳng**, vào PENDING_APPROVAL với nháp; `approve` →
-khách nhận nháp. `make test` xanh. Commit: `feat(hitl): phase 6 - gate sensitive → PENDING_APPROVAL + duyệt/sửa/gửi nháp`.
-
-### Phase 7 — FE duyệt nháp
-
-- `apps/dashboard/app/admin/[conversationId]/page.tsx`: nếu status `PENDING_APPROVAL` → hiện **nháp AI** + nút
-  **Duyệt & gửi** / **Sửa & gửi** (textarea) / **Từ chối** (→ tiếp quản). (Tùy chọn) toggle gate ở trang admin.
-
-**Verify:** ca PENDING_APPROVAL trên `/admin` → admin duyệt/sửa/gửi → khách nhận. `pnpm -r build` pass. Commit:
-`feat(ui): phase 7 - duyệt/sửa/gửi nháp (PENDING_APPROVAL)`.
-
-### Phase 8 — Test + e2e verify (vòng HITL trọn vẹn)
-
-- Test: `build_escalation_card`/`list_escalations`; gate → PENDING_APPROVAL đúng; status-gate (human-handling →
-  không chạy AI). e2e tay: (1) câu vô nghĩa → escalate → queue → admin takeover → chat realtime; (2) câu refund →
-  PENDING_APPROVAL → admin duyệt/gửi.
-
-**Verify:** `make test` xanh; `pnpm -r build` pass; hai kịch bản demo chạy. Commit: `test(hitl): phase 8 - e2e HITL loop`.
+**Verify:** `make test` + `pnpm -r build` pass; các flow chạy trên cả desktop + mobile. Commit: `feat(ui): phase 6 - responsive mobile + e2e verify`.
 
 ---
 
 ## 2. Definition of Done
 
-- [ ] Escalate → conversation có priority/severity/escalation_card; `GET /api/admin/escalations` liệt kê **sắp theo priority**.
-- [ ] `/admin`: hàng đợi hiện ca escalate + PENDING_APPROVAL (ưu tiên cao trước) + EscalationCard.
-- [ ] **Admin tiếp quản + chat realtime 2 chiều** với khách (pub/sub in-process); khi có người xử lý, **AI KHÔNG chạy** (status-gate).
-- [ ] Ca nhạy cảm (refund/complaint/exchange) → **PENDING_APPROVAL**, AI soạn nháp, admin **duyệt/sửa/gửi**; handoff luôn escalate.
-- [ ] Response Generator vẫn là egress tự động duy nhất; tin admin qua hub. `make test` xanh; `pnpm -r build` pass.
-- [ ] 1 worker; KHÔNG suspend/resume, KHÔNG Redis pub/sub, KHÔNG admin auth (đã note để dành 09b/11).
+- [ ] **Fix 08c:** mở hội thoại = **chỉ xem** (không tự đổi status/rời hàng đợi); tiếp quản là **nút tường minh**;
+      khách xử lý `{type:pending}` đúng.
+- [ ] **10a:** `/admin` có **danh sách tất cả hội thoại** + search + **bộ lọc theo trạng thái** + status pill đúng màu.
+- [ ] **Redesign:** khách `/chat` + admin (sidebar/list/detail) đúng hệ thị giác ThriftYourStyle (fonts, màu, bong
+      bóng, EscalationCard, duyệt nháp); **responsive mobile** (drawer + master-detail).
+- [ ] Giữ khách/admin tách URL; Tailwind thuần + TanStack, KHÔNG shadcn. `make test` + `pnpm -r build` XANH.
 
 ---
 
 ## 3. Ghi chú cho Claude Code
 
-- **Pub/sub IN-PROCESS** (`hub.py`, 1 worker) — event-driven, KHÔNG polling; đằng sau interface nhỏ để sau swap
-  Redis (đa-worker, PRD §10). ĐỪNG dựng Redis pub/sub ở đây.
-- **WS khách + admin cần HAI task** (`asyncio.gather`: reader socket + hub listener) để nhận realtime từ phía kia;
-  `hub.publish(..., exclude=self)` để không tự nghe lại tin mình.
-- **Status-gate, KHÔNG suspend/resume:** human-handling → AI không chạy (chỉ định tuyến). LangGraph interrupt +
-  durable checkpointer = 09b.
-- **EscalationCard dựng từ final state** (không re-wire graph). `human_handoff.py` node cứ để nguyên (không dùng
-  trong graph) — hoặc bỏ; KHÔNG bắt buộc.
-- **Gate chỉ đổi DELIVERY** (auto_reply nhạy cảm → PENDING_APPROVAL giữ nháp); **handoff LUÔN escalate** (FR-GATE-2).
-  Response Generator vẫn là egress tự động duy nhất.
-- **Admin identity tối giản** (demo admin id) — admin auth/RBAC thật = slice 11. Guest khách = 11.
-- Session DB NGẮN (Neon free); async-first; config từ env; UI theo pattern sẵn có (Tailwind + TanStack, KHÔNG shadcn);
-  "sửa có phẫu thuật". Migration Alembic cho cột mới.
-- **Đây là big plan** — chạy phase-by-phase, commit từng phase, dừng hỏi khi lỗi/mơ hồ. Sau đây (ROADMAP): 10a
-  danh sách hội thoại → 10b/c monitoring/analytics → 11 auth → 09b suspend/resume + Redis pub/sub khi scale.
+- **Đọc file design trong repo** (`docs/design/ThriftYourStyle.dc.html`) để lấy pixel/màu/bố cục chính xác từng màn;
+  bảng token ở Phase 0 là tóm tắt. Design dùng inline style + `{{ }}`/`<sc-if>` (mockup) — **dịch sang Tailwind
+  thuần**, KHÔNG bê nguyên template.
+- **Tách khách/admin:** `/chat` (khách) và `/admin` (admin) là URL riêng; toggle Khách/Admin trong design chỉ để
+  demo — KHÔNG cho khách vào admin.
+- **Fix 08c là bắt buộc:** bỏ `_takeover` on-connect; thêm takeover tường minh. Xem là đọc-only (ca escalate vốn đã
+  IN_HUMAN_QUEUE nên AI đã bị status-gate tạm dừng — xem không cần đổi status).
+- **10a** dùng `list_conversations` (đã có) + tham số lọc; status pill dùng bảng map ở Phase 0.
+- **Không đổi logic BE khác** (pipeline/gate/hub giữ nguyên) — chỉ thêm endpoint list + takeover + sửa on-connect.
+  Async-first; session DB ngắn; "sửa có phẫu thuật".
+- **Rebrand "ThriftYourStyle"** ở UI (brand/label). (Tuỳ chọn, không bắt buộc ở slice này: đổi nội dung KB/intents
+  cho khớp tên shop — báo tôi nếu muốn làm.)
+- **Big plan** — chạy phase-by-phase, commit từng phase, dừng hỏi khi lỗi/mơ hồ. Sau đây (ROADMAP): persist
+  audit_log → 10b/c monitoring/analytics (KPI) → 09b async → 11 auth → 14 deploy.
