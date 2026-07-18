@@ -148,6 +148,13 @@ export async function approveDraft(id: string, content?: string): Promise<AdminC
   return res.json();
 }
 
+// Đóng ca sau khi xử lý xong → RESOLVED.
+export async function resolveConversation(id: string): Promise<AdminConversation> {
+  const res = await fetch(`${API_BASE}/api/admin/conversations/${id}/resolve`, { method: "POST" });
+  if (!res.ok) throw new Error(`resolve ${res.status}`);
+  return res.json();
+}
+
 // Từ chối nháp (08a) → IN_HUMAN_QUEUE (admin tự tiếp quản xử lý).
 export async function rejectDraft(id: string): Promise<AdminConversation> {
   const res = await fetch(`${API_BASE}/api/admin/conversations/${id}/reject`, { method: "POST" });

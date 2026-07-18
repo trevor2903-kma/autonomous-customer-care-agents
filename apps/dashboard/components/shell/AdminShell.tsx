@@ -44,7 +44,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const selectedId = isDetail ? pathname.split("/")[2] : null;
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
+    // h-[calc(100vh-53px)]: khoá vỏ admin vào phần còn lại dưới top bar 53px → các pane tự cuộn BÊN TRONG,
+    // không đẩy cả trang cuộn. Trang thường (/ , /rag) vẫn cuộn bình thường nhờ min-h-screen ở layout gốc.
+    // KHÔNG dùng flex-1 ở đây: trong flex-column, flex-basis:0% sẽ ĐÈ height → chiều cao lại chạy theo nội dung.
+    <div className="flex h-[calc(100vh_-_53px)] min-h-0 overflow-hidden">
       {open && (
         <div
           onClick={() => setOpen(false)}
