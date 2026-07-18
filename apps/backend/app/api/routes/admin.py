@@ -49,13 +49,25 @@ async def get_escalations(session: AsyncSession = Depends(get_session)) -> list[
     ]
 
 
+def _preview(messages: list) -> str | None:  # type: ignore[type-arg]
+    """Tin KHÁCH gần nhất (fallback: tin cuối) — xem `get_conversations`."""
+    for m in reversed(messages):
+        if m.sender == MessageSender.CUSTOMER:
+            return m.content
+    return messages[-1].content if messages else None
+
+
 @router.get("/conversations", response_model=list[ConversationListItem])
 async def get_conversations(
     status: list[str] | None = Query(default=None, description="lọc theo status; lặp lại để lọc nhiều"),
     limit: int = Query(default=50, le=200),
     session: AsyncSession = Depends(get_session),
 ) -> list[ConversationListItem]:
-    """Danh sách TẤT CẢ hội thoại (10a) + lọc theo nhóm status. `preview` = tin cuối cùng."""
+    """Danh sách TẤT CẢ hội thoại (10a) + lọc theo nhóm status.
+
+    `preview` ưu tiên tin KHÁCH gần nhất: tin cuối của ca escalate luôn là câu thông báo chuyển người giống
+    hệt nhau → danh sách không đọc được. Câu hỏi của khách mới là thứ admin cần để phân loại.
+    """
     convs = await conversation_service.list_conversations(session, statuses=status, limit=limit)
     return [
         ConversationListItem(
@@ -65,7 +77,7 @@ async def get_conversations(
             # current_intent chưa được pipeline ghi xuống conversation → lấy tạm từ card của ca đã escalate.
             current_intent=c.current_intent or (c.escalation_card or {}).get("intent"),
             last_message_at=c.last_message_at,
-            preview=c.messages[-1].content if c.messages else None,
+            preview=_preview(c.messages),
         )
         for c in convs
     ]

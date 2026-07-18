@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Escalation } from "shared-types";
 import { getEscalations } from "@/lib/api";
+import { ConversationListPane } from "@/components/admin/ConversationListPane";
 
 // Vỏ admin (design): sidebar 250px + vùng module. ≤820px sidebar thành drawer off-canvas + scrim + hamburger.
 // Nav trỏ vào CÙNG danh sách hội thoại với bộ lọc khác nhau (10a) — không dựng module rời.
@@ -36,6 +37,11 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
   const activeKey = pathname.startsWith("/rag") ? "rag" : filter;
   const moduleTitle = NAV.find((n) => n.key === activeKey)?.label ?? "Hội thoại";
+
+  // Master-detail theo ROUTE: /admin = danh sách, /admin/{id} = chi tiết.
+  // Desktop hiện cả hai pane; ≤820px chỉ hiện một (design: .twopane.show-detail).
+  const isDetail = /^\/admin\/[^/]+$/.test(pathname);
+  const selectedId = isDetail ? pathname.split("/")[2] : null;
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -115,7 +121,19 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           </button>
           <span className="font-serif text-xl text-ink">{moduleTitle}</span>
         </div>
-        {children}
+
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <ConversationListPane
+            filter={filter}
+            selectedId={selectedId}
+            className={isDetail ? "mob:hidden" : ""}
+          />
+          <div
+            className={`flex min-w-0 flex-1 flex-col overflow-hidden ${isDetail ? "" : "mob:hidden"}`}
+          >
+            {children}
+          </div>
+        </div>
       </div>
     </div>
   );
