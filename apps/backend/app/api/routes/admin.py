@@ -19,7 +19,8 @@ from ...schemas.admin import (
     ConversationListItem,
     EscalationOut,
 )
-from ...services import conversation_service, escalation_service
+from ...schemas.gate import GateConfigOut, GateConfigUpdate, GateIntentRuleSchema
+from ...services import conversation_service, escalation_service, gate_service
 from ..deps import require_admin
 from ..ws.hub import hub
 
@@ -157,3 +158,37 @@ async def reject_draft(
     if conv is None:
         raise HTTPException(status_code=404, detail="conversation not found")
     return await conversation_service.get_conversation(session, conversation_id)
+
+
+# ── Gate động (P3) — cấu hình toggle hệ thống + per-intent (đọc/ghi DB) ────────
+def _gate_out(snap: gate_service.GateSnapshot) -> GateConfigOut:
+    return GateConfigOut(
+        auto_reply_enabled=snap.auto_reply_enabled,
+        auto_resolve_enabled=snap.auto_resolve_enabled,
+        auto_resolve_minutes=snap.auto_resolve_minutes,
+        retrieval_threshold=snap.retrieval_threshold,
+        rules=[
+            GateIntentRuleSchema(
+                intent=r.intent, label=r.label, sensitive=r.sensitive, send_directly=r.send_directly
+            )
+            for r in snap.rules
+        ],
+    )
+
+
+@router.get("/gate-config", response_model=GateConfigOut)
+async def get_gate_config() -> GateConfigOut:
+    """Cấu hình gate hiện tại (2 toggle + bảng per-intent + retrieval_threshold read-only)."""
+    return _gate_out(await gate_service.get_gate_config())
+
+
+@router.put("/gate-config", response_model=GateConfigOut)
+async def update_gate_config(payload: GateConfigUpdate) -> GateConfigOut:
+    """Cập nhật toggle hệ thống + `send_directly` per-intent. KHÔNG nhận retrieval_threshold (slider read-only)."""
+    snap = await gate_service.update_gate_config(
+        auto_reply_enabled=payload.auto_reply_enabled,
+        auto_resolve_enabled=payload.auto_resolve_enabled,
+        auto_resolve_minutes=payload.auto_resolve_minutes,
+        rules=[(r.intent, r.send_directly) for r in payload.rules] if payload.rules else None,
+    )
+    return _gate_out(snap)

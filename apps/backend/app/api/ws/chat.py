@@ -24,7 +24,7 @@ from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
 from ...models import User
 from ...models.enums import ConversationStatus, MessageSender, UserRole
-from ...services import conversation_service, escalation_service
+from ...services import conversation_service, escalation_service, gate_service
 from .auth import WS_AUTH_CLOSE_CODE, authenticate_websocket
 from .hub import hub
 
@@ -55,14 +55,16 @@ def should_run_ai(status: str | None) -> bool:
     return status not in HUMAN_HANDLED_STATUSES
 
 
-def gate_holds(status_out: str | None, intent: str | None) -> bool:
-    """Gate duyệt nháp (08a, FR-GATE): auto_reply (status REPLIED) + intent NHẠY CẢM + review bật → GIỮ nháp
-    (PENDING_APPROVAL, chờ admin duyệt). human_handoff (IN_HUMAN_QUEUE) KHÔNG qua đây (luôn escalate). Hàm thuần."""
-    return (
-        settings.auto_reply_review
-        and status_out == ConversationStatus.REPLIED
-        and (intent or "") in settings.sensitive_intent_set
-    )
+async def gate_holds(status_out: str | None, intent: str | None) -> bool:
+    """Gate động (P3): auto_reply (status REPLIED) qua VAN gate DB — master `auto_reply_enabled` + per-intent
+    `send_directly` (§4). human_handoff (IN_HUMAN_QUEUE) KHÔNG qua đây (escalation an toàn luôn bật).
+    DB lỗi → KHÔNG giữ (reply đã grounded + qua Agent 3) để chat không kẹt."""
+    try:
+        snapshot = await gate_service.get_gate_config()
+    except Exception as exc:  # noqa: BLE001 — không đọc được gate → gửi thẳng (đừng kẹt chat).
+        log.warning("read gate config failed (gửi thẳng): %s", exc)
+        return False
+    return gate_service.holds_auto_reply(snapshot, status_out, intent)
 
 
 # ── Persist / load helpers (guarded — DB lỗi KHÔNG chặn chat) ─────────────────
@@ -219,8 +221,8 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
             await _persist_message(st.conv_id, MessageSender.CUSTOMER, msg)
             status_out, final, reply = await _run_pipeline_safe(msg, history)
 
-            # Gate 08a: auto_reply nhạy cảm → GIỮ nháp (PENDING_APPROVAL), KHÔNG gửi thẳng cho khách.
-            if final is not None and gate_holds(status_out, final.get("intent")):
+            # Gate động P3: auto_reply không "gửi thẳng" → GIỮ nháp (PENDING_APPROVAL), KHÔNG gửi thẳng cho khách.
+            if final is not None and await gate_holds(status_out, final.get("intent")):
                 await websocket.send_json({"type": "pending"})  # gỡ typing ở FE (KHÔNG gửi nội dung — sole-egress)
                 await _persist_status(st.conv_id, ConversationStatus.PENDING_APPROVAL)
                 await _persist_escalation_card(st.conv_id, final, msg, suggested_reply=reply)
