@@ -93,3 +93,9 @@ class TicketStatus(StrEnum):
     ESCALATED = "escalated"
     RESOLVED = "resolved"
     CLOSED = "closed"
+
+
+class UserRole(StrEnum):
+    # RBAC (slice 11 auth) — lưu dạng String ở cột user.role.
+    ADMIN = "admin"
+    CUSTOMER = "customer"

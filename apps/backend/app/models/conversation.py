@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, Float, String, Text
+from sqlalchemy import DateTime, Float, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -25,6 +25,13 @@ if TYPE_CHECKING:
 class Conversation(UUIDMixin, TimestampMixin, Base):
     __tablename__ = "conversation"
 
+    # Liên kết khách đăng nhập (slice 11). NULL cho guest/legacy. `customer_identifier` giữ để hiển thị.
+    customer_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("user.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
     customer_identifier: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(
         String(32), default=ConversationStatus.NEW, nullable=False, index=True
