@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.routes import admin, agents, conversations, health, rag
+from .api.routes import admin, agents, auth, conversations, health, rag
 from .api.ws import admin as admin_ws
 from .api.ws import chat
 from .core.config import settings
@@ -50,6 +50,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(rag.router, prefix="/api")

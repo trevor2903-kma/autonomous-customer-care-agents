@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     sensitive_intents: str = "refund,complaint,exchange"
     auto_reply_review: bool = True  # tắt (env=false) -> auto_reply gửi thẳng kể cả intent nhạy cảm
 
+    # ── Auth (slice 11 — JWT + RBAC) ──────────────────────────────────────────
+    # Secret ký JWT (HS256) — BẮT BUỘC, đọc env JWT_SECRET (KHÔNG hardcode secret).
+    jwt_secret: str
+    jwt_expire_minutes: int = 10080  # hạn token đăng nhập (phút) — mặc định 7 ngày
+
     # ── Postgres (Neon) ───────────────────────────────────────────────────────
     # SSL bật qua connect_args={"ssl": ...} (CLAUDE.md). URL KHÔNG mang '?sslmode='.
     database_url: str

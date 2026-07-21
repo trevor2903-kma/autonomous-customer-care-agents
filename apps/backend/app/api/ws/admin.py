@@ -21,8 +21,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
-from ...models.enums import MessageSender
+from ...models.enums import MessageSender, UserRole
 from ...services import conversation_service
+from .auth import authenticate_websocket
 from .hub import hub
 
 router = APIRouter()
@@ -81,6 +82,9 @@ async def _hub_listener(websocket: WebSocket, queue: asyncio.Queue[dict[str, Any
 @router.websocket("/ws/admin/{conversation_id}")
 async def admin_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> None:
     await websocket.accept()
+    auth = await authenticate_websocket(websocket, UserRole.ADMIN)  # JWT ?token= (P1)
+    if auth is None:
+        return  # helper đã đóng 4401 (thiếu/sai token hoặc không phải admin)
     status = await _current_status(conversation_id)  # CHỈ XEM — không đổi status (fix 08c)
     await websocket.send_json({"type": "system", "message": "admin connected", "status": status})
     log.info("admin WS connected (conv=%s status=%s)", conversation_id, status)

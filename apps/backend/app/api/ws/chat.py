@@ -23,8 +23,9 @@ from ...agents.graph import run_pipeline
 from ...core.config import settings
 from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
-from ...models.enums import ConversationStatus, MessageSender
+from ...models.enums import ConversationStatus, MessageSender, UserRole
 from ...services import conversation_service, escalation_service
+from .auth import authenticate_websocket
 from .hub import hub
 
 router = APIRouter()
@@ -205,7 +206,11 @@ async def _customer_ai_only(websocket: WebSocket) -> None:
 @router.websocket("/ws/chat")
 async def chat_ws(websocket: WebSocket) -> None:
     await websocket.accept()
-    sid = websocket.query_params.get("sid") or str(uuid4())  # guest, KHÔNG auth (tài khoản = slice 11)
+    auth = await authenticate_websocket(websocket, UserRole.CUSTOMER)  # JWT ?token= (P1)
+    if auth is None:
+        return  # helper đã đóng 4401 (thiếu/sai token hoặc sai role)
+    # P2 sẽ dùng auth["sub"] (customer_id) cho find-active-or-open-case; P1 giữ tạo-ca-mỗi-kết-nối theo sid.
+    sid = websocket.query_params.get("sid") or str(uuid4())
 
     db_conversation_id: uuid.UUID | None = None
     try:

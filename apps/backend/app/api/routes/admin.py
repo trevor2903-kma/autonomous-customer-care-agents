@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_session
+from ...models import User
 from ...models.enums import ConversationStatus, MessageSender
 from ...schemas.admin import (
     AdminConversationOut,
@@ -19,15 +20,14 @@ from ...schemas.admin import (
     EscalationOut,
 )
 from ...services import conversation_service, escalation_service
+from ..deps import require_admin
 from ..ws.hub import hub
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+# Mọi route /api/admin/* yêu cầu admin đã đăng nhập (slice 11): thiếu token → 401, sai role → 403.
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 # Hàng đợi = ca đang chờ người: escalate (IN_HUMAN_QUEUE) + chờ duyệt nháp (PENDING_APPROVAL, slice 08a).
 _QUEUE_STATUSES = [ConversationStatus.IN_HUMAN_QUEUE, ConversationStatus.PENDING_APPROVAL]
-
-# Admin demo (auth/RBAC thật = slice 11). Đặt ở đây vì TIẾP QUẢN nay là hành động REST tường minh (08c).
-DEMO_ADMIN_ID = uuid.UUID("00000000-0000-0000-0000-0000000000ad")
 
 
 @router.get("/escalations", response_model=list[EscalationOut])
@@ -96,14 +96,16 @@ async def get_admin_conversation(
 
 @router.post("/conversations/{conversation_id}/takeover", response_model=AdminConversationOut)
 async def takeover_conversation(
-    conversation_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    conversation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
 ) -> AdminConversationOut:
-    """Tiếp quản TƯỜNG MINH (fix 08c): chỉ đổi status khi admin BẤM NÚT.
+    """Tiếp quản TƯỜNG MINH (fix 08c): chỉ đổi status khi admin BẤM NÚT — gán admin ĐÃ ĐĂNG NHẬP.
 
     Mở hội thoại để xem KHÔNG còn đổi status — ca escalate vẫn nằm trong hàng đợi cho tới khi có người nhận.
     """
     conv = await conversation_service.assign_admin(
-        session, conversation_id, DEMO_ADMIN_ID, status=ConversationStatus.HUMAN_HANDLING
+        session, conversation_id, admin.id, status=ConversationStatus.HUMAN_HANDLING
     )
     if conv is None:
         raise HTTPException(status_code=404, detail="conversation not found")
