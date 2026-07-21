@@ -128,6 +128,56 @@ async def get_recent_messages(
     return [{"sender": m.sender, "content": m.content} for m in rows]
 
 
+# Ca "đã đóng" — khách nhắn tiếp sẽ MỞ ca mới (slice 11 P2).
+_CLOSED_STATUSES = (ConversationStatus.RESOLVED, ConversationStatus.CLOSED)
+
+
+async def get_active_conversation_for_customer(
+    session: AsyncSession, customer_id: uuid.UUID
+) -> Conversation | None:
+    """Ca đang MỞ của khách (status ∉ {RESOLVED, CLOSED}), mới nhất trước. Nhẹ — KHÔNG load messages."""
+    stmt = (
+        select(Conversation)
+        .where(
+            Conversation.customer_id == customer_id,
+            Conversation.status.not_in(_CLOSED_STATUSES),
+        )
+        .order_by(func.coalesce(Conversation.last_message_at, Conversation.created_at).desc())
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def open_case_for_customer(
+    session: AsyncSession, customer_id: uuid.UUID, *, display: str | None = None
+) -> Conversation:
+    """Mở ca MỚI cho khách: status ACTIVE_AI, gắn customer_id + customer_identifier (display)."""
+    conversation = Conversation(
+        customer_id=customer_id,
+        customer_identifier=display,
+        status=ConversationStatus.ACTIVE_AI,
+    )
+    session.add(conversation)
+    await session.commit()
+    return conversation
+
+
+async def get_customer_thread_messages(
+    session: AsyncSession, customer_id: uuid.UUID
+) -> list[Message]:
+    """Mọi message của MỌI ca của khách, xếp theo created_at (cũ→mới) — mạch ghép xuyên ca (P2).
+
+    CHỈ để hiển thị mạch liền cho khách. Bộ nhớ agent VẪN theo ca (`get_recent_messages`) — bất biến §1.
+    """
+    stmt = (
+        select(Message)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .where(Conversation.customer_id == customer_id)
+        .order_by(Message.created_at.asc())
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
 async def list_conversations(
     session: AsyncSession, *, statuses: list[str] | None = None, limit: int = 50
 ) -> list[Conversation]:
