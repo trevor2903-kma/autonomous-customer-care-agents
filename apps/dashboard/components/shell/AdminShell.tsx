@@ -6,10 +6,12 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Escalation } from "shared-types";
 import { getEscalations } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { ConversationListPane } from "@/components/admin/ConversationListPane";
 
 // Vỏ admin (design): sidebar 250px + vùng module. ≤820px sidebar thành drawer off-canvas + scrim + hamburger.
-// Nav trỏ vào CÙNG danh sách hội thoại với bộ lọc khác nhau (10a) — không dựng module rời.
+// Hai chế độ vùng chính: (1) hội thoại master-detail (danh sách + chi tiết); (2) module full-width
+// (Quản lý tri thức, Cấu hình Gate). Nav (slice 11 P5): Hội thoại · Hàng đợi · Duyệt nháp · Tri thức · Gate.
 
 type NavItem = { key: string; label: string; href: string; count?: "queue" | "approval" };
 
@@ -17,13 +19,21 @@ const NAV: NavItem[] = [
   { key: "all", label: "Hội thoại", href: "/admin" },
   { key: "queue", label: "Hàng đợi chuyển tiếp", href: "/admin?filter=queue", count: "queue" },
   { key: "approval", label: "Duyệt nháp", href: "/admin?filter=approval", count: "approval" },
-  { key: "rag", label: "Kho tri thức", href: "/rag" },
+  { key: "knowledge", label: "Quản lý tri thức", href: "/admin/knowledge" },
+  { key: "gate", label: "Cấu hình Gate", href: "/admin/gate" },
 ];
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  const two = (parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? parts[0]?.[1] ?? "");
+  return two.toUpperCase() || "AD";
+}
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const filter = useSearchParams().get("filter") ?? "all";
+  const { user } = useAuth();
 
   const { data: escalations } = useQuery<Escalation[], Error>({
     queryKey: ["escalations"],
@@ -35,18 +45,19 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     approval: (escalations ?? []).filter((e) => e.status === "PENDING_APPROVAL").length,
   };
 
-  const activeKey = pathname.startsWith("/rag") ? "rag" : filter;
+  const isKnowledge = pathname.startsWith("/admin/knowledge");
+  const isGate = pathname.startsWith("/admin/gate");
+  const isModule = isKnowledge || isGate;
+  const activeKey = isGate ? "gate" : isKnowledge ? "knowledge" : filter;
   const moduleTitle = NAV.find((n) => n.key === activeKey)?.label ?? "Hội thoại";
 
-  // Master-detail theo ROUTE: /admin = danh sách, /admin/{id} = chi tiết.
-  // Desktop hiện cả hai pane; ≤820px chỉ hiện một (design: .twopane.show-detail).
-  const isDetail = /^\/admin\/[^/]+$/.test(pathname);
+  // Master-detail theo ROUTE (chỉ khi KHÔNG phải module): /admin = danh sách, /admin/{id} = chi tiết.
+  const isDetail = !isModule && /^\/admin\/[^/]+$/.test(pathname);
   const selectedId = isDetail ? pathname.split("/")[2] : null;
 
+  const displayName = user?.display_name || user?.email || "Quản trị viên";
+
   return (
-    // h-[calc(100vh-53px)]: khoá vỏ admin vào phần còn lại dưới top bar 53px → các pane tự cuộn BÊN TRONG,
-    // không đẩy cả trang cuộn. Trang thường (/ , /rag) vẫn cuộn bình thường nhờ min-h-screen ở layout gốc.
-    // KHÔNG dùng flex-1 ở đây: trong flex-column, flex-basis:0% sẽ ĐÈ height → chiều cao lại chạy theo nội dung.
     <div className="flex h-[calc(100vh_-_53px)] min-h-0 overflow-hidden">
       {open && (
         <div
@@ -99,10 +110,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
 
         <div className="mt-auto flex items-center gap-[11px] border-t border-line-soft pt-3.5">
           <span className="flex h-[34px] w-[34px] items-center justify-center rounded-[9px] border border-steel-line bg-steel-soft text-xs font-semibold text-steel">
-            NG
+            {initials(displayName)}
           </span>
           <div className="flex-1">
-            <div className="text-[13.5px] font-semibold text-ink">Ngọc Trần</div>
+            <div className="text-[13.5px] font-semibold text-ink">{displayName}</div>
             <div className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-sage" />
               <span className="text-[11.5px] text-faint">Đang trực tuyến</span>
@@ -125,18 +136,23 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <span className="font-serif text-xl text-ink">{moduleTitle}</span>
         </div>
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          <ConversationListPane
-            filter={filter}
-            selectedId={selectedId}
-            className={isDetail ? "mob:hidden" : ""}
-          />
-          <div
-            className={`flex min-w-0 flex-1 flex-col overflow-hidden ${isDetail ? "" : "mob:hidden"}`}
-          >
-            {children}
+        {isModule ? (
+          // Module full-width (Tri thức / Gate) — tự cuộn bên trong.
+          <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        ) : (
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            <ConversationListPane
+              filter={filter}
+              selectedId={selectedId}
+              className={isDetail ? "mob:hidden" : ""}
+            />
+            <div
+              className={`flex min-w-0 flex-1 flex-col overflow-hidden ${isDetail ? "" : "mob:hidden"}`}
+            >
+              {children}
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
