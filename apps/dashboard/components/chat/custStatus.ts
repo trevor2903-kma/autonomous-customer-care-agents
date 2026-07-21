@@ -16,3 +16,17 @@ export const CUST_PLACEHOLDER: Record<CustStatus, string> = {
   waiting: "Nhân viên sẽ phản hồi sớm…",
   human: "Nhập tin nhắn…",
 };
+
+// Trạng thái hiển thị ban đầu suy từ status ca ĐANG MỞ (active_status của /me/thread — slice 11 P6).
+export function custStatusFrom(status: string | null | undefined): CustStatus {
+  switch (status) {
+    case "PENDING_APPROVAL":
+      return "review";
+    case "IN_HUMAN_QUEUE":
+      return "waiting";
+    case "HUMAN_HANDLING":
+      return "human";
+    default:
+      return "ai"; // ACTIVE_AI / REPLIED / null … → đang với AI
+  }
+}

@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatWindow, type ChatMessage } from "@/components/chat/ChatWindow";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { QuickReplies } from "@/components/chat/QuickReplies";
-import { CUST_PLACEHOLDER, type CustStatus } from "@/components/chat/custStatus";
+import { CUST_PLACEHOLDER, custStatusFrom, type CustStatus } from "@/components/chat/custStatus";
 import { RequireAuth } from "@/components/auth/RequireAuth";
-import { chatWsUrl, getToken } from "@/lib/api";
+import { chatWsUrl, getMyThread, getToken } from "@/lib/api";
 
 // Cổng chat khách (PRD §6, §16). Câu trả lời tự động CHỈ đến từ Response Generator (§7.4);
 // tin nhân viên tới qua hub sau khi admin tiếp quản.
@@ -18,6 +19,15 @@ const HANDOFF_HINT = "nhân viên hỗ trợ";
 
 const now = () => new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 
+// Map tin trong mạch ghép (lịch sử) → bong bóng khách. Tin AI mang HANDOFF_NOTICE hiển thị dạng "system".
+function threadFrom(sender: string, content: string): ChatMessage["from"] {
+  if (sender === "customer") return "you";
+  if (sender === "admin") return "admin";
+  return content.toLowerCase().includes(HANDOFF_HINT) ? "system" : "ai";
+}
+const timeOf = (iso: string) =>
+  new Date(iso).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+
 function ChatInner() {
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -25,9 +35,31 @@ function ChatInner() {
   const [status, setStatus] = useState<CustStatus>("ai");
   const wsRef = useRef<WebSocket | null>(null);
   const idRef = useRef(0);
+  const seededRef = useRef(false);
 
   const push = (m: Omit<ChatMessage, "id" | "time">) =>
     setMessages((prev) => [...prev, { ...m, id: idRef.current++, time: now() }]);
+
+  // Mạch ghép của khách (P2/P6): nạp lịch sử xuyên ca MỘT LẦN → render một đoạn liền mạch.
+  const { data: thread } = useQuery({
+    queryKey: ["me-thread"],
+    queryFn: getMyThread,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (!thread || seededRef.current) return;
+    seededRef.current = true;
+    const seeded: ChatMessage[] = thread.messages.map((m) => ({
+      id: idRef.current++,
+      from: threadFrom(m.sender, m.content),
+      text: m.content,
+      time: timeOf(m.created_at),
+    }));
+    // Ghép lịch sử TRƯỚC tin realtime lỡ tới trong lúc tải (giữ thứ tự: cũ → mới).
+    setMessages((live) => [...seeded, ...live]);
+    setStatus(custStatusFrom(thread.active_status));
+  }, [thread]);
 
   useEffect(() => {
     const token = getToken();
