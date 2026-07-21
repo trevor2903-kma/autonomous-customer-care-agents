@@ -8,6 +8,7 @@ import {
   adminWsUrl,
   approveDraft,
   getAdminConversation,
+  getToken,
   rejectDraft,
   resolveConversation,
   takeoverConversation,
@@ -86,7 +87,9 @@ export default function AdminConversationPage({ params }: { params: { conversati
   const isPending = status === "PENDING_APPROVAL";
 
   useEffect(() => {
-    const ws = new WebSocket(adminWsUrl(id));
+    const token = getToken();
+    if (!token) return;
+    const ws = new WebSocket(adminWsUrl(id, token));
     wsRef.current = ws;
     ws.onmessage = (ev) => {
       try {

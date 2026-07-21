@@ -6,7 +6,8 @@ import { ChatWindow, type ChatMessage } from "@/components/chat/ChatWindow";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { QuickReplies } from "@/components/chat/QuickReplies";
 import { CUST_PLACEHOLDER, type CustStatus } from "@/components/chat/custStatus";
-import { WS_URL } from "@/lib/api";
+import { RequireAuth } from "@/components/auth/RequireAuth";
+import { chatWsUrl, getToken } from "@/lib/api";
 
 // Cổng chat khách (PRD §6, §16). Câu trả lời tự động CHỈ đến từ Response Generator (§7.4);
 // tin nhân viên tới qua hub sau khi admin tiếp quản.
@@ -17,7 +18,7 @@ const HANDOFF_HINT = "nhân viên hỗ trợ";
 
 const now = () => new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 
-export default function ChatPage() {
+function ChatInner() {
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typing, setTyping] = useState(false);
@@ -29,7 +30,9 @@ export default function ChatPage() {
     setMessages((prev) => [...prev, { ...m, id: idRef.current++, time: now() }]);
 
   useEffect(() => {
-    const ws = new WebSocket(WS_URL);
+    const token = getToken();
+    if (!token) return;
+    const ws = new WebSocket(chatWsUrl(token));
     wsRef.current = ws;
     ws.onopen = () => setConnected(true);
     ws.onclose = () => {
@@ -88,5 +91,13 @@ export default function ChatPage() {
         />
       </div>
     </main>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <RequireAuth role="customer">
+      <ChatInner />
+    </RequireAuth>
   );
 }
