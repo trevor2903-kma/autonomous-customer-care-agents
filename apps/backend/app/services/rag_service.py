@@ -28,6 +28,7 @@ from qdrant_client.models import (
     Filter,
     FilterSelector,
     MatchValue,
+    PayloadSchemaType,
     PointStruct,
     VectorParams,
 )
@@ -55,15 +56,29 @@ _ATOMIC_HEADINGS = ("bot diagnostic flow",)
 _EXCLUDED_HEADING_RE = re.compile(r"^internal note\b", re.IGNORECASE)
 
 
+# Payload phải có INDEX mới filter được — Qdrant trả 400 "Index required but not found" nếu thiếu.
+# `source`: xoá doc upload ad-hoc (P3). `intent`: retrieve theo intent (P4).
+_INDEXED_PAYLOAD_FIELDS = ("source", "intent")
+
+
 async def ensure_collection() -> None:
-    """Tạo collection Qdrant nếu chưa có (idempotent). Size vector suy ra từ embedding model (probe)."""
+    """Tạo collection Qdrant + payload index nếu chưa có (idempotent). Size vector suy từ embedding model."""
     client = get_qdrant()
-    if await client.collection_exists(settings.qdrant_collection):
-        return
-    await client.create_collection(
-        collection_name=settings.qdrant_collection,
-        vectors_config=VectorParams(size=await embedding_dim(), distance=Distance.COSINE),
-    )
+    if not await client.collection_exists(settings.qdrant_collection):
+        await client.create_collection(
+            collection_name=settings.qdrant_collection,
+            vectors_config=VectorParams(size=await embedding_dim(), distance=Distance.COSINE),
+        )
+    # Chạy MỌI lần (không chỉ khi vừa tạo): collection dựng bởi bản code cũ chưa có index này.
+    for field in _INDEXED_PAYLOAD_FIELDS:
+        try:
+            await client.create_payload_index(
+                collection_name=settings.qdrant_collection,
+                field_name=field,
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+        except Exception as exc:  # noqa: BLE001 — index đã có / race khi chạy song song: không chặn ingest.
+            log.debug("payload index %r: %s", field, exc)
 
 
 def _normalize(text: str) -> str:
@@ -318,6 +333,7 @@ async def collection_info() -> dict:
 
 async def delete_by_source(source: str) -> None:
     """Xoá mọi point của một tài liệu (theo `payload.source`) — dùng khi gỡ doc upload ad-hoc (P3)."""
+    await ensure_collection()  # bảo đảm có payload index `source`, nếu không Qdrant trả 400
     await get_qdrant().delete(
         collection_name=settings.qdrant_collection,
         points_selector=FilterSelector(

@@ -99,11 +99,12 @@ async def delete_upload(doc_id: str) -> KnowledgeDocument | None:
             raise ValueError(
                 f"'{doc.file_ref}' là tài liệu canonical (repo) — xoá file trong knowledge/ rồi reindex."
             )
-        source = doc.file_ref or ""
+        # Vector TRƯỚC, dòng sổ SAU: Qdrant lỗi thì dòng còn nguyên (thử lại được), thay vì bỏ lại
+        # vector mồ côi mà sổ không còn nhắc tới.
+        if doc.file_ref:
+            await rag_service.delete_by_source(doc.file_ref)
         await s.delete(doc)
         await s.commit()
-    if source:
-        await rag_service.delete_by_source(source)
     return doc
 
 
