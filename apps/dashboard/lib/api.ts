@@ -153,6 +153,43 @@ export async function resetRag(): Promise<RagInfo> {
   return res.json();
 }
 
+// ── Sổ tài liệu tri thức (P3) — repo là nguồn chân lý, upload chỉ là ad-hoc ──
+export interface KnowledgeDocument {
+  id: string;
+  source: string;
+  title: string;
+  doc_type: string | null; // faq|case|reference|promotion|upload
+  intent: string | null;
+  format: string | null;
+  status: string;
+  chunks: number;
+  canonical: boolean; // false = ad-hoc, mất khi nạp lại từ repo
+  indexed_at: string | null;
+}
+export interface ReindexResult {
+  documents: number;
+  points: number;
+  collection: string;
+}
+
+export async function getRagDocuments(): Promise<KnowledgeDocument[]> {
+  const res = await req("/api/rag/documents");
+  if (!res.ok) await fail(res, `rag documents ${res.status}`);
+  return res.json();
+}
+
+export async function reindexRag(): Promise<ReindexResult> {
+  const res = await req("/api/rag/reindex", { method: "POST" });
+  if (!res.ok) await fail(res, `rag reindex ${res.status}`);
+  return res.json();
+}
+
+export async function deleteRagDocument(id: string): Promise<KnowledgeDocument> {
+  const res = await req(`/api/rag/documents/${id}`, { method: "DELETE" });
+  if (!res.ok) await fail(res, `rag delete ${res.status}`);
+  return res.json();
+}
+
 // Agent 1 · Intent Classifier (PRD §7.1) — chỉ intent/entities, KHÔNG retrieval.
 export async function classifyMessage(message: string): Promise<IntentClassification> {
   const res = await req("/api/agents/classify", {

@@ -22,7 +22,15 @@ from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
 import frontmatter
-from qdrant_client.models import Distance, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    FilterSelector,
+    MatchValue,
+    PointStruct,
+    VectorParams,
+)
 
 from ..core.config import settings
 from ..core.embeddings import embed_text, embed_texts, embedding_dim
@@ -306,6 +314,17 @@ async def collection_info() -> dict:
         "points_count": info.points_count,
         "sources": sorted(sources),
     }
+
+
+async def delete_by_source(source: str) -> None:
+    """Xoá mọi point của một tài liệu (theo `payload.source`) — dùng khi gỡ doc upload ad-hoc (P3)."""
+    await get_qdrant().delete(
+        collection_name=settings.qdrant_collection,
+        points_selector=FilterSelector(
+            filter=Filter(must=[FieldCondition(key="source", match=MatchValue(value=source))])
+        ),
+        wait=True,
+    )
 
 
 async def reset_collection() -> None:

@@ -3,7 +3,10 @@
 Repo là NGUỒN CHÂN LÝ; Qdrant là bản phái sinh → mỗi lần chạy là drop collection rồi nạp lại toàn bộ.
 Sửa file `.md` xong chạy lại là bot áp dụng bản mới. `facts.md` KHÔNG vào Qdrant (Agent 4 nạp riêng).
 
-Chạy (cần .env gốc repo: QDRANT_URL/QDRANT_API_KEY + LLM_API_KEY cho embeddings):
+Ghi luôn sổ `knowledge_document` (Postgres) để console `/admin/knowledge` liệt kê đúng — cùng đường
+nạp với `POST /rag/reindex`.
+
+Chạy (cần .env gốc repo: QDRANT_URL/QDRANT_API_KEY + LLM_API_KEY + DATABASE_URL):
     cd apps/backend && uv run python ../../scripts/ingest_kb.py
     hoặc: make ingest-kb
 """
@@ -23,9 +26,10 @@ load_dotenv(_REPO_ROOT / ".env")
 # Cho `import app...` chạy khi gọi script từ gốc repo (app cài editable trong apps/backend/.venv).
 sys.path.insert(0, str(_REPO_ROOT / "apps" / "backend"))
 
+from app.core.database import engine  # noqa: E402
 from app.core.embeddings import close_openai  # noqa: E402
 from app.core.qdrant_client import close_qdrant  # noqa: E402
-from app.services import rag_service  # noqa: E402
+from app.services import knowledge_service, rag_service  # noqa: E402
 
 
 async def main() -> int:
@@ -39,16 +43,20 @@ async def main() -> int:
     print("-" * 87)
 
     try:
-        report = await rag_service.ingest_knowledge_base()
+        report = await knowledge_service.reindex_from_repo()
     finally:
         await close_openai()
         await close_qdrant()
+        await engine.dispose()
 
     for d in report["per_document"]:
         print(f"{d['source']:<40}{d['type']:<12}{str(d['intent']):<24}{d['questions']:>3}{d['points']:>8}")
 
     print("-" * 87)
-    print(f"collection '{report['collection']}': {report['documents']} tài liệu -> {report['points']} point")
+    print(
+        f"collection '{report['collection']}': {report['documents']} tài liệu -> {report['points']} point"
+        " (đã ghi sổ knowledge_document)"
+    )
     missing = [d["source"] for d in report["per_document"] if not d["intent"]]
     if missing:
         print(f"CẢNH BÁO: thiếu frontmatter `intent:` -> Agent 2 không lọc theo intent được: {missing}")

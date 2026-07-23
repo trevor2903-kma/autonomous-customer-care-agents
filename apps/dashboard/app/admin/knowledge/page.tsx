@@ -1,6 +1,6 @@
 import { AnalyzePanel } from "@/components/rag/AnalyzePanel";
 import { ClassifyTester } from "@/components/rag/ClassifyTester";
-import { UploadPanel } from "@/components/rag/UploadPanel";
+import { DocumentsPanel } from "@/components/rag/DocumentsPanel";
 
 // Module Quản lý tri thức (RAG) trong vỏ admin (slice 11 P5) — PRD §17 Module 1.
 // Chuyển từ route riêng /rag vào cụm nav admin; khung + cuộn do AdminShell cấp.
@@ -16,7 +16,7 @@ export default function KnowledgePage() {
       </header>
 
       <div className="grid gap-6">
-        <UploadPanel />
+        <DocumentsPanel />
         <ClassifyTester />
         <AnalyzePanel />
       </div>
