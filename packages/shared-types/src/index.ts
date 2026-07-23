@@ -86,6 +86,16 @@ export interface IntentClassification {
   uncertainty_flags: string[];
 }
 
+// Một đoạn tri thức Agent 2 truy hồi được. `type`/`title` từ frontmatter KB (chunk repo); doc upload
+// ad-hoc không có frontmatter nên hai trường này vắng.
+export interface RagContext {
+  text?: string;
+  source: string;
+  type?: string | null; // faq | case | reference | promotion | upload
+  title?: string | null;
+  score: number;
+}
+
 // Agent 1 (intent/entities) + Agent 2 · Knowledge Agent (retrieval) — PRD §7.2 (khớp AnalyzeResult backend).
 export interface AnalyzeResult {
   intent: string; // Agent 1
@@ -94,7 +104,7 @@ export interface AnalyzeResult {
   intent_confidence: number; // Agent 1
   retrieval_confidence: number; // Agent 2
   uncertainty_flags: string[]; // gộp cờ Agent 1 + Agent 2
-  rag_contexts: { text?: string; source: string; score: number }[]; // Agent 2
+  rag_contexts: RagContext[]; // Agent 2
 }
 
 // FULL pipeline slice (4 agent) cho inspector — quan sát quyết định Agent 3 + câu trả lời Agent 4.
@@ -104,7 +114,7 @@ export interface PipelineResult {
   entities: Record<string, unknown>; // Agent 1
   intent_confidence: number; // Agent 1
   retrieval_confidence: number; // Agent 2
-  rag_contexts: { text?: string; source: string; score: number }[]; // Agent 2
+  rag_contexts: RagContext[]; // Agent 2
   action: string | null; // Agent 3 (auto_reply | human_handoff)
   priority: string | null; // Agent 3
   severity: string | null; // Agent 3

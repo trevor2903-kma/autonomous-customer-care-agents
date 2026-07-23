@@ -13,6 +13,15 @@ import { Badge } from "./ClassifyTester";
 // Cờ "grounding yếu" -> tô amber (đều dẫn tới human_handoff an toàn).
 const WEAK_GROUNDING = new Set(["no_relevant_knowledge", "low_retrieval_score"]);
 
+// Nhãn loại chunk — cùng cách gọi với nhãn Agent 4 nhìn thấy trong prompt (_TYPE_LABEL ở response.py).
+const TYPE_LABEL: Record<string, string> = {
+  case: "Quy trình xử lý",
+  reference: "Tra cứu",
+  faq: "Hỏi đáp",
+  promotion: "Khuyến mãi",
+  upload: "Tải lên",
+};
+
 function snippet(text?: string): string {
   if (!text) return "—";
   const t = text.trim();
@@ -96,16 +105,30 @@ export function AnalyzePanel() {
                 Agent 2 · Knowledge Agent
               </span>
               <Badge label={`retrieval_confidence: ${r.retrieval_confidence.toFixed(2)}`} />
+              <Badge label={`${r.rag_contexts.length} chunk`} />
             </div>
             {r.rag_contexts.length === 0 ? (
-              <span className="text-neutral-400">— không truy hồi được tri thức —</span>
+              <span className="text-neutral-400">
+                {r.intent === "greeting"
+                  ? "— lượt xã giao: bỏ qua truy hồi, không phát cờ grounding —"
+                  : "— không truy hồi được tri thức —"}
+              </span>
             ) : (
               <ul className="space-y-1.5">
                 {r.rag_contexts.map((c, i) => (
                   <li key={i} className="rounded border border-neutral-200 bg-white p-2 text-xs">
                     <div className="mb-0.5 flex flex-wrap items-center gap-2 text-neutral-500">
-                      <code className="text-neutral-700">{c.source}</code>
-                      <span>· score {c.score.toFixed(3)}</span>
+                      <span className="font-semibold text-neutral-400">#{i + 1}</span>
+                      {c.type && (
+                        <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10.5px] font-medium text-neutral-700">
+                          {TYPE_LABEL[c.type] ?? c.type}
+                        </span>
+                      )}
+                      {c.title && <span className="font-medium text-neutral-700">{c.title}</span>}
+                      <code className="text-neutral-500">{c.source}</code>
+                      <span className="ml-auto font-mono font-semibold text-neutral-700">
+                        {c.score.toFixed(4)}
+                      </span>
                     </div>
                     <p className="text-neutral-600">{snippet(c.text)}</p>
                   </li>
