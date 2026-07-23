@@ -32,8 +32,11 @@ class Settings(BaseSettings):
     # TODO: tinh chỉnh thực nghiệm ở Chương 4 (ngưỡng theo từng intent — PRD §23).
     confidence_threshold: float = 0.6
     # Ngưỡng COSINE của Agent 2 (retrieval) — thang KHÁC intent_confidence (LLM tự khai), đừng gộp chung.
-    # PHẢI đo trên KB thật (Chương 4); 0.35 là mặc định TẠM (top-1 cosine dưới mức này coi là tri thức yếu).
-    retrieval_threshold: float = 0.35
+    # 0.40 = ĐO trên KB thật (32 câu trả-lời-được / 25 câu không) — `scripts/measure_threshold.py`,
+    # phương pháp + số liệu ở `docs/retrieval-threshold.md`. Hai phân bố CHỒNG NHAU nên ngưỡng này chỉnh
+    # theo RECALL (escalate oan 3%), KHÔNG cố chặn câu ngoài KB — việc đó do `out_of_domain` (Agent 1) +
+    # grounding (Agent 4) lo. Đo lại mỗi khi KB đổi đáng kể.
+    retrieval_threshold: float = 0.40
     # Bộ nhớ đa lượt (PRD §12, NFR-10): số tin gần nhất nạp từ DB vào prompt (Agent 1 + Agent 4).
     history_window: int = 8
     auto_resolve_minutes: int = 30
