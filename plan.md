@@ -30,6 +30,7 @@ Hoàn thiện **phần lõi tri thức** theo mô hình học từ bot V2 (Avada
 
 - Pipeline 4-agent cố định, **không Supervisor**. **Agent 4 là egress DUY NHẤT của luồng tự động**.
 - **Grounding**: chỉ nói từ tri thức được cấp (giờ = `facts.md` luôn-bật **+** `rag_contexts`); không đủ → FALLBACK/handoff. **Grounding cả HÀNH ĐỘNG** (không hứa hoàn tiền/tra đơn khi chưa có năng lực → escalate).
+  - _Khoanh phạm vi_: lượt **xã giao** (`greeting`) KHÔNG phát biểu sự thật → **bỏ qua retrieval + không phát cờ grounding** (không phải nới lỏng grounding, mà là đúng phạm vi của nó). Tập này hiện = `{greeting}`.
 - **Agent 3 tất định, theo cờ, KHÔNG blend điểm**. Escalation an toàn (BLOCKING_FLAGS) **không** đổi logic.
 - **Một ngưỡng số duy nhất** liên quan escalation = `retrieval_threshold` ở **Agent 2** (điểm cosine top-1 → cờ `low_retrieval_score`). Agent 3 chỉ đọc cờ.
 - **Reset-and-reingest**: `knowledge/` là nguồn chân lý; Qdrant là bản phái sinh, dựng lại từ repo. Upload UI = ad-hoc **non-canonical**.
@@ -39,18 +40,19 @@ Hoàn thiện **phần lõi tri thức** theo mô hình học từ bot V2 (Avada
 
 ## 2. Thiết kế cốt lõi (chốt trước khi code)
 
-### 2.1 Tập intent MỚI (14) — khớp 1-1 ở 4 NƠI
+### 2.1 Tập intent MỚI (15) — khớp 1-1 ở 4 NƠI
 
 `enums.Intent` (nguồn chuẩn) → `taxonomy.py` (mô tả/ví dụ) → **seed `gate_intent_rule`** (migration) → **frontmatter `intent:`** trong `knowledge/**/*.md`.
 
-| Nhóm          | intent                                                                                                                                          | nhạy cảm              | `send_directly` (gate) | priority/severity                                              |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------- | -------------------------------------------------------------- |
-| Thông tin     | product_price, product_information, size_consulting, shipping, order_status, promotion, **payment**, **return_exchange_policy**, **membership** | không                 | **true** (gửi thẳng)   | low/low (order_status = medium/low)                            |
-| Chào hỏi      | **greeting**                                                                                                                                    | không                 | true                   | low/low                                                        |
-| Giao dịch     | refund, exchange, complaint                                                                                                                     | **có**                | **false** (duyệt nháp) | refund high/medium · exchange medium/low · complaint high/high |
-| Ngoài phạm vi | other                                                                                                                                           | — (→ `out_of_domain`) | —                      | low/low                                                        |
+| Nhóm          | intent                                                                                                                                                                 | nhạy cảm              | `send_directly` (gate) | priority/severity                                              |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------- | -------------------------------------------------------------- |
+| Thông tin     | product_price, product_information, size_consulting, shipping, order_status, promotion, **payment**, **return_exchange_policy**, **membership**, **store_information** | không                 | **true** (gửi thẳng)   | low/low (order_status = medium/low)                            |
+| Chào hỏi      | **greeting**                                                                                                                                                           | không                 | true                   | low/low                                                        |
+| Giao dịch     | refund, exchange, complaint                                                                                                                                            | **có**                | **false** (duyệt nháp) | refund high/medium · exchange medium/low · complaint high/high |
+| Ngoài phạm vi | other                                                                                                                                                                  | — (→ `out_of_domain`) | —                      | low/low                                                        |
 
-> **4 intent MỚI**: `greeting`, `return_exchange_policy`, `payment`, `membership`.
+> **5 intent MỚI**: `greeting`, `return_exchange_policy`, `payment`, `membership`, `store_information`.
+> `store_information` (giờ mở cửa/địa chỉ/hotline) thêm ở **P1.5** — kèm KB doc `faq/thong-tin-cua-hang.md` để retrieval phủ được (tránh `low_retrieval_score` → escalate).
 > **⚠️ GOTCHA bắt buộc**: mọi intent mới PHẢI có dòng `gate_intent_rule` (`send_directly=true`) — vì `send_directly_for` trả `False` cho intent **không có luật** → thiếu là bị **bắt duyệt oan**.
 
 ### 2.2 Sửa 2 lỗi ở Agent 1 (`taxonomy.py` + `intent.py`)
@@ -124,17 +126,18 @@ Hoàn thiện **phần lõi tri thức** theo mô hình học từ bot V2 (Avada
 - **Out:** không đụng pipeline.
 - **Verify:** ingest → bảng liệt kê doc repo với chunks/status thật; upload ad-hoc → hiện badge non-canonical; reindex-from-repo chạy.
 
-### P4 — Agent 2 retrieve theo intent `feat(rag): P4 intent-aware retrieval + typed contexts`
+### P4 — Agent 2 retrieve theo intent + bỏ retrieval cho greeting `feat(rag): P4 intent-aware retrieval + typed contexts + skip greeting`
 
 - **In:** `search(query, top_k, intent=None)` (§2.5, filter + fallback gộp); `knowledge_node` truyền `state["intent"]`; `rag_contexts` mang `type`, `title`. Cơ chế cờ **giữ nguyên**.
+  - **`NO_RETRIEVAL_INTENTS = {greeting}`**: nếu `intent ∈ NO_RETRIEVAL_INTENTS` → **bỏ qua retrieval, KHÔNG phát cờ grounding** (`low_retrieval_score`/`no_relevant_knowledge`) → Agent 3 thấy cờ rỗng → auto_reply (không escalate lượt xã giao). Agent 3 **không đổi**.
 - **Out:** đo threshold (P6).
-- **Verify:** truy vấn intent cụ thể ưu tiên đúng chunk cùng intent; intent lạ/không match không bị rỗng (fallback hoạt động).
+- **Verify:** "xin chào" → `greeting`, cờ `[]`, action `auto_reply` (KHÔNG handoff, KHÔNG FALLBACK — phối hợp với nhánh câu-chào-mẫu ở P5); truy vấn intent cụ thể ưu tiên đúng chunk cùng intent; intent lạ/không match không bị rỗng (fallback hoạt động).
 
 ### P5 — Agent 4 facts + greeting + bám flow + grounding hành động `feat(rag): P5 facts layer + flow-following + action grounding`
 
 - **In:**
   - Nạp `knowledge/facts.md` lúc khởi động → khối facts luôn-bật trong `_system_prompt` (§2.6).
-  - `greeting` → **câu chào mẫu** (bỏ qua nhánh grounding RAG).
+  - `greeting` → **câu chào mẫu**, nhánh này chạy **TRƯỚC** kiểm tra "rag_contexts rỗng → FALLBACK" (nếu không greeting rơi vào FALLBACK thay vì chào). Phối hợp với P4 (Agent 2 đã bỏ retrieval + không cờ cho greeting).
   - `_context_block` gắn nhãn loại (`[Quy trình xử lý]` cho `type=case`, `[Tra cứu]` cho reference) + luật **bám diagnostic flow từng bước**.
   - Luật **grounding hành động** (không hứa hoàn tiền/tra đơn khi chưa có năng lực → escalate). (Tuỳ chọn: luật văn phong.)
 - **Out:** đo threshold.

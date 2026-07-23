@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install dev-backend dev-dashboard migrate makemigration \
-        health check-conn test build local-infra-up local-infra-down
+        health check-conn ingest-kb test build local-infra-up local-infra-down
 
 help:
 	@echo Targets:
@@ -16,6 +16,7 @@ help:
 	@echo   makemigration      - alembic revision --autogenerate
 	@echo   health             - curl /api/health
 	@echo   check-conn         - kiem tra ket noi Neon/Upstash/Qdrant (Phase 1)
+	@echo   ingest-kb          - nap lai KB apps/backend/knowledge vao Qdrant (reset-and-reingest)
 	@echo   test               - pytest backend (graph compile + 2 nhanh)
 	@echo   build              - pnpm -r build
 	@echo   local-infra-up     - docker compose local (du phong)
@@ -42,6 +43,9 @@ health:
 
 check-conn:
 	uv run --python 3.12 --with asyncpg --with redis --with qdrant-client --with python-dotenv scripts/check_connections.py
+
+ingest-kb:
+	cd apps/backend && uv run python ../../scripts/ingest_kb.py
 
 test:
 	cd apps/backend && uv run pytest -q
