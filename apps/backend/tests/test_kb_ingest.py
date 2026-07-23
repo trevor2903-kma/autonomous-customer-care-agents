@@ -14,6 +14,9 @@ Khách báo chưa nhận hàng.
 1. Hỏi mã đơn.
 2. Hỏi ngày đặt và khu vực nhận.
 3. Đối chiếu thời gian dự kiến rồi trấn an hoặc chuyển nhân viên.
+
+## Internal Note (cho CSKH)
+Nếu thất lạc thì xử lý hoàn tiền theo phương thức thanh toán ban đầu.
 """
 
 
@@ -23,6 +26,21 @@ def test_chunk_sections_splits_on_h2_and_keeps_preamble() -> None:
     assert chunks[0] == "Mở bài ngắn."
     assert chunks[1].startswith("## Triệu chứng")
     assert chunks[2].startswith("## Bot Diagnostic Flow")
+
+
+def test_chunk_sections_excludes_internal_note() -> None:
+    # Ghi chú nội bộ KHÔNG được index — bot không được nói quy trình/hành động nội bộ với khách.
+    body = "\n".join(chunk_sections(_FLOW_DOC))
+    assert "Internal Note" not in body
+    assert "hoàn tiền theo phương thức thanh toán ban đầu" not in body
+    # Không phân biệt hoa thường, và không cần hậu tố "(cho CSKH)".
+    assert chunk_sections("## INTERNAL NOTE\nbí mật") == []
+    assert chunk_sections("## internal note (cho CSKH)\nbí mật") == []
+
+
+def test_real_kb_never_indexes_internal_notes() -> None:
+    indexed = "\n".join(c for d in load_kb_documents() for c in chunk_sections(d.body))
+    assert "Internal Note" not in indexed
 
 
 def test_chunk_sections_keeps_diagnostic_flow_atomic() -> None:

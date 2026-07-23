@@ -10,6 +10,11 @@ duyệt → tách frontmatter → chunk theo section → embed vào Qdrant (**Re
 - **Khuyến mãi có giới hạn / một lần** KHÔNG để ở đây → upload ad-hoc qua UI (non-canonical, mất khi rebuild toàn bộ).
   Chỉ KM **tái diễn/định kỳ** mới cho vào `promotion/`.
 
+## Section KHÔNG được index
+- **`## Internal Note`** (kể cả `## Internal Note (cho CSKH)`) là ghi chú cho **nhân viên** — **KHÔNG được
+  index**, chỉ để người đọc. `ingest_kb.py` loại section này khỏi Qdrant; nội dung vẫn nằm trong file `.md`.
+  Đặt mọi thứ khách KHÔNG được nghe (quy trình nội bộ, hành động shop sẽ làm) vào đây.
+
 ## Frontmatter theo loại
 - faq:       `intent`, `title`, `questions: [...]`
 - case:      `intent`, `title`, `applies_when`, `questions: [...]`  + thân có `## Bot Diagnostic Flow`

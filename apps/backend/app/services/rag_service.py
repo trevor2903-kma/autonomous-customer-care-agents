@@ -42,6 +42,9 @@ KNOWLEDGE_DIR = Path(__file__).resolve().parents[2] / "knowledge"
 _ROOT_FILES_SKIPPED = {"facts.md", "README.md"}
 # Section giữ NGUYÊN KHỐI dù dài: cắt câu giữa chừng làm mất thứ tự các bước chẩn đoán (plan §2.4).
 _ATOMIC_HEADINGS = ("bot diagnostic flow",)
+# Section KHÔNG index: ghi chú nội bộ cho nhân viên. Chặn ở NGUỒN (ingest) chắc hơn dạy prompt đừng trích —
+# nội dung này hay chứa hành động shop sẽ làm ("xử lý hoàn tiền…") mà bot KHÔNG được hứa với khách.
+_EXCLUDED_HEADING_RE = re.compile(r"^internal note\b", re.IGNORECASE)
 
 
 async def ensure_collection() -> None:
@@ -104,7 +107,8 @@ def chunk_sections(body: str, max_chars: int = 1200) -> list[str]:
 
     Mỗi section giữ NGUYÊN VĂN (kể cả bảng markdown/danh sách đánh số — cắt câu sẽ phá cấu trúc).
     Section dài > `max_chars` mới rơi về sentence-window (`chunk_text`), TRỪ section atomic
-    (`## Bot Diagnostic Flow`) luôn giữ nguyên khối.
+    (`## Bot Diagnostic Flow`) luôn giữ nguyên khối. Section `## Internal Note` bị LOẠI khỏi index
+    (vẫn nằm trong file `.md` cho người đọc).
     """
     body = body.strip()
     if not body:
@@ -116,7 +120,11 @@ def chunk_sections(body: str, max_chars: int = 1200) -> list[str]:
 
     chunks: list[str] = []
     for section in sections:
-        heading = section.splitlines()[0].lstrip("#").strip().lower()
+        first = section.splitlines()[0]
+        # Chỉ dòng `##...` mới là heading — mở bài (section 0) không có heading, đừng suy diễn từ câu đầu.
+        heading = first.lstrip("#").strip().lower() if first.startswith("#") else ""
+        if heading and _EXCLUDED_HEADING_RE.match(heading):
+            continue
         atomic = any(h in heading for h in _ATOMIC_HEADINGS)
         if atomic or len(section) <= max_chars:
             chunks.append(section)
