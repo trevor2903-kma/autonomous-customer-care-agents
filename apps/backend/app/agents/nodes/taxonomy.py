@@ -33,13 +33,37 @@ TAXONOMY: dict[str, dict] = {
         "examples": ["Đơn 1234 của mình tới đâu rồi?", "Em đặt 3 ngày rồi mà chưa thấy giao", "Cho xin mã vận đơn với ạ"],
         "entities": ["order_id"],
     },
+    "payment": {
+        "description": "Khách hỏi THANH TOÁN — hình thức thanh toán, COD, chuyển khoản, thẻ, ví điện tử, trả góp, hoá đơn.",
+        "examples": ["Shop nhận thanh toán bằng gì ạ?", "Có ship COD không hay phải chuyển khoản trước?", "Trả bằng MoMo được không?"],
+        "entities": ["order_id"],
+    },
+    "membership": {
+        "description": "Khách hỏi THÀNH VIÊN — đăng ký thành viên, tích điểm, hạng, ưu đãi/coupon riêng của thành viên.",
+        "examples": ["Đăng ký thành viên như thế nào?", "Điểm tích luỹ của em dùng sao ạ?", "Thành viên có ưu đãi gì không?"],
+        "entities": [],
+    },
+    "return_exchange_policy": {
+        "description": (
+            "Khách HỎI CHÍNH SÁCH đổi/trả/hoàn tiền — điều kiện, thời hạn, quy trình, ai chịu phí; "
+            "CHƯA yêu cầu xử lý trên một đơn cụ thể của họ."
+        ),
+        "examples": ["Chính sách đổi trả của shop thế nào?", "Mua rồi trả lại được trong bao lâu?", "Hàng đã giặt có đổi được không?"],
+        "entities": [],
+    },
     "refund": {
-        "description": "Khách muốn TRẢ HÀNG / HOÀN TIỀN — chính sách hoàn tiền, điều kiện trả, hoàn tiền về đâu.",
-        "examples": ["Mình muốn trả lại áo và lấy lại tiền", "Sản phẩm lỗi cho em hoàn tiền được không?", "Chính sách hoàn tiền thế nào?"],
+        "description": (
+            "Khách YÊU CẦU TRẢ HÀNG / HOÀN TIỀN trên đơn CỦA HỌ (đã mua, muốn xử lý). "
+            "Chỉ HỎI chính sách → return_exchange_policy."
+        ),
+        "examples": ["Mình muốn trả lại áo và lấy lại tiền", "Sản phẩm lỗi cho em hoàn tiền được không?", "Đơn 6578 cho em trả hàng"],
         "entities": ["order_id"],
     },
     "exchange": {
-        "description": "Khách muốn ĐỔI HÀNG — đổi size, đổi màu, đổi mẫu khác; điều kiện & thời hạn đổi.",
+        "description": (
+            "Khách YÊU CẦU ĐỔI HÀNG trên đơn CỦA HỌ — đổi size, đổi màu, đổi mẫu khác. "
+            "Chỉ HỎI chính sách đổi → return_exchange_policy."
+        ),
         "examples": ["Cho mình đổi sang size L được không?", "Áo bị chật, muốn đổi cái to hơn", "Đổi màu khác có được không?"],
         "entities": ["order_id"],
     },
@@ -53,9 +77,17 @@ TAXONOMY: dict[str, dict] = {
         "examples": ["Shop có chương trình giảm giá nào không?", "Có mã giảm cho khách mới không?", "Mua 2 tặng 1 còn áp dụng không?"],
         "entities": ["promo_code"],
     },
+    "greeting": {
+        "description": "Khách CHÀO HỎI / CẢM ƠN / TẠM BIỆT / gọi shop — xã giao, chưa nêu nhu cầu cụ thể.",
+        "examples": ["Xin chào shop", "Alo shop ơi", "Cảm ơn shop nhiều nha"],
+        "entities": [],
+    },
     "other": {
-        "description": "Câu KHÔNG thuộc các nhóm trên hoặc ngoài phạm vi shop — chào hỏi, cảm ơn, hỏi lan man, spam.",
-        "examples": ["Alo shop ơi", "Cảm ơn shop nhiều nha", "Shop mở cửa mấy giờ vậy?"],
+        "description": (
+            "Câu THẬT SỰ ngoài phạm vi shop quần áo — chủ đề không liên quan (vé xem phim, thời tiết…), spam. "
+            "KHÔNG dùng cho chào hỏi (→ greeting)."
+        ),
+        "examples": ["Cho mình hỏi vé xem phim tối nay", "Hôm nay trời có mưa không?", "aaaaa bbbb"],
         "entities": [],
     },
 }

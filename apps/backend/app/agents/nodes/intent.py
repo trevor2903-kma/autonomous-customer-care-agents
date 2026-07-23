@@ -49,9 +49,12 @@ def _system_prompt() -> str:
         "Phân loại câu khách theo TAXONOMY sau (chọn ĐÚNG 1 intent trong danh sách):\n"
         f"{render_taxonomy()}\n\n"
         "Quy tắc:\n"
-        "1) intent PHẢI thuộc taxonomy. CHỈ chọn 'other' khi câu NGOÀI phạm vi CSKH (chào hỏi, cảm ơn, spam,\n"
-        "   lạc đề). Câu về sản phẩm/giá/size/đơn/ship/đổi/trả/hoàn tiền/khuyến mãi LUÔN thuộc intent nghiệp vụ\n"
-        "   tương ứng — vd hỏi chính sách/thời hạn 'đổi trả' → refund (hoặc exchange nếu rõ là đổi).\n"
+        "1) intent PHẢI thuộc taxonomy. Chào hỏi/cảm ơn/tạm biệt/gọi shop → 'greeting'. CHỈ chọn 'other' khi câu\n"
+        "   THẬT SỰ ngoài phạm vi shop quần áo (vé xem phim, thời tiết, spam). Câu về sản phẩm/giá/size/đơn/ship/\n"
+        "   thanh toán/thành viên/khuyến mãi LUÔN thuộc intent nghiệp vụ tương ứng.\n"
+        "   Phân biệt HỎI CHÍNH SÁCH vs YÊU CẦU THỰC: hỏi điều kiện/thời hạn/quy trình đổi–trả–hoàn tiền (chưa\n"
+        "   gắn đơn cụ thể của khách) → 'return_exchange_policy'; khách YÊU CẦU trả hàng/hoàn tiền cho đơn của họ\n"
+        "   → 'refund'; YÊU CẦU đổi size/màu cho đơn của họ → 'exchange'.\n"
         "2) Trích entities theo schema của intent đã chọn (giá trị CHUỖI; order_id chỉ chữ số; KHÔNG bịa key ngoài schema).\n"
         "3) confidence trong [0,1] = độ tự tin của bạn.\n"
         "4) flags: thêm 'ambiguous_intent' nếu mơ hồ giữa nhiều intent; 'multi_intent' nếu câu có NHIỀU ý.\n"
@@ -60,7 +63,12 @@ def _system_prompt() -> str:
         '- "Đơn hàng 6578 của tôi sắp giao tới nơi chưa?" -> '
         '{"intent":"order_status","entities":{"order_id":"6578"},"confidence":0.95,"flags":[]}\n'
         '- "Mình cao 1m60 nặng 50kg mặc size gì?" -> '
-        '{"intent":"size_consulting","entities":{"height":"1m60","weight":"50kg"},"confidence":0.9,"flags":[]}'
+        '{"intent":"size_consulting","entities":{"height":"1m60","weight":"50kg"},"confidence":0.9,"flags":[]}\n'
+        '- "Xin chào shop" -> {"intent":"greeting","entities":{},"confidence":0.95,"flags":[]}\n'
+        '- "Cho mình xin chính sách trả hàng với" -> '
+        '{"intent":"return_exchange_policy","entities":{},"confidence":0.9,"flags":[]}\n'
+        '- "Đơn 6578 bị lỗi, cho em trả hàng hoàn tiền" -> '
+        '{"intent":"refund","entities":{"order_id":"6578"},"confidence":0.9,"flags":[]}'
     )
 
 
@@ -83,7 +91,8 @@ async def _classify_llm(
     flags: list[str] = []
     raw_intent = str(data.get("intent", "")).strip()
     intent = raw_intent if raw_intent in _VALID_INTENTS else "other"
-    # intent="other" = NGOÀI taxonomy CSKH (chào hỏi/spam/lạc đề — hoặc nhãn LLM trôi) → out_of_domain.
+    # intent="other" = THẬT SỰ ngoài phạm vi shop (lạc đề/spam — hoặc nhãn LLM trôi) → out_of_domain.
+    # Chào hỏi KHÔNG còn rơi vào đây (đã có intent `greeting`) → hết escalate oan khi khách chào.
     # Agent 3 dùng out_of_domain làm cờ chặn: câu ngoài phạm vi shop → human_handoff (không auto trả).
     if intent == "other":
         flags.append("out_of_domain")

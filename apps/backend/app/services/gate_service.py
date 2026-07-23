@@ -23,7 +23,7 @@ log = get_logger("gate")
 _TTL_SECONDS = 5.0
 _GATE_CONFIG_ID = 1
 
-# Thứ tự hiển thị bảng per-intent (plan §3.3) — KHÔNG theo alphabet.
+# Thứ tự hiển thị bảng per-intent — KHÔNG theo alphabet: nhóm thông tin → chào hỏi → giao dịch → ngoài phạm vi.
 _INTENT_ORDER = [
     "product_price",
     "product_information",
@@ -31,6 +31,10 @@ _INTENT_ORDER = [
     "shipping",
     "order_status",
     "promotion",
+    "payment",
+    "return_exchange_policy",
+    "membership",
+    "greeting",
     "refund",
     "exchange",
     "complaint",

@@ -32,10 +32,15 @@ class Intent(StrEnum):
     SIZE_CONSULTING = "size_consulting"
     SHIPPING = "shipping"
     ORDER_STATUS = "order_status"
+    PAYMENT = "payment"
+    MEMBERSHIP = "membership"
+    # HỎI chính sách đổi/trả/hoàn (thông tin) — TÁCH khỏi refund/exchange (yêu cầu thực trên đơn).
+    RETURN_EXCHANGE_POLICY = "return_exchange_policy"
     REFUND = "refund"
     EXCHANGE = "exchange"
     COMPLAINT = "complaint"
     PROMOTION = "promotion"
+    GREETING = "greeting"
     OTHER = "other"
 
 
@@ -56,7 +61,12 @@ INTENT_CATEGORY: dict[Intent, Category] = {
     Intent.REFUND: Category.AFTER_SALE,
     Intent.EXCHANGE: Category.AFTER_SALE,
     Intent.COMPLAINT: Category.AFTER_SALE,
+    # Chính sách/logistics/tài khoản = tra cứu, không gắn với một đơn cụ thể → GENERAL (như shipping).
     Intent.SHIPPING: Category.GENERAL,
+    Intent.PAYMENT: Category.GENERAL,
+    Intent.MEMBERSHIP: Category.GENERAL,
+    Intent.RETURN_EXCHANGE_POLICY: Category.GENERAL,
+    Intent.GREETING: Category.GENERAL,
     Intent.OTHER: Category.GENERAL,
 }
 

@@ -31,9 +31,16 @@ CASES: list[tuple[str, str]] = [
     ("cho đổi qua màu đen được hông shop", "exchange"),
     ("nhân viên trả lời trống không, thái độ quá tệ", "complaint"),
     ("đang có đợt sale nào hong shop", "promotion"),
-    ("cửa hàng mình mấy giờ đóng cửa vậy", "other"),
+    ("cho mình hỏi vé xem phim tối nay mấy giờ", "other"),
     ("freeship cho đơn từ mấy trăm k vậy ạ", "shipping"),
     ("tư vấn giúp em chọn size áo khoác với", "size_consulting"),
+    # 4 intent MỚI + 2 lỗi phải sửa (chào hỏi KHÔNG còn `other`; HỎI chính sách KHÔNG còn `refund`).
+    ("xin chào shop", "greeting"),
+    ("cảm ơn shop nhiều nha", "greeting"),
+    ("cho mình xin chính sách trả hàng với", "return_exchange_policy"),
+    ("mua về mặc thử không vừa thì đổi trong bao lâu ạ", "return_exchange_policy"),
+    ("shop cho thanh toán bằng momo không", "payment"),
+    ("đăng ký thành viên để tích điểm kiểu gì vậy", "membership"),
 ]
 
 THRESHOLD = 0.8  # sanity cho lát cắt verify (KHÔNG phải KPI PRD)
