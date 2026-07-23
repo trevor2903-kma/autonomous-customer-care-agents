@@ -1,217 +1,175 @@
-# plan.md — Slice 11: Xác thực (Admin + Khách) · Mô hình hội thoại theo khách · Gate động · Kiện toàn màn Admin
+# plan.md — Refactor RAG/Knowledge: KB có cấu trúc · Taxonomy mới · Retrieve theo intent · Facts layer · Đo threshold
 
 > Repo: `github.com/trevor2903-kma/autonomous-customer-care-agents`
-> BE: `apps/backend` (FastAPI + LangGraph, Alembic). FE: `apps/dashboard` (Next.js 14, Tailwind thuần + TanStack, **KHÔNG shadcn**).
-> Nguyên tắc (CLAUDE.md): cấu hình đọc từ env, KHÔNG hardcode secret/URL/ngưỡng. Sửa **có phẫu thuật**, không đập lại kiến trúc.
+> BE `apps/backend` (FastAPI + LangGraph + Alembic). Scripts ở **gốc repo** `scripts/`. `.env` ở **gốc repo**.
+> Nguyên tắc (CLAUDE.md): cấu hình từ env, **KHÔNG hardcode** secret/URL/ngưỡng. Sửa **có phẫu thuật**.
 
 ---
 
-## 0. Vì sao gộp 3 việc vào một slice (chúng bổ trợ nhau)
+## 0. Mục tiêu & bối cảnh
 
-Ba việc bạn nêu **có chung một trục là xác thực (auth)**:
+Hoàn thiện **phần lõi tri thức** theo mô hình học từ bot V2 (Avada), gắn thẳng vào pipeline 4-agent cố định
+(không thay kiến trúc). Đồng thời **sửa 2 lỗi phân loại** đang gặp (chào hỏi → `out_of_domain`; hỏi chính sách
+đổi/trả → `refund` bị bắt duyệt). Shop là **thời trang hàng mới** (kiểu Uniqlo).
 
-1. **Auth Admin + Khách** — nền móng. Admin cần JWT+RBAC để bảo vệ dashboard (thay `DEMO_ADMIN_ID`). Khách cần danh tính để (2) hoạt động.
-2. **Mô hình hội thoại theo khách** — _phụ thuộc trực tiếp_ vào danh tính khách từ (1): phải biết "ca đang active của khách X" mới `tìm-ca-active-hoặc-mở-ca-mới`. Không có auth thì không làm được (WS hiện tạo conversation **mỗi kết nối** theo `sid` guest — comment trong code ghi thẳng _"tài khoản = slice 11"_).
-3. **Gate động + kiện toàn nav (RAG vào trong, thêm tab Cấu hình Gate)** — đây là các tính năng **của Admin**, nằm _sau_ lớp auth admin ở (1). Chuyển toggle gate từ env → DB + endpoint admin, và tổ chức lại điều hướng màn admin.
+**Trạng thái nền hiện tại (đã đọc code):**
 
-→ Làm cùng slice để chỉ dựng hạ tầng auth **một lần**, rồi mọi thứ (mô hình hội thoại, bảo vệ gate/RAG) gắn lên đó. Slice **lớn** nhưng chia **7 pha (P0–P6)**; Claude Code chạy **tuần tự, commit từng pha**, có thể dừng/nghỉ giữa chừng.
-
----
-
-## 1. Bất biến kiến trúc (KHÔNG được phá)
-
-- Pipeline 4 agent cố định, **không Supervisor**. Grounding: không bịa → chuyển người. **Agent 4 là egress DUY NHẤT của luồng tự động** (tin admin = egress người, qua hub — vẫn tách biệt).
-- **1 worker**; hub pub/sub **in-process** (không Redis). Không đổi ở slice này.
-- **Agent 3 tất định** (không LLM). **Escalation an toàn theo blocking flags LUÔN bật, KHÔNG toggle được** — Gate chỉ chỉnh _mức độ tự động cho ca AI tự tin_, **không** ghi đè escalation an toàn (đúng như intro trong design: "Ca có cờ bất định luôn được chuyển nhân viên").
-- **Bộ nhớ theo ca** (`_load_history` theo `conversation_id`) — giữ nguyên. Ca đã đóng KHÔNG vào ngữ cảnh ca mới.
-- Không blend confidence (route theo flags). Giữ nguyên slice này; slider ngưỡng confidence chỉ **read-only** (KHÔNG đổi hành vi Agent 2 — xem P3).
+- **Nạp**: `/rag/upload` file → `rag_service.ingest_document` → `chunk_text` cắt câu ~800/overlap 120 → Qdrant
+  payload **trơn** `{text, source, chunk_index}`. `search()` = `query_points` (Distance.COSINE, top_k, **không** filter/score_threshold). `reset_collection` = delete + recreate.
+- **Agent 2** (`knowledge.py`): retrieve bằng **`state["input"]` thô**; `rag_contexts=[{text,source,score}]`;
+  `retrieval_confidence = hits[0].score`; cờ `low_retrieval_score` nếu `< retrieval_threshold` (0.35). `intent` **không** dùng cho retrieve.
+- **Agent 1** (`intent.py`): prompt Quy tắc 1 map **chào hỏi → `other`** và **hỏi chính sách đổi/trả → `refund`**; `intent==other` → cờ `out_of_domain`.
+- **Agent 3** (`decision.py`): escalation **theo cờ** (`BLOCKING_FLAGS` 6 cờ), **không blend điểm**; bảng `_PRIORITY_SEVERITY` theo intent.
+- **Agent 4** (`response.py`): `_system_prompt` ngắn, **không facts**; grounded thuần `rag_contexts`; rỗng → FALLBACK.
+- **Gate** (`gate_service.py`): `holds_auto_reply` đọc `gate_config` (master `auto_reply_enabled` + `send_directly_for(intent)`); **`send_directly_for` trả `False` cho intent KHÔNG có luật** → giữ nháp. `gate_intent_rule` seed 10 intent (migration `c3f1a9d47b28`).
+- Canonical KB mới → **`apps/backend/knowledge/`** (bộ starter đã tạo). `fixtures/knowledge/` (PDF cũ) **không được tham chiếu ở đâu** → xoá.
 
 ---
 
-## 2. Design tokens (nhúng sẵn — Claude Code KHÔNG đọc được file upload)
+## 1. Bất biến kiến trúc (KHÔNG phá)
 
-> **Trước khi làm FE:** copy file design vào repo để tham chiếu: `apps/dashboard/docs/design/ThriftYourStyle_CSKH.dc.html`. Các token dưới là bản tóm tắt đủ để dựng, khớp `globals.css` hiện có.
-
-**Font (đã thay cho tiếng Việt):** heading/brand = **Playfair Display**; body/UI = **Be Vietnam Pro** (design gốc dùng Instrument Serif/Sans — không có subset tiếng Việt). Màn login dùng đúng bộ này.
-
-**Bảng màu (thrift ấm):** nền `#FBFAF7`; listpane `#FDFCFA`; card `#FFFFFF`; chữ `#211F1B`/`#57534A`/`#8E887B`/`#B0A99B`/`#C4BEB1`; viền `#E7E2D8`/`#F0EDE6`/`#DDE1D0`/`#E0DBCF`; **olive chính `#6B7A4F`**, hover `#5A6743`; xanh nhạt `#EEF0E6` (avatar AI/chip tri thức), viền xanh `#DDE1D0`; bong bóng khách `#211F1B` + chữ `#F7F5F0`; bong bóng AI trắng + `#E7E2D8`; nhân viên (NV) xám-xanh `#42536B`/`#5A6B84`/`#E8ECF3`/`#D4DAE6`; handoff/hệ thống terracotta `#F6E7DF`/`#EAD4C7`/`#8A4E33`; badge cảnh báo/đếm `#B25B3C`; amber "duyệt/cần làm rõ" `#B98534`/`#F7EFDD`; chấm online `#5B7A5B`.
-
-**Bo góc / bóng:** card 11–14px, nút 6–9px, bong bóng 16px (đuôi 5px), pill 6–7px. Bóng `0 2px 8–10px rgba(33,31,27,.03–.04)`.
-
-**Toggle switch (dùng ở Gate):** hệ thống 48×27px, per-intent 44×25px; bo 13–14; **BẬT** nền olive `#6B7A4F` núm phải; **TẮT** nền `#DAD5C8` núm trái; núm trắng 21/19px.
+- Pipeline 4-agent cố định, **không Supervisor**. **Agent 4 là egress DUY NHẤT của luồng tự động**.
+- **Grounding**: chỉ nói từ tri thức được cấp (giờ = `facts.md` luôn-bật **+** `rag_contexts`); không đủ → FALLBACK/handoff. **Grounding cả HÀNH ĐỘNG** (không hứa hoàn tiền/tra đơn khi chưa có năng lực → escalate).
+- **Agent 3 tất định, theo cờ, KHÔNG blend điểm**. Escalation an toàn (BLOCKING_FLAGS) **không** đổi logic.
+- **Một ngưỡng số duy nhất** liên quan escalation = `retrieval_threshold` ở **Agent 2** (điểm cosine top-1 → cờ `low_retrieval_score`). Agent 3 chỉ đọc cờ.
+- **Reset-and-reingest**: `knowledge/` là nguồn chân lý; Qdrant là bản phái sinh, dựng lại từ repo. Upload UI = ad-hoc **non-canonical**.
+- 1 worker; hub in-process; không đụng ở slice này.
 
 ---
 
-## 3. Mô hình dữ liệu mới (P0)
+## 2. Thiết kế cốt lõi (chốt trước khi code)
 
-### 3.1 Bảng `user` (chung admin + khách, RBAC theo role)
+### 2.1 Tập intent MỚI (14) — khớp 1-1 ở 4 NƠI
 
-| cột           | kiểu                     | ghi chú                                                |
-| ------------- | ------------------------ | ------------------------------------------------------ |
-| id            | UUID PK                  |                                                        |
-| email         | citext/str UNIQUE        | định danh đăng nhập                                    |
-| password_hash | str                      | bcrypt (passlib)                                       |
-| role          | enum `admin`\|`customer` | RBAC                                                   |
-| display_name  | str                      | tên hiển thị (admin UI: "Ngọc Trần"; khách: tên khách) |
-| created_at    | ts                       |                                                        |
+`enums.Intent` (nguồn chuẩn) → `taxonomy.py` (mô tả/ví dụ) → **seed `gate_intent_rule`** (migration) → **frontmatter `intent:`** trong `knowledge/**/*.md`.
 
-- Seed **1 admin** (email/mật khẩu lấy từ env, KHÔNG hardcode — **stop-point**).
+| Nhóm          | intent                                                                                                                                          | nhạy cảm              | `send_directly` (gate) | priority/severity                                              |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------- | -------------------------------------------------------------- |
+| Thông tin     | product_price, product_information, size_consulting, shipping, order_status, promotion, **payment**, **return_exchange_policy**, **membership** | không                 | **true** (gửi thẳng)   | low/low (order_status = medium/low)                            |
+| Chào hỏi      | **greeting**                                                                                                                                    | không                 | true                   | low/low                                                        |
+| Giao dịch     | refund, exchange, complaint                                                                                                                     | **có**                | **false** (duyệt nháp) | refund high/medium · exchange medium/low · complaint high/high |
+| Ngoài phạm vi | other                                                                                                                                           | — (→ `out_of_domain`) | —                      | low/low                                                        |
 
-### 3.2 `conversation` — thêm liên kết khách
+> **4 intent MỚI**: `greeting`, `return_exchange_policy`, `payment`, `membership`.
+> **⚠️ GOTCHA bắt buộc**: mọi intent mới PHẢI có dòng `gate_intent_rule` (`send_directly=true`) — vì `send_directly_for` trả `False` cho intent **không có luật** → thiếu là bị **bắt duyệt oan**.
 
-- Thêm `customer_id UUID FK → user(id) NULL` (NULL cho guest/legacy). Giữ `customer_identifier` (string) để hiển thị (điền email hoặc display_name).
+### 2.2 Sửa 2 lỗi ở Agent 1 (`taxonomy.py` + `intent.py`)
 
-### 3.3 `gate_config` (DB thay env) — khớp UI design
+- **Chào hỏi/cảm ơn → `greeting`** (KHÔNG còn `other` → hết cờ `out_of_domain` → hết escalate).
+- **HỎI chính sách/thời hạn đổi–trả–hoàn → `return_exchange_policy`** (thông tin, không nhạy cảm). Giữ `refund`/`exchange`/`complaint` cho **yêu cầu thực trên đơn cụ thể**.
+- `other` = _thật sự ngoài phạm vi_ (vé xem phim…) mới `out_of_domain`.
 
-Một bản ghi cấu hình toàn cục (singleton) + bảng luật per-intent:
+### 2.3 Schema KB + payload
 
-**`gate_config`** (1 dòng):
-| cột | kiểu | mặc định (seed từ env hiện tại) |
-|---|---|---|
-| id | int PK (=1) | |
-| auto_reply_enabled | bool | `true` (master) |
-| auto_resolve_enabled | bool | `true` (vì `auto_resolve_minutes` đang có) |
-| auto_resolve_minutes | int | `30` |
-| retrieval_threshold | float | `0.35` (chỉ để **hiển thị read-only** slice này; Agent 2 vẫn đọc env — xem P3) |
+- Canonical: `apps/backend/knowledge/{faq,case,reference}/*.md` (+ `facts.md`, + `promotion/` cho KM định kỳ). Bộ starter đã có.
+- **Thư mục = `type`** (ingest suy `type` từ tên thư mục). Frontmatter: faq `intent/title/questions`; case thêm `applies_when` + thân có `## Bot Diagnostic Flow`; reference `intent?/title`; facts chỉ `title`.
+- **Payload mới mỗi chunk**: `{text, source, chunk_index, type, intent, title}`.
 
-**`gate_intent_rule`** (10 dòng, PK=intent):
-| intent | label | nhạy cảm (tag) | send_directly (mặc định) |
-|---|---|---|---|
-| product_price | Giá sản phẩm | – | **true** (Gửi thẳng) |
-| product_information | Thông tin sản phẩm | – | true |
-| size_consulting | Tư vấn size | – | true |
-| shipping | Vận chuyển | – | true |
-| order_status | Trạng thái đơn | – | true |
-| promotion | Khuyến mãi | – | true |
-| refund | Hoàn tiền | ✓ | **false** (Duyệt nháp) |
-| exchange | Đổi hàng | ✓ | false |
-| complaint | Khiếu nại | ✓ | false |
-| other | Khác | – | false |
+### 2.4 Chunking mới
 
-> **Ý nghĩa `send_directly`:** `true` = "Gửi thẳng"; `false` = "Duyệt nháp" (giữ nháp `PENDING_APPROVAL`). Đây là bản tổng quát hoá của `sensitive_intents` cũ (intent nhạy cảm = `send_directly=false`). Cột `nhạy cảm` chỉ để hiển thị tag, không chi phối logic.
+- **Chunk theo section (`##`)**; **giữ `## Bot Diagnostic Flow` nguyên một chunk** (đừng cắt câu). Sentence-window cũ = **fallback** khi một section quá dài (> ngưỡng ký tự).
+- **Query-expansion**: với faq/case có `questions[]`, upsert **thêm một point mỗi câu hỏi** — `vector = embed(câu hỏi)`, `payload.text = thân trả lời`. ID ổn định (vd `uuid5(source#type#i#q{j})`) để reset/reingest idempotent.
 
-- **Migration Alembic**: tạo `user`, `gate_config`, `gate_intent_rule`; thêm cột `conversation.customer_id`. Kèm **data migration seed** `gate_config` + 10 `gate_intent_rule` theo bảng trên. (Admin seed nằm ở script riêng/stop-point, không nhét secret vào migration.)
+### 2.5 Retrieve theo intent (Agent 2)
+
+- `search(query, top_k, intent=None)`: khi có `intent` (≠ `other`) → thử `query_filter` theo `payload.intent`; nếu **ít kết quả / điểm thấp / rỗng** → chạy lượt **không filter** rồi **gộp-khử-trùng** theo score, giữ top_k. Không hard-fail khi filter rỗng.
+- `knowledge_node` truyền `state["intent"]`; `rag_contexts` mang thêm **`type`, `title`**.
+
+### 2.6 Facts layer (Agent 4)
+
+- Nạp `apps/backend/knowledge/facts.md` **lúc khởi động** (đọc 1 lần, cache) → ghép **luôn** vào `_system_prompt` (khối "SỰ THẬT CỬA HÀNG"). Facts là tri thức được cấp → không phá phanh grounding.
+- **Dung hoà phanh**: giữ phanh cứng (rag_contexts rỗng → FALLBACK). Để câu cơ bản (phí ship…) vẫn trả lời được, **dựa vào coverage KB + query-expansion** (đưa các sự thật lõi vào `reference/faq` để retrieve không trượt), KHÔNG nới phanh. Ghi quyết định này vào báo cáo.
+
+### 2.7 Ngưỡng `retrieval_threshold`
+
+- **Cơ chế giữ nguyên** (cosine top-1 → cờ). **Đo lại giá trị** trên KB mới (§ P6). Lưu ý query-expansion đẩy điểm faq cao → ngưỡng canh chủ yếu cho hit _thân_ reference/case.
 
 ---
 
-## 4. Ánh xạ ngữ nghĩa Gate (giữ nhất quán với câu chuyện an toàn)
+## 3. Các pha (P0–P7) — Claude Code chạy tuần tự, commit từng pha
 
-**Gate động chỉ chi phối nhánh auto_reply (status `REPLIED`).** Escalation an toàn của Agent 3 (blocking flags → `human_handoff`) **không đổi, không toggle**.
+### P0 — Dọn & đặt chỗ `chore(kb): P0 setup knowledge dir + remove fixtures`
 
-`gate_holds(status_out, intent)` (đọc DB thay env):
+- **In:** xoá `fixtures/` (`git rm -r fixtures` — đã xác nhận không code nào tham chiếu); copy bộ KB starter vào **`apps/backend/knowledge/`** (faq/case/reference/facts.md/README/promotion). Thêm dep **`python-frontmatter`** vào `apps/backend/pyproject.toml`.
+- **Out:** logic ingest/agent.
+- **Verify:** `apps/backend/knowledge/` có cây file; `fixtures/` đã biến mất; `uv sync` cài được frontmatter.
 
-```
-if status_out != REPLIED: return False
-cfg = get_gate_config()          # cache nhẹ, đọc DB
-if not cfg.auto_reply_enabled:   # master TẮT → giữ nháp TẤT CẢ auto_reply
-    return True
-return not rule(intent).send_directly   # per-intent: giữ nếu không "gửi thẳng"
-```
-
-Tương thích logic cũ:
-
-- `auto_reply_review=True` + tập nhạy cảm ≈ `auto_reply_enabled=True` + (intent nhạy cảm có `send_directly=false`).
-- `auto_reply_review=False` (gửi hết) ≈ mọi intent `send_directly=true`.
-- **Năng lực mới:** master TẮT = giữ nháp toàn bộ (chế độ chặt hơn mà toggle hệ thống của design mở ra).
-
-`auto_resolve`: đọc `auto_resolve_enabled` + `auto_resolve_minutes` từ DB.
-
-**Slider "Ngưỡng confidence chuyển người" (0.70) — HOÃN slice này (chỉ read-only):**
-
-- Slider này _bản chất khác_ hai toggle trên: nó chỉnh **độ nhạy escalation an toàn**, ánh xạ vào `retrieval_threshold` mà **Agent 2** dùng để đặt cờ `low_retrieval_score` (Agent 3 coi là blocking → `human_handoff`). Vì là thay đổi _hành vi Agent 2_ (cần test kỹ trên KB), **hoãn wiring sang slice sau (P3-b)**.
-- **Slice này:** slider **CHỈ read-only** — hiển thị `gate_config.retrieval_threshold` (đọc qua `GET /admin/gate-config`), **KHÔNG cho chỉnh**. `PUT /admin/gate-config` **KHÔNG nhận** `retrieval_threshold`. **Agent 2 GIỮ NGUYÊN đọc env** (không đọc DB). Ghi chú UI: "điều chỉnh ở phiên bản sau".
-- Ghi rõ trong báo cáo: slider = tinh chỉnh escalation an toàn, **không phải** "van giám sát" của auto_reply; hiện chỉ hiển thị.
-
----
-
-## 5. Các pha (P0–P6) — Claude Code chạy tuần tự, commit từng pha
-
-### P0 — Data model + migration `feat(auth): P0 data model + migrations`
-
-- **In:** models `User`/`GateConfig`/`GateIntentRule`; cột `conversation.customer_id`; migration Alembic + seed gate; script seed admin (đọc env). Thêm deps `passlib[bcrypt]` + `python-jose[cryptography]` (hoặc `pyjwt`) vào `pyproject.toml`.
-- **Out:** logic auth/route (P1+).
-- **Verify:** `alembic upgrade head` chạy sạch; bảng + seed 10 intent rule + gate_config tồn tại; `alembic downgrade -1` OK.
-- **Stop-point:** báo user (a) `.env` thêm `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`; (b) chạy migration + script seed admin.
-
-### P1 — Auth backend `feat(auth): P1 jwt login/rbac + protect admin + ws token`
+### P1 — Taxonomy mới đầu-cuối (sửa 2 lỗi + đồng bộ intent) `feat(intent): P1 new taxonomy + fix greeting/policy routing`
 
 - **In:**
-  - `core/security.py`: hash/verify mật khẩu (passlib bcrypt), issue/verify JWT (sub=user_id, role, exp). `core/config.py` thêm `jwt_secret`, `jwt_expire_minutes`.
-  - `POST /api/auth/register` (role=customer), `POST /api/auth/login` (trả JWT + role + display_name), `GET /api/auth/me`.
-  - Dependency `get_current_user` (Bearer) + `require_admin` (RBAC role=admin).
-  - Bảo vệ toàn bộ `/api/admin/*` bằng `require_admin`; **thay `DEMO_ADMIN_ID`** bằng `current_user.id` (takeover/assign dùng admin đã đăng nhập).
-  - **JWT-over-WS**: `/ws/chat?token=` (khách) + `/ws/admin/{id}?token=` (admin) — xác thực khi `accept()`, sai/không đúng role → đóng (code 4401). (Browser không set được header WS → buộc dùng query-param.)
-- **Out:** mô hình hội thoại (P2), gate DB (P3).
-- **Verify:** login admin/khách trả token; `/api/admin/escalations` không token → 401, có token admin → 200, token khách → 403; WS thiếu/sai token → đóng.
+  - `enums.Intent`: thêm `greeting`, `return_exchange_policy`, `payment`, `membership` + mục `INTENT_CATEGORY`.
+  - `taxonomy.py`: mô tả/ví dụ 4 intent mới; **sửa Quy tắc 1** (§2.2): chào hỏi→`greeting`, hỏi-chính-sách→`return_exchange_policy`.
+  - `decision.py` `_PRIORITY_SEVERITY`: thêm 4 dòng mới (theo bảng §2.1 — mặc định low/low).
+  - **Migration Alembic mới**: thêm 4 dòng `gate_intent_rule` (`send_directly=true`) cho intent mới. **⚠️ GOTCHA §2.1**.
+  - Frontmatter KB **đã** dùng đúng các intent này (starter set) — chỉ cần khớp.
+- **Out:** ingestion/retrieval (P2+).
+- **Verify:** classify "xin chào" → `greeting`, **không** cờ `out_of_domain`; "xin chính sách trả hàng" → `return_exchange_policy`; `gate_intent_rule` có đủ 14 intent; `send_directly_for("greeting")=true`.
+- **Stop-point:** báo user chạy `alembic upgrade head`.
 
-### P2 — Mô hình hội thoại theo khách `feat(chat): P2 per-customer find-active-or-open-case`
-
-- **In:**
-  - `conversation_service`: `get_active_conversation_for_customer(customer_id)` (status ∉ {RESOLVED, CLOSED}) + `open_case_for_customer(customer_id, display)` (conversation mới `ACTIVE_AI`, gắn `customer_id` + `customer_identifier`).
-  - **Sửa `ws/chat.py`**: lấy `customer_id` từ token (thay `sid` guest) → **tìm-ca-active-hoặc-mở-ca-mới** → route theo status (`should_run_ai` giữ nguyên). Bỏ `create_conversation` mỗi kết nối.
-    - Ca active `ACTIVE_AI` → agent chạy pipeline. Ca đang người xử lý (IN_HUMAN_QUEUE/HUMAN_HANDLING/PENDING_APPROVAL) → route admin (AI tạm dừng). Khi ca đóng giữa các lượt → tin kế tiếp **mở ca mới** (agent chạy lại từ đầu — AI-first).
-  - `GET /api/me/thread`: trả **mạch ghép** (mọi conversation của khách đã đăng nhập, message xếp theo `created_at` xuyên ca, ca cũ trước → ca mới sau) cho UX "một đoạn liền mạch". Admin **không đổi** (vẫn thấy các ca riêng biệt).
-- **Bất biến:** bộ nhớ agent vẫn **theo ca** (`_load_history` theo `conversation_id`) — ca cũ không vào ngữ cảnh ca mới.
-- **Verify:** khách A đăng nhập, chat → 1 conversation `ACTIVE_AI`; admin đóng ca (RESOLVED) → khách A nhắn tiếp → **conversation MỚI** `ACTIVE_AI`, agent chạy lại; `GET /me/thread` trả cả 2 ca ghép liền.
-
-### P3 — Gate động (DB) `feat(gate): P3 db-backed gate config + admin toggle`
+### P2 — Ingestion refactor (frontmatter + chunk-theo-section + query-expansion) `feat(rag): P2 structured ingest from repo + query expansion`
 
 - **In:**
-  - `gate_service`: `get_gate_config()` (đọc `gate_config` + `gate_intent_rule`, cache nhẹ theo request/ttl), `update_gate_config(...)`.
-  - **Refactor `gate_holds`** (ở `ws/chat.py`) đọc DB theo §4 (master + per-intent). Auto-resolve đọc `auto_resolve_enabled`/`minutes` từ DB.
-  - `GET /api/admin/gate-config` + `PUT /api/admin/gate-config` (`require_admin`): trả/cập nhật toggle hệ thống + bảng per-intent.
-  - **Giữ nguyên** escalation an toàn Agent 3 (blocking flags) — KHÔNG đọc gate, KHÔNG toggle.
-  - **`GET /admin/gate-config` trả kèm `retrieval_threshold`** (chỉ để FE hiển thị read-only). **`PUT` KHÔNG nhận `retrieval_threshold`.**
-  - **P3-b (HOÃN sang slice sau — KHÔNG làm bây giờ):** wiring slider → **Agent 2** đọc `gate_config.retrieval_threshold` thay hằng env + mở cho chỉnh. Slice này **Agent 2 GIỮ NGUYÊN** đọc env; slider FE read-only.
-- **Verify:** PUT tắt `auto_reply_enabled` → mọi auto_reply (kể cả intent `send_directly=true`) chuyển `PENDING_APPROVAL`; bật lại + set `refund.send_directly=true` → refund auto_reply gửi thẳng; blocking-flag case vẫn `human_handoff` bất kể gate.
+  - `rag_service`: parse frontmatter (suy `type` từ thư mục); **chunk theo `##`** (giữ Bot Diagnostic Flow nguyên khối; fallback sentence-window cho section dài); **query-expansion** (§2.4); payload mới `{text,source,chunk_index,type,intent,title}`; ID ổn định.
+  - **`scripts/ingest_kb.py`** (theo pattern `seed_admin.py`: `sys.path.insert(apps/backend)` + `load_dotenv(.env gốc)`): duyệt `apps/backend/knowledge/` → **`reset_collection` → upsert**; **bỏ qua `facts.md`** (Agent 4 nạp riêng); in số doc/chunk. Thêm **Makefile target** `ingest-kb`.
+- **Out:** UI/console (P3), retrieve theo intent (P4).
+- **Verify:** `make ingest-kb` chạy sạch; Qdrant có point với payload đủ `type/intent/title`; một câu hỏi FAQ khớp điểm cao (query-expansion); case doc giữ nguyên khối flow.
+- **Stop-point:** báo user cần `.env` (QDRANT + OPENAI) và chạy `make ingest-kb`.
 
-### P4 — FE Auth: màn login + điều hướng + gắn token `feat(fe-auth): P4 login screens + redirect + token plumbing`
+### P3 — Console tài liệu (persist + đổi vai `/rag/*`) `feat(rag): P3 knowledge_document persist + rag endpoints re-role`
 
 - **In:**
-  - **Màn `/login`** (design KHÔNG có → thiết kế mới theo §2): card giữa (max ~420px), brand ("T" vuông serif tối + "ThriftYourStyle" serif), heading serif, ô email + mật khẩu (trắng, viền `#E7E2D8`, bo 10–12), nút "Đăng nhập" olive `#6B7A4F`; link "Tạo tài khoản" (khách). Cho phép 2 chế độ: **Khách** (đăng nhập/đăng ký) + **Admin** (đăng nhập) — dạng tab hoặc 2 link. Footer nhẹ. Bám palette ấm.
-  - `AuthContext`/hook: lưu JWT (in-memory + cookie/localStorage tuỳ chuẩn dự án), `login/register/logout`, `me`.
-  - **`lib/api.ts`**: gắn `Authorization: Bearer` cho mọi fetch; helper WS URL kèm `?token=` cho `/ws/chat` và `adminWsUrl(id)`.
-  - **Guard**: `/admin/*` yêu cầu role admin; `/chat` yêu cầu khách đăng nhập; thiếu token → redirect `/login`. Sau login: admin → `/admin`, khách → `/chat`. Nút Đăng xuất.
-  - Thay cái toggle harness "Khách/Admin" ở TopBar (chỉ để demo) bằng trạng thái đăng nhập thực (hiện tên + Đăng xuất).
-- **Out:** không đụng logic pipeline.
-- **Verify:** đăng nhập admin → vào `/admin`; đăng nhập/đăng ký khách → vào `/chat`; vào thẳng `/admin` khi chưa đăng nhập → về `/login`; WS gửi kèm token OK.
+  - Persist **`knowledge_document`** (source/title/type/intent/format/status/chunks/indexed_at) khi ingest (repo) + khi upload ad-hoc. Migration nếu bảng chưa có/đủ cột.
+  - **Đổi vai endpoint**: `GET /rag/documents` (từ `knowledge_document`) cho bảng UI; `POST /rag/reindex` (chạy ingest-from-repo); giữ `POST /rag/reset`; `POST /rag/upload` = **ad-hoc**, `source=upload`, đánh dấu **non-canonical**.
+  - FE `apps/dashboard` (nếu làm luôn): bảng "Tài liệu" đọc `/rag/documents`; nút Re-index/Xóa/Upload theo vai mới; badge "tạm thời/non-canonical" cho doc upload.
+- **Out:** không đụng pipeline.
+- **Verify:** ingest → bảng liệt kê doc repo với chunks/status thật; upload ad-hoc → hiện badge non-canonical; reindex-from-repo chạy.
 
-### P5 — FE Admin: RAG vào nav + tab Cấu hình Gate `feat(fe-admin): P5 rag-in-nav + gate config tab`
+### P4 — Agent 2 retrieve theo intent `feat(rag): P4 intent-aware retrieval + typed contexts`
 
-- **In:**
-  - **Chuyển RAG** từ route riêng `apps/dashboard/app/rag/page.tsx` **vào cụm nav** trong `components/shell/AdminShell.tsx` như một module. **Thứ tự nav (5):** `Hội thoại / Hàng đợi chuyển tiếp (count) / Duyệt nháp (count) / Quản lý tri thức / Cấu hình Gate`. Item active: nền `#F4F2EC` + ô vuông olive `#6B7A4F`; inactive: trong suốt + ô vuông `#DAD5C8`.
-  - **Tab "Cấu hình Gate"** (module mới) theo design:
-    - Tiêu đề serif 27 "Cấu hình Gate" + intro: _"Gate chỉ điều chỉnh mức độ tự động cho ca AI tự tin. Ca có cờ bất định luôn được chuyển nhân viên — an toàn không bị gate ghi đè."_
-    - 2 hàng toggle hệ thống (card, label + mô tả + switch 48×27): **Auto-reply (toàn hệ thống)**, **Auto-resolve**.
-    - Bảng **"Auto-reply theo intent / category"** (10 dòng, §3.3): label + intent (mono) + tag "nhạy cảm" (terracotta `#B25B3C`/`#F6E7DF`) nếu có + switch 44×25 với nhãn **"Gửi thẳng"** (olive) / **"Duyệt nháp"** (amber `#B98534`).
-    - Card slider **"Ngưỡng confidence chuyển người"** — **READ-ONLY** (không kéo được, không PUT): giá trị mono `#6B7A4F` lấy từ `gate_config.retrieval_threshold`, track `#EFEBE2` fill olive (disabled), ghi chú "Dưới ngưỡng → Decision Engine đặt action = human_handoff · điều chỉnh ở phiên bản sau."
-  - Nối GET/PUT `/api/admin/gate-config` (TanStack query + mutation; optimistic tuỳ chọn).
-- **Out:** không đổi backend.
-- **Verify:** nav 5 mục đúng thứ tự, RAG mở trong khung admin (không còn route ngoài); tab Gate hiển thị đúng seed (6 ON, refund/exchange/complaint/other OFF); bật/tắt toggle → PUT thành công → reload giữ trạng thái.
+- **In:** `search(query, top_k, intent=None)` (§2.5, filter + fallback gộp); `knowledge_node` truyền `state["intent"]`; `rag_contexts` mang `type`, `title`. Cơ chế cờ **giữ nguyên**.
+- **Out:** đo threshold (P6).
+- **Verify:** truy vấn intent cụ thể ưu tiên đúng chunk cùng intent; intent lạ/không match không bị rỗng (fallback hoạt động).
 
-### P6 — FE Khách: mạch ghép + kiểm thử đầu-cuối `feat(fe-chat): P6 stitched thread + e2e`
+### P5 — Agent 4 facts + greeting + bám flow + grounding hành động `feat(rag): P5 facts layer + flow-following + action grounding`
 
 - **In:**
-  - **`/chat`**: nạp `GET /api/me/thread` (mạch ghép của khách đã đăng nhập) render **một đoạn liền mạch**; tin mới gửi qua WS `?token=` vào ca active. Header hiển thị `custStatus` theo ca active.
-  - Kiểm thử đầu-cuối: đăng nhập khách → chat (AI trả lời) → tình huống escalate → đăng nhập admin → nhận ca (takeover) → trả lời → đóng ca → khách quay lại nhắn tiếp → **ca mới, AI chạy lại từ đầu**; mạch khách vẫn thấy liền.
-- **Verify:** kịch bản đầu-cuối chạy trơn trên 1 worker; khách thấy 1 thread liền, admin thấy các ca riêng.
+  - Nạp `knowledge/facts.md` lúc khởi động → khối facts luôn-bật trong `_system_prompt` (§2.6).
+  - `greeting` → **câu chào mẫu** (bỏ qua nhánh grounding RAG).
+  - `_context_block` gắn nhãn loại (`[Quy trình xử lý]` cho `type=case`, `[Tra cứu]` cho reference) + luật **bám diagnostic flow từng bước**.
+  - Luật **grounding hành động** (không hứa hoàn tiền/tra đơn khi chưa có năng lực → escalate). (Tuỳ chọn: luật văn phong.)
+- **Out:** đo threshold.
+- **Verify:** hỏi phí ship → trả từ facts kể cả retrieve mỏng; case "đơn giao chậm" → bot **hỏi mã đơn trước** (bám flow); "xin chào" → chào mẫu, không escalate; không có câu "đã hoàn tiền cho bạn".
+
+### P6 — Đo & đặt `retrieval_threshold` `chore(rag): P6 measure retrieval threshold on new KB`
+
+- **In:**
+  - Dựng 2 tập truy vấn (trả-lời-được / không-trả-lời-được), mỗi tập ~20–40 câu (có thể để trong `apps/backend/tests/` hoặc `scripts/`).
+  - Script đo (tận dụng `verify_intent.py` pattern): chạy retrieval, thu **điểm cosine top-1** mỗi câu → in phân bố / phân vị → gợi ý ngưỡng nằm trong "khe".
+  - Đặt `retrieval_threshold` mới (env). Ghi **phương pháp + số liệu** vào `docs/` (cho Chương 4).
+- **Out:** —
+- **Verify:** tập trả-lời-được phần lớn ≥ ngưỡng; tập không-trả-lời-được phần lớn < ngưỡng; ít `low_retrieval_score` oan.
+
+### P7 — Kiểm thử & đo tổng `test(rag): P7 e2e verify + inspector chunks/scores`
+
+- **In:**
+  - Kiểm chứng **2 lỗi đã sửa** (greeting auto-reply; return_exchange_policy auto-reply, không duyệt nháp).
+  - **Mở rộng Pipeline Inspector** (`/api/agents/pipeline` + AnalyzePanel): hiện _chunk retrieve + điểm số_ của Agent 2 (`type/title/source/score`).
+  - Ghi **số liệu trước/sau** (hit-rate, escalation rate) vào `docs/`.
+- **Verify:** kịch bản đầu-cuối chạy; Inspector hiện chunk+score.
 
 ---
 
-## 6. Ghi chú cho Claude Code
+## 4. Ghi chú cho Claude Code
 
-- Đọc `apps/backend/CLAUDE.md` trước. Cấu hình từ env; **KHÔNG hardcode** secret/URL/ngưỡng.
-- **Copy file design** vào `apps/dashboard/docs/design/ThriftYourStyle_CSKH.dc.html` để tham chiếu (token đã tóm tắt ở §2; design KHÔNG có màn login → thiết kế mới theo §4/P4).
+- Đọc `apps/backend/CLAUDE.md`. Cấu hình từ **`.env` gốc repo**; **KHÔNG hardcode**.
+- **Scripts ở gốc `scripts/`**, theo pattern `seed_admin.py`: `_REPO_ROOT=parents[1]` · `load_dotenv(_REPO_ROOT/.env)` · `sys.path.insert(_REPO_ROOT/'apps'/'backend')` · chạy `cd apps/backend && uv run python ../../scripts/<x>.py`.
+- **KHÔNG phá bất biến §1**: pipeline cố định/egress Agent 4 duy nhất; grounding (facts+RAG, không bịa→handoff, grounding hành động); Agent 3 theo-cờ-không-blend; một ngưỡng số ở Agent 2; Reset-and-reingest; 1 worker/hub in-process.
+- **Đồng bộ intent 4 nơi** (§2.1) — và **GOTCHA gate_intent_rule** cho intent mới (thiếu = duyệt oan).
 - FE: **Tailwind thuần + TanStack, KHÔNG shadcn**. Sửa có phẫu thuật.
-- **Không phá bất biến §1**: pipeline cố định/không Supervisor; Agent 4 egress duy nhất luồng auto; grounding không bịa→handoff; 1 worker + hub in-process; Agent 3 tất định; escalation an toàn luôn bật & KHÔNG toggle; bộ nhớ theo ca; không blend confidence.
-- **Gate = van cho auto_reply**, KHÔNG phải escalation an toàn (§4). Slider = độ nhạy escalation → **HOÃN slice này, chỉ read-only** (Agent 2 giữ env, PUT không nhận `retrieval_threshold`).
-- Commit **từng pha** với prefix ở tiêu đề mỗi pha. Có thể dừng/nghỉ giữa các pha.
-- **Stop-point bắt buộc** (dừng, hỏi user): (a) trước migration/seed (P0) để user set `.env` `JWT_SECRET`/`ADMIN_EMAIL`/`ADMIN_PASSWORD` và chạy `alembic upgrade head` + seed admin; (b) khi cần biến môi trường mới cho FE (`NEXT_PUBLIC_*`) nếu phát sinh.
-- Sau mỗi pha: chạy **Verify** tương ứng, tóm tắt thay đổi ngắn gọn.
+- Commit **từng pha** với prefix ở tiêu đề. Có thể dừng/nghỉ giữa các pha.
+- **Stop-point bắt buộc:** (P1) chạy `alembic upgrade head`; (P2) `.env` QDRANT+OPENAI + `make ingest-kb`; (P3) migration `knowledge_document` nếu cần; (P6) chạy script đo threshold rồi đặt giá trị vào `.env`.
 
----
+## 5. Phạm vi & không-phạm-vi
 
-## 7. Phạm vi & không-phạm-vi
-
-- **Trong:** auth admin+khách (JWT+RBAC, login+điều hướng, token-qua-WS); mô hình hội thoại theo khách (find-active-or-open-case + mạch ghép `/me/thread`); gate động DB + toggle admin; RAG vào nav + tab Cấu hình Gate; màn login mới.
-- **Ngoài (slice sau):** **P3-b** — wiring slider ngưỡng confidence (Agent 2 đọc `gate_config.retrieval_threshold` + mở cho chỉnh; slice này chỉ read-only); ngữ cảnh **xuyên ca** cho agent (khách quen/đơn cũ) — cross-conversation memory (§22/17); tích hợp đơn hàng (16); observability Langfuse (12); anti-injection (13); deploy nhiều worker (khi lên Redis pub/sub + durable checkpointer 09b); dashboard giám sát/KPI (10b/c).
+- **Trong:** dọn fixtures + KB vào repo; taxonomy mới (sửa 2 lỗi) + đồng bộ intent; ingest-from-repo (frontmatter + chunk-theo-section + query-expansion + payload); console `knowledge_document` + đổi vai `/rag/*`; Agent 2 intent-aware; Agent 4 facts + bám flow + grounding hành động; đo threshold; Inspector chunk+score.
+- **Ngoài (sau):** sàn điểm từng-context (lọc nhiễu); corrections-pipeline/learning-loop (15, trụ cột 4); observability (12); anti-injection (13); deploy (14); ngữ cảnh xuyên-ca (17).
