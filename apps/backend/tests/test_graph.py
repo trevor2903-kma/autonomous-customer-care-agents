@@ -27,9 +27,11 @@ def _offline_agents(monkeypatch: pytest.MonkeyPatch) -> None:
             "uncertainty_flags": [],
         }
 
-    async def fake_retrieve(query: str, top_k: int = 4) -> dict:
+    async def fake_retrieve(query: str, top_k: int = 4, intent: str | None = None) -> dict:
         return {
-            "rag_contexts": [{"text": "chính sách", "source": "kb.pdf", "score": 0.8}],
+            "rag_contexts": [
+                {"text": "chính sách", "source": "kb.pdf", "type": "reference", "title": "KB", "score": 0.8}
+            ],
             "retrieval_confidence": 0.8,
             "uncertainty_flags": [],
         }

@@ -51,7 +51,7 @@ async def analyze(req: ClassifyRequest) -> AnalyzeResult:
     """Chạy Agent 1 (intent/entities) + Agent 2 (retrieval) — cho thấy TÁCH VAI đúng PRD §7.1/§7.2.
     Chỉ trả METADATA (Response Generator vẫn là điểm phát ngôn DUY NHẤT tới khách, §7.4)."""
     intent = await classify_intent(req.message)  # Agent 1
-    know = await retrieve_knowledge(req.message)  # Agent 2
+    know = await retrieve_knowledge(req.message, intent=intent["intent"])  # Agent 2 (lọc theo intent)
     return AnalyzeResult(
         intent=intent["intent"],
         category=intent["category"],

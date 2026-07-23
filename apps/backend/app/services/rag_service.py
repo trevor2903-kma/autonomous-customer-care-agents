@@ -37,6 +37,7 @@ from ..core.config import settings
 from ..core.embeddings import embed_text, embed_texts, embedding_dim
 from ..core.logging import get_logger
 from ..core.qdrant_client import get_qdrant
+from ..models.enums import Intent
 
 log = get_logger("rag")
 
@@ -351,27 +352,52 @@ async def reset_collection() -> None:
     await ensure_collection()
 
 
-async def search(query: str, top_k: int = 4) -> list[dict]:
-    """Truy hồi top-k chunk gần nhất (cosine). Trả [{text, source, score, chunk_index}] (payload generic).
+def _hit(point) -> dict:
+    payload = point.payload or {}
+    return {
+        "text": payload.get("text"),
+        "source": payload.get("source"),
+        "chunk_index": payload.get("chunk_index"),
+        "type": payload.get("type"),
+        "title": payload.get("title"),
+        "question": payload.get("question"),  # != None -> khớp qua point query-expansion
+        "score": point.score,
+    }
 
-    TẦNG SERVICE để Knowledge Agent (PRD §7.2) tái dùng — Intent Classifier gọi để lấy ngữ cảnh phân loại.
-    """
-    vector = await embed_text(query)
+
+async def _query(vector: list[float], top_k: int, intent: str | None) -> list:
+    flt = (
+        Filter(must=[FieldCondition(key="intent", match=MatchValue(value=intent))])
+        if intent
+        else None
+    )
     res = await get_qdrant().query_points(
         collection_name=settings.qdrant_collection,
         query=vector,
         limit=top_k,
         with_payload=True,
+        query_filter=flt,
     )
-    hits: list[dict] = []
-    for point in res.points:
-        payload = point.payload or {}
-        hits.append(
-            {
-                "text": payload.get("text"),
-                "source": payload.get("source"),
-                "chunk_index": payload.get("chunk_index"),
-                "score": point.score,
-            }
-        )
-    return hits
+    return list(res.points)
+
+
+async def search(query: str, top_k: int = 4, intent: str | None = None) -> list[dict]:
+    """Truy hồi top-k chunk gần nhất (cosine), ưu tiên chunk CÙNG INTENT (plan §2.5).
+
+    Có `intent` (≠ `other`) → lượt lọc theo `payload.intent` trước. Nếu lọc **không đủ top_k** hoặc
+    **hit tốt nhất vẫn dưới `retrieval_threshold`** → chạy thêm lượt KHÔNG lọc rồi gộp-khử-trùng theo
+    điểm. Không hard-fail khi lọc rỗng: nhãn intent sai/thiếu không được làm mất tri thức đúng.
+    Ngưỡng dùng ở đây là `retrieval_threshold` sẵn có — KHÔNG thêm ngưỡng số thứ hai (bất biến §1).
+
+    TẦNG SERVICE để Knowledge Agent (PRD §7.2) tái dùng.
+    """
+    vector = await embed_text(query)
+    narrow = intent if intent and intent != Intent.OTHER else None
+
+    points = await _query(vector, top_k, narrow) if narrow else []
+    if not narrow or len(points) < top_k or points[0].score < settings.retrieval_threshold:
+        seen = {p.id for p in points}
+        points += [p for p in await _query(vector, top_k, None) if p.id not in seen]
+        points.sort(key=lambda p: p.score, reverse=True)
+
+    return [_hit(p) for p in points[:top_k]]

@@ -21,19 +21,28 @@ from ..state import ConversationState
 
 log = get_logger("agent.knowledge")
 
+# Lượt KHÔNG cần tri thức: xã giao không phát biểu sự thật nào → không có gì để "không grounded".
+# Bỏ qua retrieval và KHÔNG phát cờ grounding (nếu phát, Agent 3 sẽ escalate một lời chào — lỗi cũ).
+# Đây là KHOANH PHẠM VI grounding, KHÔNG phải nới lỏng: Agent 3 giữ nguyên, BLOCKING_FLAGS không đổi.
+NO_RETRIEVAL_INTENTS: frozenset[str] = frozenset({"greeting"})
+
 
 def _degrade(flags: list[str]) -> dict[str, Any]:
     return {"rag_contexts": [], "retrieval_confidence": 0.0, "uncertainty_flags": flags}
 
 
-async def retrieve_knowledge(query: str, top_k: int = 4) -> dict[str, Any]:
-    """Truy hồi tri thức cho `query`. Trả {rag_contexts, retrieval_confidence, uncertainty_flags}."""
+async def retrieve_knowledge(query: str, top_k: int = 4, intent: str | None = None) -> dict[str, Any]:
+    """Truy hồi tri thức cho `query`, ưu tiên chunk cùng `intent`. Trả
+    {rag_contexts, retrieval_confidence, uncertainty_flags}."""
+    if intent in NO_RETRIEVAL_INTENTS:
+        return _degrade([])  # rỗng nhưng KHÔNG cờ — Agent 4 trả câu chào mẫu (P5)
+
     # Thiếu key -> không embed/search được -> degrade (không network).
     if not settings.llm_api_key:
         return _degrade(["no_relevant_knowledge"])
 
     try:
-        hits = await rag_service.search(query, top_k)
+        hits = await rag_service.search(query, top_k, intent=intent)
     except Exception as exc:  # noqa: BLE001 — Qdrant/embed lỗi / collection chưa có -> degrade, KHÔNG ném.
         log.warning("knowledge.search failed -> degrade no_relevant_knowledge: %s", exc)
         return _degrade(["no_relevant_knowledge"])
@@ -41,8 +50,15 @@ async def retrieve_knowledge(query: str, top_k: int = 4) -> dict[str, Any]:
     if not hits:
         return _degrade(["no_relevant_knowledge"])
 
+    # `type`/`title` để Agent 4 gắn nhãn loại tri thức (quy trình xử lý vs tra cứu) — plan §2.5/§3-P5.
     rag_contexts = [
-        {"text": h.get("text"), "source": h.get("source"), "score": round(float(h["score"]), 4)}
+        {
+            "text": h.get("text"),
+            "source": h.get("source"),
+            "type": h.get("type"),
+            "title": h.get("title"),
+            "score": round(float(h["score"]), 4),
+        }
         for h in hits
     ]
     retrieval_confidence = float(hits[0]["score"])
@@ -59,9 +75,10 @@ async def retrieve_knowledge(query: str, top_k: int = 4) -> dict[str, Any]:
 
 
 async def knowledge_node(state: ConversationState) -> dict[str, Any]:
-    """Node graph: retrieve_knowledge trên input rồi ghi state + trace. Ghi `rag_contexts` (VAI Agent 2) +
-    `retrieval_confidence`; `uncertainty_flags` tích luỹ (reducer add)."""
-    result = await retrieve_knowledge(state.get("input", ""))
+    """Node graph: retrieve_knowledge trên input (ưu tiên intent của Agent 1) rồi ghi state + trace.
+    Ghi `rag_contexts` (VAI Agent 2) + `retrieval_confidence`; `uncertainty_flags` tích luỹ (reducer add)."""
+    intent = state.get("intent")
+    result = await retrieve_knowledge(state.get("input", ""), intent=intent)
     return {
         "status": ConversationStatus.RETRIEVING,
         "rag_contexts": result["rag_contexts"],
@@ -72,7 +89,12 @@ async def knowledge_node(state: ConversationState) -> dict[str, Any]:
                 "node": "knowledge",
                 "confidence": result["retrieval_confidence"],
                 "branch": None,
-                "detail": {"contexts": len(result["rag_contexts"])},
+                # `skipped` để audit thấy RÕ lượt xã giao không retrieve (khác với retrieve xong rỗng).
+                "detail": {
+                    "contexts": len(result["rag_contexts"]),
+                    "intent": intent,
+                    "skipped": intent in NO_RETRIEVAL_INTENTS,
+                },
             }
         ],
     }
