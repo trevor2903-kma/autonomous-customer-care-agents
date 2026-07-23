@@ -34,6 +34,7 @@ class Intent(StrEnum):
     ORDER_STATUS = "order_status"
     PAYMENT = "payment"
     MEMBERSHIP = "membership"
+    STORE_INFORMATION = "store_information"
     # HỎI chính sách đổi/trả/hoàn (thông tin) — TÁCH khỏi refund/exchange (yêu cầu thực trên đơn).
     RETURN_EXCHANGE_POLICY = "return_exchange_policy"
     REFUND = "refund"
@@ -65,6 +66,7 @@ INTENT_CATEGORY: dict[Intent, Category] = {
     Intent.SHIPPING: Category.GENERAL,
     Intent.PAYMENT: Category.GENERAL,
     Intent.MEMBERSHIP: Category.GENERAL,
+    Intent.STORE_INFORMATION: Category.GENERAL,
     Intent.RETURN_EXCHANGE_POLICY: Category.GENERAL,
     Intent.GREETING: Category.GENERAL,
     Intent.OTHER: Category.GENERAL,

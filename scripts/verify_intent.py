@@ -41,6 +41,8 @@ CASES: list[tuple[str, str]] = [
     ("mua về mặc thử không vừa thì đổi trong bao lâu ạ", "return_exchange_policy"),
     ("shop cho thanh toán bằng momo không", "payment"),
     ("đăng ký thành viên để tích điểm kiểu gì vậy", "membership"),
+    ("cửa hàng mình mấy giờ đóng cửa vậy", "store_information"),
+    ("shop có số hotline nào gọi được không", "store_information"),
 ]
 
 THRESHOLD = 0.8  # sanity cho lát cắt verify (KHÔNG phải KPI PRD)

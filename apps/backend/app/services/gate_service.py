@@ -34,6 +34,7 @@ _INTENT_ORDER = [
     "payment",
     "return_exchange_policy",
     "membership",
+    "store_information",
     "greeting",
     "refund",
     "exchange",

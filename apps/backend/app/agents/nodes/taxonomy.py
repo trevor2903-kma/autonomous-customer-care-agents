@@ -43,6 +43,11 @@ TAXONOMY: dict[str, dict] = {
         "examples": ["Đăng ký thành viên như thế nào?", "Điểm tích luỹ của em dùng sao ạ?", "Thành viên có ưu đãi gì không?"],
         "entities": [],
     },
+    "store_information": {
+        "description": "Khách hỏi VỀ CỬA HÀNG — giờ mở cửa/hỗ trợ, địa chỉ, hotline, fanpage, kênh liên hệ, nhận tại cửa hàng.",
+        "examples": ["Cửa hàng mình mấy giờ đóng cửa vậy?", "Shop có hotline không ạ?", "Địa chỉ cửa hàng ở đâu?"],
+        "entities": [],
+    },
     "return_exchange_policy": {
         "description": (
             "Khách HỎI CHÍNH SÁCH đổi/trả/hoàn tiền — điều kiện, thời hạn, quy trình, ai chịu phí; "

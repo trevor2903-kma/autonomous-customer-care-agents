@@ -19,14 +19,15 @@ duyệt → tách frontmatter → chunk theo section → embed vào Qdrant (**Re
 ## Tập intent (khớp 1-1 với enum `Intent` trong code — CODE là nguồn chuẩn)
 Thông tin — không nhạy cảm → tự trả lời:
   `product_price` · `product_information` · `size_consulting` · `shipping` · `order_status` ·
-  `promotion` · `payment` · `membership` · `return_exchange_policy` · `greeting`
+  `promotion` · `payment` · `membership` · `return_exchange_policy` · `store_information` · `greeting`
 Giao dịch — nhạy cảm → qua gate / duyệt nháp:
   `refund` · `exchange` · `complaint`
 Ngoài phạm vi:
   `other`
 
 > So với bản 10 intent cũ, thêm: `greeting` (sửa lỗi "xin chào"→out_of_domain), `return_exchange_policy`
-> (HỎI chính sách — sửa lỗi bị dán `refund` rồi bắt duyệt), `payment`, `membership` (hợp với shop kiểu Uniqlo).
+> (HỎI chính sách — sửa lỗi bị dán `refund` rồi bắt duyệt), `payment`, `membership` (hợp với shop kiểu Uniqlo),
+> `store_information` (giờ mở cửa/địa chỉ/hotline — cùng lỗi escalate oan như "xin chào").
 > `greeting` KHÔNG có file KB — Agent 4 trả câu chào mẫu.
 
 ## ⚠️ Giá trị đang là MẪU — thay theo shop của bạn

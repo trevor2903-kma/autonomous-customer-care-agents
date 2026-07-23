@@ -51,7 +51,7 @@ def _system_prompt() -> str:
         "Quy tắc:\n"
         "1) intent PHẢI thuộc taxonomy. Chào hỏi/cảm ơn/tạm biệt/gọi shop → 'greeting'. CHỈ chọn 'other' khi câu\n"
         "   THẬT SỰ ngoài phạm vi shop quần áo (vé xem phim, thời tiết, spam). Câu về sản phẩm/giá/size/đơn/ship/\n"
-        "   thanh toán/thành viên/khuyến mãi LUÔN thuộc intent nghiệp vụ tương ứng.\n"
+        "   thanh toán/thành viên/khuyến mãi/giờ mở cửa–địa chỉ–hotline LUÔN thuộc intent nghiệp vụ tương ứng.\n"
         "   Phân biệt HỎI CHÍNH SÁCH vs YÊU CẦU THỰC: hỏi điều kiện/thời hạn/quy trình đổi–trả–hoàn tiền (chưa\n"
         "   gắn đơn cụ thể của khách) → 'return_exchange_policy'; khách YÊU CẦU trả hàng/hoàn tiền cho đơn của họ\n"
         "   → 'refund'; YÊU CẦU đổi size/màu cho đơn của họ → 'exchange'.\n"

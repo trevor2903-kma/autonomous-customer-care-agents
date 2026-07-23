@@ -45,6 +45,7 @@ _PRIORITY_SEVERITY: dict[str, tuple[Priority, Severity]] = {
     "promotion": (Priority.LOW, Severity.LOW),
     "payment": (Priority.LOW, Severity.LOW),
     "membership": (Priority.LOW, Severity.LOW),
+    "store_information": (Priority.LOW, Severity.LOW),
     "return_exchange_policy": (Priority.LOW, Severity.LOW),  # HỎI chính sách = tra cứu, không phải ca giao dịch
     "greeting": (Priority.LOW, Severity.LOW),
     "other": (Priority.LOW, Severity.LOW),
