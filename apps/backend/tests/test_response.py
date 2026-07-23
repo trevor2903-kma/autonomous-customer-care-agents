@@ -102,6 +102,67 @@ async def test_generate_reply_llm_error_fallback(monkeypatch: pytest.MonkeyPatch
     assert "hallucination_risk" in r["uncertainty_flags"]
 
 
+async def test_greeting_returns_canned_reply_before_fallback_brake(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nhánh greeting phải chạy TRƯỚC phanh 'rag_contexts rỗng → FALLBACK'.
+
+    Agent 2 (P4) cố ý không retrieve cho greeting, nên nếu phanh chạy trước thì khách chào lại nhận câu
+    'xin chuyển nhân viên hỗ trợ' — sai. Cũng KHÔNG gọi LLM: câu chào không có gì để grounded.
+    """
+    monkeypatch.setattr(resp.settings, "llm_api_key", "sk-test")
+    calls = {"n": 0}
+
+    def _spy() -> object:
+        calls["n"] += 1
+        raise AssertionError("KHÔNG được gọi LLM cho lượt xã giao")
+
+    monkeypatch.setattr(resp, "get_openai", _spy)
+    r = await resp.generate_reply("xin chào shop", "greeting", {}, [])
+    assert calls["n"] == 0
+    assert r["reply"] == resp.GREETING_REPLY
+    assert r["reply"] != resp.FALLBACK_REPLY
+    assert r["uncertainty_flags"] == []  # KHÔNG hallucination_risk
+
+
+async def test_non_greeting_empty_context_still_hits_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Phanh grounding KHÔNG bị nới: chỉ greeting được miễn, intent khác rỗng context vẫn FALLBACK.
+    monkeypatch.setattr(resp.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(resp, "get_openai", lambda: _FakeClient("bịa"))
+    r = await resp.generate_reply("phí ship bao nhiêu", "shipping", {}, [])
+    assert r["reply"] == resp.FALLBACK_REPLY
+    assert "hallucination_risk" in r["uncertainty_flags"]
+
+
+def test_system_prompt_carries_facts_and_action_grounding() -> None:
+    prompt = resp._system_prompt()
+    facts = resp.load_facts()
+    assert facts, "facts.md phải đọc được"
+    assert "SỰ THẬT CỬA HÀNG" in prompt and facts in prompt  # luôn-bật, không phụ thuộc retrieval
+    assert "BÁM QUY TRÌNH" in prompt
+    assert "GIỚI HẠN HÀNH ĐỘNG" in prompt and "hoàn tiền" in prompt
+
+
+def test_facts_not_indexed_but_available_to_agent4() -> None:
+    # facts.md CỐ Ý không vào Qdrant (ingest bỏ file ở gốc) — nó chỉ sống trong prompt Agent 4.
+    from app.services.rag_service import load_kb_documents
+
+    assert "facts.md" not in {d.source for d in load_kb_documents()}
+    assert "miễn phí cho đơn từ 500.000đ" in resp.load_facts().lower()
+
+
+def test_context_block_labels_case_as_process() -> None:
+    block = resp._context_block(
+        [
+            {"text": "1. Hỏi mã đơn.", "source": "case/don-giao-cham.md", "type": "case", "title": "Đơn giao chậm"},
+            {"text": "Phí ship 30.000đ.", "source": "reference/chinh-sach-van-chuyen.md", "type": "reference",
+             "title": "Chính sách vận chuyển"},
+            {"text": "không nhãn", "source": "x.md"},
+        ]
+    )
+    assert "[Đoạn 1 · Quy trình xử lý · Đơn giao chậm · nguồn: case/don-giao-cham.md]" in block
+    assert "[Đoạn 2 · Tra cứu · Chính sách vận chuyển · nguồn: reference/chinh-sach-van-chuyen.md]" in block
+    assert "[Đoạn 3 · Tri thức · nguồn: x.md]" in block  # thiếu type/title vẫn không vỡ
+
+
 async def test_response_node_is_single_speaker(monkeypatch: pytest.MonkeyPatch) -> None:
     # response_node là node DUY NHẤT ghi tin AI: messages[sender=ai] + result.reply + REPLIED.
     async def fake_gen(query, intent, entities, rag_contexts, history=None):  # type: ignore[no-untyped-def]
