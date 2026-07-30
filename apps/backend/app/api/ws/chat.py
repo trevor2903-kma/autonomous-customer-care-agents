@@ -180,15 +180,22 @@ async def _audit_turn(
     `conversation_id` lấy từ `st.conv_id` (ca THẬT trong DB): WS gọi `run_pipeline` không truyền
     conversation_id nên `final["conversation_id"]` chỉ là thread_id ngẫu nhiên của checkpointer.
     `record_turn` tự nuốt lỗi (bất biến §1) → không cần try/except ở đây.
+
+    **`asyncio.shield`**: khách đóng tab NGAY sau khi nhận trả lời → WS đứt → task reader bị huỷ giữa
+    chừng. Không shield thì chính lượt vừa xong mất dòng audit, và mọi KPI lệch âm thầm (đo được:
+    lượt cuối của kịch bản verify biến mất khỏi audit_log). Shield cho phép việc ghi chạy nốt sau khi
+    task bị huỷ.
     """
-    await audit_service.record_turn(
-        turn_id=turn_id,
-        conversation_id=st.conv_id,
-        customer_text=customer_text,
-        final=final,
-        reply=reply,
-        outcome=outcome,
-        total_ms=total_ms,
+    await asyncio.shield(
+        audit_service.record_turn(
+            turn_id=turn_id,
+            conversation_id=st.conv_id,
+            customer_text=customer_text,
+            final=final,
+            reply=reply,
+            outcome=outcome,
+            total_ms=total_ms,
+        )
     )
 
 
@@ -272,19 +279,20 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
             if final is not None and await gate_holds(status_out, final.get("intent")):
                 await websocket.send_json({"type": "pending"})  # gỡ typing ở FE (KHÔNG gửi nội dung — sole-egress)
                 total_ms = _elapsed_ms(started)  # chốt NGAY khi khách nhận tín hiệu (đúng nghĩa NFR-1)
+                # Audit NGAY sau tín hiệu cho khách: càng để sau càng nhiều cơ hội bị huỷ vì khách đóng tab.
+                await _audit_turn(st, turn_id, msg, final, reply, TurnOutcome.HELD_FOR_APPROVAL, total_ms)
                 await _persist_status(st.conv_id, ConversationStatus.PENDING_APPROVAL)
                 await _persist_escalation_card(st.conv_id, final, msg, suggested_reply=reply)
-                await _audit_turn(st, turn_id, msg, final, reply, TurnOutcome.HELD_FOR_APPROVAL, total_ms)
                 continue  # nháp giữ trong card, chờ admin duyệt/sửa/gửi
 
             await websocket.send_json({"type": "reply", "content": reply})
             total_ms = _elapsed_ms(started)  # đo tới lúc khách NHẬN reply, chưa tính persist phía sau
+            await _audit_turn(st, turn_id, msg, final, reply, _outcome_of(status_out, final), total_ms)
             await _persist_message(st.conv_id, MessageSender.AI, reply)
             await _persist_status(st.conv_id, status_out)
             # Handoff → EscalationCard vào hàng đợi admin (08b). Chỉ khi pipeline chạy xong (final có).
             if status_out == ConversationStatus.IN_HUMAN_QUEUE and final is not None:
                 await _persist_escalation_card(st.conv_id, final, msg)
-            await _audit_turn(st, turn_id, msg, final, reply, _outcome_of(status_out, final), total_ms)
     except WebSocketDisconnect:
         log.info("customer WS disconnected (conv=%s)", st.conv_id)
 
