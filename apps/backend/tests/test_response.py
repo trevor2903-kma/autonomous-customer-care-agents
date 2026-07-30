@@ -141,6 +141,18 @@ def test_system_prompt_carries_facts_and_action_grounding() -> None:
     assert "GIỚI HẠN HÀNH ĐỘNG" in prompt and "hoàn tiền" in prompt
 
 
+def test_system_prompt_forbids_absence_assertion() -> None:
+    """Grounding HAI CHIỀU: cấm bịa *có*, VÀ cấm suy diễn *không có* từ chỗ nguồn im lặng.
+
+    KB im lặng về "giao đi Mỹ" chỉ nghĩa là KB chưa nói — trả lời "shop không giao đi Mỹ" là bịa một
+    chính sách theo chiều ngược lại (đo được ở docs/rag-refactor-results.md §5).
+    """
+    prompt = resp._system_prompt()
+    assert "KHÔNG SUY DIỄN VẮNG MẶT" in prompt
+    assert "IM LẶNG" in prompt
+    assert "NÓI RÕ" in prompt  # chỉ được nói "không có" khi nguồn nói rõ
+
+
 def test_facts_not_indexed_but_available_to_agent4() -> None:
     # facts.md CỐ Ý không vào Qdrant (ingest bỏ file ở gốc) — nó chỉ sống trong prompt Agent 4.
     from app.services.rag_service import load_kb_documents

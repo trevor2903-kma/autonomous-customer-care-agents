@@ -6,6 +6,9 @@
   lịch sự + cờ `hallucination_risk`. (Phanh này TẠM gánh vai an toàn thay Decision Engine/Agent 3 — ROADMAP 05.)
 - **Grounding cả HÀNH ĐỘNG**: chỉ được hứa việc hệ thống LÀM ĐƯỢC. Chưa tra được đơn / chưa hoàn được tiền →
   nói sẽ chuyển nhân viên, KHÔNG nói "đã hoàn tiền/đã kiểm tra đơn cho bạn".
+- **Grounding HAI CHIỀU**: cấm bịa *có* (đã có) VÀ cấm suy diễn *không có* từ chỗ nguồn im lặng. KB không nhắc
+  tới "giao đi Mỹ" chỉ nghĩa là KB chưa nói, KHÔNG phải shop không giao — trả lời "không giao" là bịa một chính
+  sách theo hướng ngược lại (đo được ở `docs/rag-refactor-results.md` §5).
 - `greeting` = lượt xã giao, KHÔNG phát biểu sự thật nào → câu chào mẫu, KHÔNG gọi LLM, KHÔNG cờ. Nhánh này
   chạy **TRƯỚC** phanh "rag_contexts rỗng → FALLBACK" (Agent 2 đã cố ý không retrieve — plan §3-P4/P5).
 - `response_node` là **NODE DUY NHẤT** được ghi tin nhắn AI vào `state["messages"]` (PRD §7.4).
@@ -82,6 +85,15 @@ def _system_prompt() -> str:
         "CHỈ dựa trên SỰ THẬT CỬA HÀNG và các ĐOẠN TRI THỨC được cung cấp — TUYỆT ĐỐI KHÔNG bịa thông tin "
         "ngoài các nguồn đó. Nếu không đủ để trả lời chắc chắn, hãy nói sẽ chuyển câu hỏi tới nhân viên hỗ "
         "trợ, KHÔNG được bịa. Không nhắc tới 'đoạn tri thức'/'context' trong câu trả lời.\n"
+        "KHÔNG SUY DIỄN VẮNG MẶT: nguồn IM LẶNG về một điều KHÔNG có nghĩa là điều đó không tồn tại. CHỈ được "
+        "nói 'không có / không hỗ trợ / không áp dụng' khi nguồn NÓI RÕ như vậy. Nếu nguồn không nhắc tới thứ "
+        "khách hỏi, viết 'shop chưa có THÔNG TIN về <điều đó>, em sẽ chuyển nhân viên xác nhận giúp anh/chị'. "
+        "Phân biệt: 'shop chưa có thông tin về việc giao đi Mỹ' (ĐÚNG) ≠ 'shop chưa giao đi Mỹ' / 'shop không "
+        "có chi nhánh ở Huế' / 'shop không có trả góp' (SAI — đang bịa một chính sách theo chiều phủ định).\n"
+        "DANH SÁCH TRONG NGUỒN LÀ MỞ: khi nguồn liệt kê (phương thức thanh toán, khu vực giao, kênh liên hệ, "
+        "bảng size…) mà KHÔNG kèm chữ 'chỉ'/'duy nhất', đó là những thứ ĐÃ BIẾT, KHÔNG phải danh sách ĐÓNG. "
+        "Thứ không nằm trong danh sách là CHƯA BIẾT, KHÔNG phải KHÔNG CÓ — được phép nêu các lựa chọn đã biết, "
+        "nhưng KHÔNG được kết luận thứ khách hỏi là không tồn tại.\n"
         "BÁM QUY TRÌNH: nếu có đoạn '[Quy trình xử lý]', làm theo ĐÚNG THỨ TỰ các bước — hỏi thông tin còn "
         "thiếu ở bước hiện tại (vd mã đơn) TRƯỚC, mỗi lượt chỉ hỏi 1–2 điều, KHÔNG nhảy tới kết luận.\n"
         "GIỚI HẠN HÀNH ĐỘNG: bạn chỉ TRẢ LỜI, không thao tác được trên hệ thống. TUYỆT ĐỐI KHÔNG nói đã tra "
