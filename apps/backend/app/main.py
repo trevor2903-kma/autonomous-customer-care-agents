@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .agents.nodes.response import load_facts
-from .api.routes import admin, agents, auth, conversations, health, me, rag
+from .api.routes import admin, agents, auth, conversations, health, me, rag, reports
 from .api.ws import admin as admin_ws
 from .api.ws import chat
 from .core.config import settings
@@ -58,6 +58,9 @@ app.include_router(me.router, prefix="/api")
 app.include_router(conversations.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(rag.router, prefix="/api")
+# reports TRƯỚC admin: cả hai cùng gốc /api/admin — router cụ thể hơn (/admin/reports/*) phải đăng ký
+# trước để không bị route động của admin nuốt mất.
+app.include_router(reports.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(chat.router)
 app.include_router(admin_ws.router)

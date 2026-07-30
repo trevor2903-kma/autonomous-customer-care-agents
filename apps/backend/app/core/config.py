@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     # Intent Classifier (PRD §7.1): 2 ứng viên RAG đầu chênh score < margin -> cờ ambiguous_intent.
     intent_ambiguous_margin: float = 0.05
 
+    # ── Báo cáo / observability (slice obs) ───────────────────────────────────
+    # Ngưỡng độ trễ NFR-1 (ms): tab Báo cáo tính "% lượt ≤ ngưỡng".
+    nfr_latency_ms: int = 5000
+    # Lệch giờ để quy "hôm nay" (VN = UTC+7). Dùng offset thay tên vùng: zoneinfo trên Windows cần
+    # thêm gói `tzdata`, không đáng cho một mốc nửa đêm.
+    reports_tz_offset_hours: int = 7
+
     # ── Gate duyệt nháp (08a, PRD §9) ─────────────────────────────────────────
     # Intent NHẠY CẢM (csv): auto_reply vẫn PHẢI admin duyệt trước khi gửi → PENDING_APPROVAL (giữ nháp Agent 4).
     # human_handoff LUÔN escalate (bất biến FR-GATE-2) — gate chỉ đổi DELIVERY của ca auto_reply.
