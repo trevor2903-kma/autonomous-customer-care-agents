@@ -17,6 +17,26 @@ import { ApprovalPanel } from "@/components/admin/ApprovalPanel";
 import { EscalationCardPanel } from "@/components/admin/EscalationCardPanel";
 import { StatusPill } from "@/components/admin/StatusPill";
 
+function CloseCaseIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="9" />
+      <line x1="9" y1="9" x2="15" y2="15" />
+      <line x1="15" y1="9" x2="9" y2="15" />
+    </svg>
+  );
+}
+
 // Màn chi tiết admin (08b/08c/08a): EscalationCard + lịch sử + tiếp quản TƯỜNG MINH + trả lời + duyệt nháp.
 // MỞ = CHỈ XEM (fix 08c): ca vẫn nằm trong hàng đợi cho tới khi bấm "Tiếp quản".
 
@@ -163,12 +183,15 @@ export default function AdminConversationPage({ params }: { params: { conversati
         </div>
         <div className="flex flex-none items-center gap-2">
           <StatusPill status={status} size="md" />
+          {/* Hành động phá huỷ/thoát → tông cảnh báo (design §2), khác nút xây dựng (olive). */}
           {status !== "RESOLVED" && (
             <button
               onClick={() => act(() => resolveConversation(id), "RESOLVED")}
               disabled={busy}
-              className="whitespace-nowrap rounded-[8px] border border-line bg-white px-3 py-1.5 text-[13px] text-muted hover:bg-cream disabled:opacity-50 mob:hidden"
+              title="Đóng ca hội thoại này"
+              className="inline-flex items-center gap-[7px] whitespace-nowrap rounded-[8px] border border-terracotta-btn-line bg-terracotta-btn px-[13px] py-[7px] text-[12.5px] font-semibold text-terracotta transition-colors hover:border-terracotta-btn-line-hover hover:bg-terracotta-btn-hover disabled:opacity-50 mob:hidden"
             >
+              <CloseCaseIcon />
               Đóng ca
             </button>
           )}
@@ -226,8 +249,9 @@ export default function AdminConversationPage({ params }: { params: { conversati
             <button
               onClick={() => act(() => resolveConversation(id), "RESOLVED")}
               disabled={busy}
-              className="hidden whitespace-nowrap rounded-[8px] border border-line bg-white px-3 py-2 text-[13px] text-muted disabled:opacity-50 mob:inline-flex"
+              className="hidden items-center gap-[7px] whitespace-nowrap rounded-[8px] border border-terracotta-btn-line bg-terracotta-btn px-[13px] py-2 text-[12.5px] font-semibold text-terracotta disabled:opacity-50 mob:inline-flex"
             >
+              <CloseCaseIcon />
               Đóng ca
             </button>
           )}

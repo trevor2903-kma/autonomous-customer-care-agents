@@ -8,7 +8,9 @@ const config: Config = {
   theme: {
     extend: {
       // Ngưỡng mobile của design (max-width:820px) → dùng như `mob:hidden`, `mob:w-full`.
-      screens: { mob: { max: "820px" } },
+      // `desk` = phần bù (min-width:821px): chế độ thu gọn sidebar CHỈ áp dụng trên desktop —
+      // ở mobile sidebar là drawer off-canvas, thu gọn thành rail 78px sẽ vô nghĩa.
+      screens: { mob: { max: "820px" }, desk: { min: "821px" } },
       colors: {
         page: "#FBFAF7",
         panel: "#FDFCFA",
@@ -25,6 +27,13 @@ const config: Config = {
           soft: "#F6E7DF",
           line: "#EAD4C7",
           ink: "#8A4E33",
+          // Tông NÚT hành động phá huỷ/thoát (Đăng xuất · Đóng ca · Xoá) — đo từ HTML design:
+          // nền #FDF3EF, viền #E8C4B6, hover nền #F9E7DF / viền #DFAF9C. KHÁC bộ soft/line ở trên
+          // (dùng cho badge/tag), đừng lẫn.
+          btn: "#FDF3EF",
+          "btn-line": "#E8C4B6",
+          "btn-hover": "#F9E7DF",
+          "btn-line-hover": "#DFAF9C",
         },
         gold: { DEFAULT: "#B98534", soft: "#F7EFDD" },
         steel: { DEFAULT: "#42536B", "2": "#5A6B84", soft: "#E8ECF3", line: "#D4DAE6" },

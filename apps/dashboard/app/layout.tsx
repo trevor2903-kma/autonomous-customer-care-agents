@@ -24,18 +24,29 @@ const serif = Playfair_Display({
   display: "swap",
 });
 
+// Favicon + icon PWA sinh từ nhãn "T" bằng `scripts/gen_favicon.py` (xem docstring script để chạy lại).
 export const metadata: Metadata = {
   title: "ThriftYourStyle — Chăm sóc khách hàng",
   description: "Hệ thống chăm sóc khách hàng tự trị — Multi-Agent AI",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "ThriftYourStyle CSKH", statusBarStyle: "default" },
-  icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-16.png", type: "image/png", sizes: "16x16" },
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-48.png", type: "image/png", sizes: "48x48" },
+      { url: "/icon-256.png", type: "image/png", sizes: "256x256" },
+    ],
+    // iOS KHÔNG đọc SVG và bỏ qua `icon` thường khi cài lên màn hình chính → phải có apple-touch riêng.
+    apple: [{ url: "/apple-touch-icon.png", sizes: "512x512" }],
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#FBFAF7",
+  themeColor: "#F9F7E7", // kem ấm (design §2) — màu thanh trạng thái khi cài PWA
 };
 
 export default function RootLayout({

@@ -179,7 +179,7 @@ export default function GatePage() {
           {/* Slider READ-ONLY (P3-b hoãn) */}
           <div className="rounded-[12px] border border-line bg-white px-[18px] py-4 shadow-soft">
             <div className="flex items-center justify-between">
-              <h2 className="text-[14px] font-semibold text-ink">Ngưỡng confidence chuyển người</h2>
+              <h2 className="text-[14px] font-semibold text-ink">Ngưỡng độ tin cậy tri thức</h2>
               <span className="font-mono text-[14px] font-semibold text-olive">
                 {cfg.retrieval_threshold.toFixed(2)}
               </span>
@@ -191,7 +191,8 @@ export default function GatePage() {
               />
             </div>
             <p className="mt-2.5 text-[12px] leading-[1.5] text-dim">
-              Dưới ngưỡng → Decision Engine đặt action = human_handoff · điều chỉnh ở phiên bản sau.
+              Tri thức truy hồi được có điểm dưới ngưỡng này → hệ thống chuyển ca cho nhân viên thay vì
+              tự trả lời · chỉnh được ở phiên bản sau.
             </p>
           </div>
         </div>

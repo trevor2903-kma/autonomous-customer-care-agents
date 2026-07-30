@@ -59,13 +59,14 @@ function DocRow({ doc, onDelete, deleting }: { doc: KnowledgeDocument; onDelete:
           <br />
           <span className="text-[11px]">{fmtDate(doc.indexed_at)}</span>
         </span>
+        {/* Hành động phá huỷ → tông cảnh báo (design §2). Chỉ doc ad-hoc mới xoá được. */}
         {!doc.canonical && (
           <button
             onClick={onDelete}
             disabled={deleting}
-            className="rounded-[7px] border border-line px-2.5 py-1 text-[12px] text-dim transition-colors hover:border-terracotta-line hover:text-terracotta disabled:opacity-50"
+            className="rounded-[7px] border border-terracotta-btn-line bg-terracotta-btn px-2.5 py-1 text-[12px] font-medium text-terracotta transition-colors hover:border-terracotta-btn-line-hover hover:bg-terracotta-btn-hover disabled:opacity-50"
           >
-            Xoá
+            {deleting ? "Đang xoá…" : "Xoá"}
           </button>
         )}
       </div>

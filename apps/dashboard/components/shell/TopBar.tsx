@@ -32,12 +32,16 @@ export function TopBar() {
               {user.role === "admin" ? "Quản trị viên" : "Khách hàng"}
             </span>
           </div>
-          <button
-            onClick={onLogout}
-            className="rounded-[7px] border border-line px-3 py-1.5 text-[12.5px] text-muted hover:bg-cream"
-          >
-            Đăng xuất
-          </button>
+          {/* Admin có nút Đăng xuất riêng trong khối người dùng ở sidebar (design) — không đặt hai chỗ.
+              Khách không có sidebar nên vẫn cần nút ở đây. */}
+          {user.role !== "admin" && (
+            <button
+              onClick={onLogout}
+              className="rounded-[7px] border border-terracotta-btn-line bg-terracotta-btn px-3 py-1.5 text-[12.5px] font-medium text-terracotta transition-colors hover:border-terracotta-btn-line-hover hover:bg-terracotta-btn-hover"
+            >
+              Đăng xuất
+            </button>
+          )}
         </div>
       ) : (
         <Link href="/login" className="text-[12.5px] text-dim hover:text-muted mob:hidden">
