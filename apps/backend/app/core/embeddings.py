@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from openai import AsyncOpenAI
 
+from . import tracing
 from .config import settings
 
 _client: AsyncOpenAI | None = None
@@ -33,7 +34,12 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
     """Embed danh sách chuỗi trong 1 request (giữ nguyên thứ tự đầu vào)."""
     if not texts:
         return []
-    resp = await _get_client().embeddings.create(model=settings.embedding_model, input=texts)
+    # Tracing (obs P3): embedding cũng tốn token/tiền — không đo thì bức tranh chi phí thiếu một mảng.
+    with tracing.observe_llm(
+        "embeddings", model=settings.embedding_model, metadata={"inputs": len(texts)}
+    ) as span:
+        resp = await _get_client().embeddings.create(model=settings.embedding_model, input=texts)
+        span.finish(usage=getattr(resp, "usage", None))
     return [item.embedding for item in resp.data]
 
 

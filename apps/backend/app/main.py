@@ -15,6 +15,7 @@ from .agents.nodes.response import load_facts
 from .api.routes import admin, agents, auth, conversations, health, me, rag, reports
 from .api.ws import admin as admin_ws
 from .api.ws import chat
+from .core import tracing
 from .core.config import settings
 from .core.embeddings import close_openai
 from .core.logging import configure_logging, get_logger
@@ -30,7 +31,9 @@ async def lifespan(app: FastAPI):
     log.info("Backend startup — ENV=%s ENABLE_LLM=%s", settings.env, settings.enable_llm)
     # Nạp facts.md 1 lần lúc khởi động (plan §2.6) — sau đó Agent 4 dùng bản cache, không đọc đĩa mỗi lượt.
     log.info("Facts cửa hàng: %d ký tự (knowledge/facts.md)", len(load_facts()))
+    log.info("Langfuse (observability cấp LLM): %s", "BẬT" if tracing.enabled() else "tắt (thiếu key)")
     yield
+    tracing.flush()  # đẩy nốt sự kiện còn trong hàng đợi; no-op nếu tracing tắt
     await close_redis()
     await close_qdrant()
     await close_openai()

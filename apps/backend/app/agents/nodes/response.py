@@ -23,6 +23,7 @@ from typing import Any
 
 import frontmatter
 
+from ...core import tracing
 from ...core.config import settings
 from ...core.embeddings import get_openai
 from ...core.logging import get_logger
@@ -146,15 +147,22 @@ async def generate_reply(
         f"ĐOẠN TRI THỨC:\n{_context_block(contexts)}"
     )
     try:
-        resp = await get_openai().chat.completions.create(
+        with tracing.observe_llm(
+            "agent4.generate",
             model=settings.llm_model,
-            messages=[
-                {"role": "system", "content": _system_prompt()},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0,
-        )
-        reply = (resp.choices[0].message.content or "").strip()
+            input=query,
+            metadata={"intent": intent, "contexts": len(contexts)},
+        ) as span:
+            resp = await get_openai().chat.completions.create(
+                model=settings.llm_model,
+                messages=[
+                    {"role": "system", "content": _system_prompt()},
+                    {"role": "user", "content": user_msg},
+                ],
+                temperature=0,
+            )
+            reply = (resp.choices[0].message.content or "").strip()
+            span.finish(output=reply, usage=getattr(resp, "usage", None))
     except Exception as exc:  # noqa: BLE001 — LLM lỗi → fallback (đừng ném, đừng bịa) → pipeline không rớt.
         log.warning("response.llm failed -> fallback: %s", exc)
         return {"reply": FALLBACK_REPLY, "uncertainty_flags": ["hallucination_risk"]}

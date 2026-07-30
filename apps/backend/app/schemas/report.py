@@ -26,6 +26,8 @@ class EscalationReasonOut(BaseModel):
 class SummaryOut(BaseModel):
     range: str
     since: datetime | None  # None = toàn bộ lịch sử
+    # Langfuse là BỔ TRỢ: FE chỉ hiện nút "Xem trace LLM" khi có cấu hình, còn số liệu vẫn từ audit_log.
+    langfuse_url: str | None = None
     turns: int
     outcomes: dict[str, int]
     auto_reply_pct: float

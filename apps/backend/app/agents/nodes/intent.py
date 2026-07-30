@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ...core import tracing
 from ...core.config import settings
 from ...core.embeddings import get_openai
 from ...core.logging import get_logger
@@ -77,16 +78,19 @@ async def _classify_llm(
 ) -> dict[str, Any]:
     """LLM phân loại intent + trích entities từ message + taxonomy (KHÔNG dùng RAG). Lịch sử (nếu có) giúp
     hiểu tham chiếu đa lượt (vd "thế còn size L?" → cùng sản phẩm ở lượt trước)."""
-    resp = await get_openai().chat.completions.create(
-        model=settings.llm_model,
-        messages=[
-            {"role": "system", "content": _system_prompt()},
-            {"role": "user", "content": f"{format_history(history, settings.history_window)}Câu khách: {text!r}"},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0,
-    )
-    data = json.loads(resp.choices[0].message.content or "{}")
+    with tracing.observe_llm("agent1.classify", model=settings.llm_model, input=text) as span:
+        resp = await get_openai().chat.completions.create(
+            model=settings.llm_model,
+            messages=[
+                {"role": "system", "content": _system_prompt()},
+                {"role": "user", "content": f"{format_history(history, settings.history_window)}Câu khách: {text!r}"},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        raw = resp.choices[0].message.content or "{}"
+        span.finish(output=raw, usage=getattr(resp, "usage", None))
+    data = json.loads(raw)
 
     flags: list[str] = []
     raw_intent = str(data.get("intent", "")).strip()

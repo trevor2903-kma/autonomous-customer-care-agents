@@ -12,6 +12,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from ...core import tracing
 from ...models.enums import AuditNode
 from ...schemas.report import (
     IntentRowOut,
@@ -50,7 +51,12 @@ def _item(view) -> TurnListItemOut:
 async def summary(range: str = _RANGE) -> SummaryOut:
     """KPI tổng: %auto/%duyệt/%chuyển người/%fallback · độ trễ avg/p50/p95 · %≤NFR-1 · lý do escalate."""
     turns = await report_service.fetch_turns(range)
-    return SummaryOut(range=range, since=report_service.range_start(range), **report_service.summarize(turns))
+    return SummaryOut(
+        range=range,
+        since=report_service.range_start(range),
+        langfuse_url=tracing.trace_url(),
+        **report_service.summarize(turns),
+    )
 
 
 @router.get("/by-intent", response_model=list[IntentRowOut])

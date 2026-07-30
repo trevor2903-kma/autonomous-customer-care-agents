@@ -20,6 +20,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ...agents.graph import run_pipeline
+from ...core import tracing
 from ...core.config import settings
 from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
@@ -270,6 +271,9 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
             # `turn_id` sinh Ở ĐÂY (không trong pipeline): lượt pipeline NÉM LỖI vẫn ghi audit được.
             turn_id = uuid.uuid4()
             started = time.perf_counter()
+            # Gắn ngữ cảnh lượt cho Langfuse (P3): trace LLM tra ngược được về `trc_…` ở tab Báo cáo.
+            # No-op nếu chưa cấu hình Langfuse.
+            tracing.set_turn(str(turn_id), str(st.conv_id) if st.conv_id else None)
             await websocket.send_json({"type": "typing"})
             history = await _load_history(st.conv_id)
             await _persist_message(st.conv_id, MessageSender.CUSTOMER, msg)

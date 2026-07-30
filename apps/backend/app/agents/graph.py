@@ -16,6 +16,7 @@ from uuid import uuid4
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from ..core import tracing
 from ..models.enums import ConversationStatus
 from .nodes.decision import decision_node
 from .nodes.intent import intent_node
@@ -151,4 +152,13 @@ async def run_pipeline(
         force_handoff=force_handoff,
         history=history,
     )
-    return await graph.ainvoke(state_in, config={"configurable": {"thread_id": thread_id}})
+    # Span GỐC cho Langfuse (obs P3): các lời gọi LLM/embedding bên trong lượt nằm lồng vào đây, nên
+    # xem được tổng độ trễ + chi phí của MỘT lượt. No-op nếu chưa cấu hình Langfuse.
+    with tracing.observe_turn(input_text) as span:
+        final = await graph.ainvoke(state_in, config={"configurable": {"thread_id": thread_id}})
+        span.finish(
+            output=(final.get("result") or {}).get("reply"),
+            metadata={"intent": final.get("intent"), "action": final.get("action"),
+                      "flags": final.get("uncertainty_flags") or []},
+        )
+        return final
