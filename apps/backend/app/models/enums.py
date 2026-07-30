@@ -111,3 +111,26 @@ class UserRole(StrEnum):
     # RBAC (slice 11 auth) — lưu dạng String ở cột user.role.
     ADMIN = "admin"
     CUSTOMER = "customer"
+
+
+class AuditNode(StrEnum):
+    # Giá trị cột `audit_log.node`: 4 node pipeline + 2 sự kiện BAO QUANH một lượt khách (observability).
+    CUSTOMER = "customer"  # nhận tin khách
+    INTENT = "intent"
+    KNOWLEDGE = "knowledge"
+    DECISION = "decision"
+    RESPONSE = "response"
+    DELIVERY = "delivery"  # kết cục giao (gửi thẳng / giữ nháp / chuyển người)
+
+
+class TurnOutcome(StrEnum):
+    """Kết cục GIAO của một lượt khách — nguồn của KPI %auto / %duyệt nháp / %chuyển người (PRD §9).
+
+    KHÁC `AgentAction` (quyết định của Agent 3): một lượt `auto_reply` vẫn có thể bị GATE giữ nháp,
+    nên phải đo kết cục THẬT chứ không đọc action.
+    """
+
+    SENT = "sent"  # gửi thẳng cho khách
+    HELD_FOR_APPROVAL = "held_for_approval"  # gate giữ nháp → PENDING_APPROVAL
+    QUEUED_FOR_HUMAN = "queued_for_human"  # handoff → IN_HUMAN_QUEUE
+    ERROR = "error"  # pipeline lỗi → câu xin lỗi

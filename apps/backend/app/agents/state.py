@@ -16,6 +16,9 @@ from typing import Annotated, Any, TypedDict
 class ConversationState(TypedDict, total=False):
     # ── Lõi điều phối ─────────────────────────────────────────────────────────
     conversation_id: str | None
+    # Khoá gom MỘT lượt khách cho audit_log (observability). CHỈ để quan sát — KHÔNG node nào
+    # được đọc nó để ra quyết định.
+    turn_id: str | None
     input: str
     # ĐẦU VÀO chỉ-đọc (KHÔNG reducer): lịch sử hội thoại các lượt TRƯỚC (từ DB) để hiểu ngữ cảnh đa lượt —
     # KHÁC `messages` (output lượt này). Lịch sử KHÔNG thay `rag_contexts` (phanh chống bịa còn nguyên). PRD §12.

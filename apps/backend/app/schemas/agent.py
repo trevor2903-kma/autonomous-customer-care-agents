@@ -12,6 +12,8 @@ class AgentTraceStep(BaseModel):
     confidence: float | None = None
     branch: str | None = None
     detail: dict[str, Any] = {}
+    duration_ms: int | None = None  # observability P1 (lớp bọc `_observed` đo)
+    flags: list[str] = []  # cờ MỚI của riêng node này (khác tập cờ gộp cuối lượt)
 
 
 class RunDemoResult(BaseModel):

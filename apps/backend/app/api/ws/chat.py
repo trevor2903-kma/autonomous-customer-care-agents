@@ -13,6 +13,7 @@ Hub IN-PROCESS 1 worker (Redis pub/sub đa-worker = sau, FR-ASYNC-7). Handoff �
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from typing import Any
 
@@ -23,8 +24,8 @@ from ...core.config import settings
 from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
 from ...models import User
-from ...models.enums import ConversationStatus, MessageSender, UserRole
-from ...services import conversation_service, escalation_service, gate_service
+from ...models.enums import ConversationStatus, MessageSender, TurnOutcome, UserRole
+from ...services import audit_service, conversation_service, escalation_service, gate_service
 from .auth import WS_AUTH_CLOSE_CODE, authenticate_websocket
 from .hub import hub
 
@@ -136,16 +137,59 @@ async def _load_status(conv_id: uuid.UUID | None) -> str | None:
 
 
 async def _run_pipeline_safe(
-    msg: str, history: list[dict[str, str]] | None
+    msg: str, history: list[dict[str, str]] | None, turn_id: uuid.UUID
 ) -> tuple[str | None, dict[str, Any] | None, str]:
     """Chạy pipeline → (status, final, reply). Lỗi → (None, None, _ERROR_REPLY), KHÔNG rớt WS."""
     try:
-        final = await run_pipeline(input_text=msg, history=history)
+        final = await run_pipeline(input_text=msg, history=history, turn_id=str(turn_id))
         reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
         return final.get("status"), final, reply
     except Exception as exc:  # noqa: BLE001 — lỗi pipeline → xin lỗi, KHÔNG rớt kết nối.
         log.warning("pipeline failed on WS message -> apology: %s", exc)
         return None, None, _ERROR_REPLY
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
+
+
+def _outcome_of(status_out: str | None, final: dict[str, Any] | None) -> str:
+    """Kết cục GIAO của lượt (hàm thuần) — nguồn KPI %auto/%chuyển người ở tab Báo cáo.
+
+    Đọc kết cục THẬT chứ không đọc `action` của Agent 3: ca `auto_reply` vẫn có thể bị gate giữ nháp
+    (nhánh đó tự gắn HELD_FOR_APPROVAL trước khi tới đây).
+    """
+    if final is None:
+        return TurnOutcome.ERROR
+    if status_out == ConversationStatus.IN_HUMAN_QUEUE:
+        return TurnOutcome.QUEUED_FOR_HUMAN
+    return TurnOutcome.SENT
+
+
+async def _audit_turn(
+    st: _CustomerSession,
+    turn_id: uuid.UUID,
+    customer_text: str,
+    final: dict[str, Any] | None,
+    reply: str,
+    outcome: str,
+    total_ms: int,
+) -> None:
+    """Ghi nhật ký lượt — gọi SAU khi khách đã nhận phản hồi nên không ảnh hưởng độ trễ khách thấy.
+
+    `conversation_id` lấy từ `st.conv_id` (ca THẬT trong DB): WS gọi `run_pipeline` không truyền
+    conversation_id nên `final["conversation_id"]` chỉ là thread_id ngẫu nhiên của checkpointer.
+    `record_turn` tự nuốt lỗi (bất biến §1) → không cần try/except ở đây.
+    """
+    await audit_service.record_turn(
+        turn_id=turn_id,
+        conversation_id=st.conv_id,
+        customer_text=customer_text,
+        final=final,
+        reply=reply,
+        outcome=outcome,
+        total_ms=total_ms,
+    )
 
 
 # ── Trạng thái 1 kết nối khách (P2) — ca hiện tại có thể ĐỔI khi ca cũ bị đóng ────
@@ -216,24 +260,31 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
                 )
                 continue
             # AI-active: pipeline đầy đủ. history = lượt TRƯỚC (nạp trước khi lưu tin hiện tại) — THEO CA.
+            # `turn_id` sinh Ở ĐÂY (không trong pipeline): lượt pipeline NÉM LỖI vẫn ghi audit được.
+            turn_id = uuid.uuid4()
+            started = time.perf_counter()
             await websocket.send_json({"type": "typing"})
             history = await _load_history(st.conv_id)
             await _persist_message(st.conv_id, MessageSender.CUSTOMER, msg)
-            status_out, final, reply = await _run_pipeline_safe(msg, history)
+            status_out, final, reply = await _run_pipeline_safe(msg, history, turn_id)
 
             # Gate động P3: auto_reply không "gửi thẳng" → GIỮ nháp (PENDING_APPROVAL), KHÔNG gửi thẳng cho khách.
             if final is not None and await gate_holds(status_out, final.get("intent")):
                 await websocket.send_json({"type": "pending"})  # gỡ typing ở FE (KHÔNG gửi nội dung — sole-egress)
+                total_ms = _elapsed_ms(started)  # chốt NGAY khi khách nhận tín hiệu (đúng nghĩa NFR-1)
                 await _persist_status(st.conv_id, ConversationStatus.PENDING_APPROVAL)
                 await _persist_escalation_card(st.conv_id, final, msg, suggested_reply=reply)
+                await _audit_turn(st, turn_id, msg, final, reply, TurnOutcome.HELD_FOR_APPROVAL, total_ms)
                 continue  # nháp giữ trong card, chờ admin duyệt/sửa/gửi
 
             await websocket.send_json({"type": "reply", "content": reply})
+            total_ms = _elapsed_ms(started)  # đo tới lúc khách NHẬN reply, chưa tính persist phía sau
             await _persist_message(st.conv_id, MessageSender.AI, reply)
             await _persist_status(st.conv_id, status_out)
             # Handoff → EscalationCard vào hàng đợi admin (08b). Chỉ khi pipeline chạy xong (final có).
             if status_out == ConversationStatus.IN_HUMAN_QUEUE and final is not None:
                 await _persist_escalation_card(st.conv_id, final, msg)
+            await _audit_turn(st, turn_id, msg, final, reply, _outcome_of(status_out, final), total_ms)
     except WebSocketDisconnect:
         log.info("customer WS disconnected (conv=%s)", st.conv_id)
 
@@ -260,7 +311,8 @@ async def _customer_ai_only(websocket: WebSocket) -> None:
         while True:
             msg = await websocket.receive_text()
             await websocket.send_json({"type": "typing"})
-            _, _, reply = await _run_pipeline_safe(msg, None)
+            # KHÔNG audit nhánh này: tới đây nghĩa là DB không dùng được, ghi audit chỉ tổ sinh log lỗi.
+            _, _, reply = await _run_pipeline_safe(msg, None, uuid.uuid4())
             await websocket.send_json({"type": "reply", "content": reply})
     except WebSocketDisconnect:
         log.info("customer WS (ai-only) disconnected")
