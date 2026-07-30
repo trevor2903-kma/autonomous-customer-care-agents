@@ -1,25 +1,21 @@
-import { AnalyzePanel } from "@/components/rag/AnalyzePanel";
-import { ClassifyTester } from "@/components/rag/ClassifyTester";
 import { DocumentsPanel } from "@/components/rag/DocumentsPanel";
 
-// Module Quản lý tri thức (RAG) trong vỏ admin (slice 11 P5) — PRD §17 Module 1.
-// Chuyển từ route riêng /rag vào cụm nav admin; khung + cuộn do AdminShell cấp.
+// Module Quản lý tri thức (RAG) trong vỏ admin — PRD §17 Module 1.
+// Hai panel dev ("Test Agent 1" + "Pipeline Inspector") đã GỠ ở slice obs P4: việc quan sát pipeline
+// nay là của tab Báo cáo, chạy trên lượt THẬT của khách thay vì câu test single-shot.
 export default function KnowledgePage() {
   return (
-    <div className="mx-auto w-full max-w-4xl px-6 py-8 mob:px-4">
+    <div className="mx-auto w-full max-w-4xl px-8 pb-12 pt-7 mob:px-4">
       <header className="mb-6">
         <h1 className="font-serif text-[27px] text-ink">Quản lý tri thức</h1>
-        <p className="mt-1 text-sm text-faint">
-          Kho tri thức cho Agent 2 (chính sách/FAQ/sản phẩm) → embed Qdrant · test Agent 1 (intent) &amp;
-          Agent 2 (truy hồi)
+        <p className="mt-1.5 max-w-[620px] text-[13.5px] leading-[1.55] text-faint">
+          Kho tri thức Agent 2 truy hồi để trả lời khách. Nguồn chân lý là thư mục{" "}
+          <code className="font-mono text-[12px] text-muted">knowledge/</code> trong repo — sửa tệp{" "}
+          <code className="font-mono text-[12px] text-muted">.md</code> rồi nạp lại.
         </p>
       </header>
 
-      <div className="grid gap-6">
-        <DocumentsPanel />
-        <ClassifyTester />
-        <AnalyzePanel />
-      </div>
+      <DocumentsPanel />
     </div>
   );
 }

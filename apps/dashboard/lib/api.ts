@@ -5,9 +5,7 @@ import type {
   ConversationListItem,
   Escalation,
   HealthStatus,
-  IntentClassification,
   MessageSender,
-  PipelineResult,
   RagInfo,
   RagUploadResult,
   RunDemoResult,
@@ -190,17 +188,6 @@ export async function deleteRagDocument(id: string): Promise<KnowledgeDocument> 
   return res.json();
 }
 
-// Agent 1 · Intent Classifier (PRD §7.1) — chỉ intent/entities, KHÔNG retrieval.
-export async function classifyMessage(message: string): Promise<IntentClassification> {
-  const res = await req("/api/agents/classify", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
-  if (!res.ok) throw new Error(`classify ${res.status}`);
-  return res.json();
-}
-
 // Agent 1 + Agent 2 · Knowledge Agent (PRD §7.2) — tách vai: intent/entities + truy hồi rag_contexts.
 export async function analyzeMessage(message: string): Promise<AnalyzeResult> {
   const res = await req("/api/agents/analyze", {
@@ -209,17 +196,6 @@ export async function analyzeMessage(message: string): Promise<AnalyzeResult> {
     body: JSON.stringify({ message }),
   });
   if (!res.ok) throw new Error(`analyze ${res.status}`);
-  return res.json();
-}
-
-// FULL pipeline (4 agent) cho inspector — quan sát Agent 3 (quyết định) + Agent 4 (reply). Single-shot, KHÔNG persist.
-export async function runPipeline(message: string): Promise<PipelineResult> {
-  const res = await req("/api/agents/pipeline", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
-  if (!res.ok) throw new Error(`pipeline ${res.status}`);
   return res.json();
 }
 
@@ -330,5 +306,125 @@ export interface CustomerThread {
 export async function getMyThread(): Promise<CustomerThread> {
   const res = await req("/api/me/thread");
   if (!res.ok) throw new Error(`thread ${res.status}`);
+  return res.json();
+}
+
+// ── Báo cáo hoạt động (slice obs P2/P4) — nguồn: audit_log, KHÔNG phải Langfuse ──
+export type ReportRange = "today" | "7d" | "all";
+export type ReportResult = "all" | "auto" | "draft" | "handoff";
+
+export interface ReportLatency {
+  avg_ms: number | null;
+  p50_ms: number | null;
+  p95_ms: number | null;
+  nfr_threshold_ms: number;
+  within_nfr_pct: number;
+  measured: number;
+}
+export interface EscalationReason {
+  flag: string;
+  count: number;
+  pct: number;
+}
+export interface ReportSummary {
+  range: string;
+  since: string | null;
+  langfuse_url: string | null; // null = chưa bật Langfuse → ẩn nút xem trace
+  turns: number;
+  outcomes: Record<string, number>;
+  auto_reply_pct: number;
+  draft_pct: number;
+  handoff_pct: number;
+  error_pct: number;
+  fallback_pct: number;
+  latency: ReportLatency;
+  escalation_reasons: EscalationReason[];
+}
+export interface IntentRow {
+  intent: string;
+  turns: number;
+  auto_pct: number;
+  draft_pct: number;
+  handoff_pct: number;
+  avg_latency_ms: number | null;
+  avg_confidence: number | null;
+}
+export interface TurnListItem {
+  turn_id: string;
+  short_id: string;
+  created_at: string;
+  conversation_id: string | null;
+  customer_text: string;
+  intent: string | null;
+  agent_action: string | null;
+  outcome: string;
+  duration_ms: number | null;
+  flags: string[];
+}
+export interface TurnList {
+  total: number;
+  limit: number;
+  offset: number;
+  items: TurnListItem[];
+}
+export interface TurnStep {
+  node: string;
+  action: string | null;
+  confidence: number | null;
+  duration_ms: number | null;
+  flags: string[];
+  escalation_reason: string | null;
+  detail: Record<string, unknown>;
+  created_at: string;
+}
+export interface TurnRagSource {
+  source: string | null;
+  type: string | null;
+  title: string | null;
+  score: number | null;
+}
+export interface TurnDetail {
+  turn_id: string;
+  short_id: string;
+  conversation_id: string | null;
+  created_at: string;
+  customer_text: string;
+  intent: string | null;
+  agent_action: string | null;
+  outcome: string;
+  priority: string | null;
+  severity: string | null;
+  escalation_reason: string | null;
+  total_ms: number | null;
+  steps: TurnStep[];
+  rag_sources: TurnRagSource[];
+  reply_preview: string | null;
+}
+
+export async function getReportSummary(range: ReportRange): Promise<ReportSummary> {
+  const res = await req(`/api/admin/reports/summary?range=${range}`);
+  if (!res.ok) await fail(res, `summary ${res.status}`);
+  return res.json();
+}
+
+export async function getReportByIntent(range: ReportRange): Promise<IntentRow[]> {
+  const res = await req(`/api/admin/reports/by-intent?range=${range}`);
+  if (!res.ok) await fail(res, `by-intent ${res.status}`);
+  return res.json();
+}
+
+export async function getReportTurns(
+  range: ReportRange,
+  result: ReportResult,
+  limit = 20,
+): Promise<TurnList> {
+  const res = await req(`/api/admin/reports/turns?range=${range}&result=${result}&limit=${limit}`);
+  if (!res.ok) await fail(res, `turns ${res.status}`);
+  return res.json();
+}
+
+export async function getTurnDetail(turnId: string): Promise<TurnDetail> {
+  const res = await req(`/api/admin/reports/turns/${turnId}`);
+  if (!res.ok) await fail(res, `turn ${res.status}`);
   return res.json();
 }

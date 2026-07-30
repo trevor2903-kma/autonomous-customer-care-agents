@@ -21,6 +21,7 @@ const NAV: NavItem[] = [
   { key: "approval", label: "Duyệt nháp", href: "/admin?filter=approval", count: "approval" },
   { key: "knowledge", label: "Quản lý tri thức", href: "/admin/knowledge" },
   { key: "gate", label: "Cấu hình Gate", href: "/admin/gate" },
+  { key: "reports", label: "Báo cáo", href: "/admin/reports" },
 ];
 
 function initials(name: string): string {
@@ -45,10 +46,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     approval: (escalations ?? []).filter((e) => e.status === "PENDING_APPROVAL").length,
   };
 
+  // Route TĨNH của module thắng route động /admin/[conversationId] — thêm module mới phải khai ở đây,
+  // nếu không nó bị coi là một hội thoại và rơi vào bố cục master-detail.
   const isKnowledge = pathname.startsWith("/admin/knowledge");
   const isGate = pathname.startsWith("/admin/gate");
-  const isModule = isKnowledge || isGate;
-  const activeKey = isGate ? "gate" : isKnowledge ? "knowledge" : filter;
+  const isReports = pathname.startsWith("/admin/reports");
+  const isModule = isKnowledge || isGate || isReports;
+  const activeKey = isReports ? "reports" : isGate ? "gate" : isKnowledge ? "knowledge" : filter;
   const moduleTitle = NAV.find((n) => n.key === activeKey)?.label ?? "Hội thoại";
 
   // Master-detail theo ROUTE (chỉ khi KHÔNG phải module): /admin = danh sách, /admin/{id} = chi tiết.

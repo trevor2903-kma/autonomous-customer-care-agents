@@ -50,7 +50,7 @@ suspend/resume, auth, deploy…) và slice tiếp theo (**08b**) → xem **`ROAD
 - **Async:** FastAPI BackgroundTasks (KHÔNG worker polling — phá free tier Upstash). human_handoff/clarification
   dùng suspend/resume (LangGraph interrupt + checkpointer — phase sau).
 - **Frontend:** Next.js 14 · **Tailwind thuần (KHÔNG shadcn/thư viện UI)** · TanStack Query. Theo pattern
-  component sẵn có (`ServiceStatus`, `AnalyzePanel`…), tái dùng `Badge`.
+  component sẵn có (`DocumentsPanel`, `admin/gate/page.tsx`, `components/reports/*`).
 - **Điện thoại (PWA):** chính web dashboard cài được lên màn hình chính cho Admin (Add to Home Screen) — một
   codebase web duy nhất, responsive; KHÔNG codebase mobile riêng.
 - **AI:** LLM provider cấu hình được (OpenAI/Claude/Gemini); embeddings `text-embedding-3-small`. **Đã bật**
@@ -111,7 +111,7 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
 ## Trạng thái hiện tại & ranh giới
 
 **Đã THẬT (đừng coi là stub):**
-- **Agent 1** Intent Classifier (`/api/agents/classify`) — taxonomy trong prompt, KHÔNG retrieval; entities LLM⊕regex.
+- **Agent 1** Intent Classifier — taxonomy trong prompt, KHÔNG retrieval; entities LLM⊕regex.
 - **Agent 2** Knowledge Agent/RAG (`/api/agents/analyze`) — truy hồi Qdrant → `rag_contexts` + `retrieval_confidence` + cờ.
 - **Agent 3** Decision Engine — **tất định**: route trên CỜ (`BLOCKING_FLAGS`), **KHÔNG blend confidence**;
   `RETRIEVAL_THRESHOLD` tách khỏi `confidence_threshold`; priority/severity theo intent. KHÔNG LLM/reasoning.
@@ -119,7 +119,9 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
   `hallucination_risk`). **Sole-egress:** phát cả câu trả lời lẫn `HANDOFF_NOTICE`.
 - **Persistence + bộ nhớ đa lượt:** lưu conversation + message (Postgres, guest sid); `history` (history_window) từ DB
   vào prompt Agent 1 + Agent 4 — **bộ nhớ từ DB**, `thread_id` sinh MỖI lượt (KHÔNG từ checkpointer).
-- **Realtime:** `/ws/chat` chạy đủ pipeline (typing → reply). **FE inspector `/rag`** xem đủ 4 agent. `ENABLE_LLM=true`.
+- **Realtime:** `/ws/chat` chạy đủ pipeline (typing → reply). `ENABLE_LLM=true`.
+- **Observability:** mỗi lượt khách ghi 6 dòng `audit_log` (cùng `turn_id` + `duration_ms`); tab **Báo cáo**
+  (`/admin/reports`) tổng hợp từ đó. Langfuse **bổ trợ** (trace LLM), no-op khi thiếu key.
 
 **KHÔNG (giữ ranh giới — CHƯA tới lượt, xem ROADMAP):**
 - KHÔNG Supervisor / điều phối động — pipeline cố định (PRD §5). KHÔNG blend confidence cho an toàn.

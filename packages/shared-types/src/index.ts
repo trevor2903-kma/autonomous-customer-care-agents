@@ -77,15 +77,6 @@ export interface RagInfo {
   sources: string[];
 }
 
-// Agent 1 · Intent Classifier (PRD §7.1) — metadata phân loại SẠCH, KHÔNG retrieval (khớp ClassifyResult).
-export interface IntentClassification {
-  intent: string;
-  category: string | null;
-  entities: Record<string, unknown>;
-  confidence: number;
-  uncertainty_flags: string[];
-}
-
 // Một đoạn tri thức Agent 2 truy hồi được. `type`/`title` từ frontmatter KB (chunk repo); doc upload
 // ad-hoc không có frontmatter nên hai trường này vắng.
 export interface RagContext {
@@ -107,21 +98,8 @@ export interface AnalyzeResult {
   rag_contexts: RagContext[]; // Agent 2
 }
 
-// FULL pipeline slice (4 agent) cho inspector — quan sát quyết định Agent 3 + câu trả lời Agent 4.
-export interface PipelineResult {
-  intent: string; // Agent 1
-  category: string | null; // Agent 1
-  entities: Record<string, unknown>; // Agent 1
-  intent_confidence: number; // Agent 1
-  retrieval_confidence: number; // Agent 2
-  rag_contexts: RagContext[]; // Agent 2
-  action: string | null; // Agent 3 (auto_reply | human_handoff)
-  priority: string | null; // Agent 3
-  severity: string | null; // Agent 3
-  escalation_reason: string | null; // Agent 3
-  uncertainty_flags: string[];
-  reply: string | null; // Agent 4
-}
+// `IntentClassification` + `PipelineResult` đã GỠ cùng hai panel dev (slice obs P4) — việc quan sát
+// pipeline nay là của tab Báo cáo, dựng từ `audit_log` (xem type ở apps/dashboard/lib/api.ts).
 
 // HITL admin (08b, PRD §11/§17) — EscalationCard + hàng đợi + hội thoại cho màn admin.
 export interface EscalationCard {
