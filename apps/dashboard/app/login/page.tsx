@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 
@@ -51,9 +52,13 @@ export default function LoginPage() {
       <div className="w-full max-w-[420px] rounded-[14px] border border-line bg-card bg-white p-8 shadow-card">
         {/* Brand */}
         <div className="mb-6 flex flex-col items-center gap-2.5">
-          <span className="flex h-[34px] w-[34px] items-center justify-center rounded-[8px] bg-ink font-serif text-lg text-ink-paper">
-            T
-          </span>
+          <Image
+            src="/icon-192.png"
+            alt="ThriftYourStyle"
+            width={34}
+            height={34}
+            className="h-[34px] w-[34px] rounded-[8px] object-cover"
+          />
           <span className="font-serif text-[22px] tracking-[0.2px] text-ink">ThriftYourStyle</span>
           <span className="text-[12.5px] text-faint">Chăm sóc khách hàng</span>
         </div>

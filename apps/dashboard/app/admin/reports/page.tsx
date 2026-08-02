@@ -100,11 +100,7 @@ function KpiRow({ s }: { s: ReportSummary }) {
         value={fmtMs(lat.p50_ms)}
         note={
           <>
-            trung vị · p95 <span className="font-mono text-muted">{fmtMs(lat.p95_ms)}</span> ·{" "}
-            <span className={within >= 90 ? "text-olive-dark" : "text-terracotta"}>
-              {within}% ≤ {Math.round(lat.nfr_threshold_ms / 1000)}s
-            </span>{" "}
-            (NFR-1)
+            Từ khi nhận tin đến khi phản hồi.
           </>
         }
       />
@@ -252,46 +248,68 @@ export default function ReportsPage() {
           {turns.data && <span className="text-[12.5px] text-faint">{turns.data.total} lượt</span>}
         </div>
 
-        <div className="overflow-hidden rounded-[13px] border border-line bg-white shadow-soft">
-          {turns.isLoading && <p className="px-[18px] py-4 text-[13px] text-dim">Đang tải…</p>}
-          {turns.data?.items.length === 0 && (
-            <p className="px-[18px] py-4 text-[13px] text-dim">
-              Không có lượt nào khớp bộ lọc này.
-            </p>
-          )}
-          <div className="divide-y divide-line-soft">
-            {turns.data?.items.map((t) => {
-              const tone = OUTCOME_TONE[t.outcome] ?? OUTCOME_TONE.error;
-              const active = selected === t.turn_id;
-              return (
-                <button
-                  key={t.turn_id}
-                  onClick={() => setSelected(active ? null : t.turn_id)}
-                  className={`flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-[18px] py-3 text-left transition-colors ${
-                    active ? "bg-cream" : "hover:bg-cream/50"
-                  }`}
-                >
-                  <span className="font-mono text-[11.5px] text-dim">{t.short_id}</span>
-                  <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">
-                    {t.customer_text || "—"}
-                  </span>
-                  {t.intent && (
-                    <code className="font-mono text-[11.5px] text-faint">{t.intent}</code>
-                  )}
-                  <span
-                    className={`rounded-[5px] border px-1.5 py-0.5 text-[10.5px] font-medium ${tone.border} ${tone.bg} ${tone.text}`}
+        <div className="overflow-x-auto rounded-[13px] border border-line bg-white shadow-soft">
+          <div className="min-w-[650px]">
+            {/* Header bảng */}
+            <div className="flex items-center gap-3 border-b border-line-soft bg-cream-soft/40 px-[18px] py-2.5 text-[11px] font-medium uppercase tracking-[0.6px] text-dim">
+              <span className="w-[95px] flex-none">Mã lượt</span>
+              <span className="min-w-0 flex-1">Nội dung tin nhắn</span>
+              <span className="w-[100px] flex-none text-right">Ý định</span>
+              <span className="w-[90px] flex-none text-center">Kết quả</span>
+              <span className="w-[65px] flex-none text-right">Độ trễ</span>
+              <span className="w-[110px] flex-none text-right">Thời gian</span>
+            </div>
+
+            {turns.isLoading && <p className="px-[18px] py-4 text-[13px] text-dim">Đang tải…</p>}
+            {turns.data?.items.length === 0 && (
+              <p className="px-[18px] py-4 text-[13px] text-dim">
+                Không có lượt nào khớp bộ lọc này.
+              </p>
+            )}
+            <div className="divide-y divide-line-soft">
+              {turns.data?.items.map((t) => {
+                const tone = OUTCOME_TONE[t.outcome] ?? OUTCOME_TONE.error;
+                const active = selected === t.turn_id;
+                return (
+                  <button
+                    key={t.turn_id}
+                    onClick={() => setSelected(active ? null : t.turn_id)}
+                    className={`flex w-full items-center gap-3 px-[18px] py-3 text-left transition-colors ${
+                      active ? "bg-cream" : "hover:bg-cream/50"
+                    }`}
                   >
-                    {OUTCOME_LABEL[t.outcome] ?? t.outcome}
-                  </span>
-                  <span className="w-[62px] flex-none text-right font-mono text-[12px] text-muted">
-                    {fmtMs(t.duration_ms)}
-                  </span>
-                  <span className="w-[110px] flex-none text-right text-[11.5px] text-faint">
-                    {fmtTime(t.created_at)}
-                  </span>
-                </button>
-              );
-            })}
+                    <span className="w-[95px] flex-none font-mono text-[11.5px] text-dim">
+                      {t.short_id}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">
+                      {t.customer_text || "—"}
+                    </span>
+                    <span className="w-[100px] flex-none text-right">
+                      {t.intent ? (
+                        <code className="truncate font-mono text-[11.5px] text-faint">
+                          {t.intent}
+                        </code>
+                      ) : (
+                        <span className="text-[11.5px] text-faint">—</span>
+                      )}
+                    </span>
+                    <span className="w-[90px] flex-none text-center">
+                      <span
+                        className={`inline-block rounded-[5px] border px-1.5 py-0.5 text-[10.5px] font-medium ${tone.border} ${tone.bg} ${tone.text}`}
+                      >
+                        {OUTCOME_LABEL[t.outcome] ?? t.outcome}
+                      </span>
+                    </span>
+                    <span className="w-[65px] flex-none text-right font-mono text-[12px] text-muted">
+                      {fmtMs(t.duration_ms)}
+                    </span>
+                    <span className="w-[110px] flex-none text-right text-[11.5px] text-faint">
+                      {fmtTime(t.created_at)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </section>

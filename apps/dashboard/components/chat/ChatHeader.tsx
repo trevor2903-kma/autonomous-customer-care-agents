@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { CUST_STATUS, type CustStatus } from "./custStatus";
 
 // Header màn khách (design): avatar "T" olive + tên trợ lý (serif) + chấm trạng thái.
@@ -6,9 +7,13 @@ export function ChatHeader({ status }: { status: CustStatus }) {
   const s = CUST_STATUS[status];
   return (
     <div className="flex items-center gap-[13px]">
-      <span className="flex h-10 w-10 flex-none items-center justify-center rounded-[11px] border border-line-olive bg-olive-soft font-serif text-xl text-olive-dark">
-        T
-      </span>
+      <Image
+        src="/icon-192.png"
+        alt="ThriftYourStyle"
+        width={40}
+        height={40}
+        className="h-10 w-10 flex-none rounded-[11px] object-cover"
+      />
       <div>
         <div className="font-serif text-[22px] leading-[1.1] text-ink">Trợ lý ThriftYourStyle</div>
         <div className="mt-[3px] flex items-center gap-[7px]">

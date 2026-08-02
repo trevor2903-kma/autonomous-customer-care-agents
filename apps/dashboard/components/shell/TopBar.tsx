@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
@@ -18,9 +19,13 @@ export function TopBar() {
   return (
     <header className="sticky top-0 z-50 flex h-[53px] flex-none items-center justify-between border-b border-line bg-white px-[22px] mob:px-3.5">
       <Link href="/" className="flex min-w-0 items-center gap-3">
-        <span className="flex h-[26px] w-[26px] flex-none items-center justify-center rounded-[7px] bg-ink font-serif text-base text-ink-paper">
-          T
-        </span>
+        <Image
+          src="/icon-192.png"
+          alt="ThriftYourStyle"
+          width={26}
+          height={26}
+          className="h-[26px] w-[26px] flex-none rounded-[7px] object-cover"
+        />
         <span className="font-serif text-xl tracking-[0.2px] text-ink mob:text-[17px]">ThriftYourStyle</span>
       </Link>
 

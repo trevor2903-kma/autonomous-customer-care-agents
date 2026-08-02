@@ -125,13 +125,13 @@ export default function GatePage() {
           {/* Toggle hệ thống */}
           <div className="flex flex-col gap-3">
             <ToggleRow
-              label="Auto-reply (toàn hệ thống)"
+              label="Tự động trả lời (toàn hệ thống)"
               desc="Bật: ca AI tự tin gửi trả lời theo luật per-intent bên dưới. Tắt: mọi trả lời tự động giữ lại chờ duyệt nháp."
               checked={cfg.auto_reply_enabled}
               onChange={(v) => mutation.mutate({ auto_reply_enabled: v })}
             />
             <ToggleRow
-              label="Auto-resolve"
+              label="Tự động đóng hội thoại"
               desc={`Tự đóng ca không hoạt động sau ${cfg.auto_resolve_minutes} phút.`}
               checked={cfg.auto_resolve_enabled}
               onChange={(v) => mutation.mutate({ auto_resolve_enabled: v })}
@@ -141,7 +141,7 @@ export default function GatePage() {
           {/* Bảng per-intent */}
           <section className="overflow-hidden rounded-[12px] border border-line bg-white shadow-soft">
             <div className="border-b border-line-soft px-[18px] py-3.5">
-              <h2 className="text-[14px] font-semibold text-ink">Auto-reply theo intent / category</h2>
+              <h2 className="text-[14px] font-semibold text-ink">Tự động trả lời theo nhóm ý định</h2>
             </div>
             <div className="divide-y divide-line-soft">
               {cfg.rules.map((r) => (

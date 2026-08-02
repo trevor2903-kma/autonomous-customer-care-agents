@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -16,15 +17,15 @@ import { ConversationListPane } from "@/components/admin/ConversationListPane";
 // THU GỌN (P5): trên desktop (≥821px) sidebar rút còn rail 78px chỉ-icon — ẩn nhãn/đếm/tên thương hiệu/
 // thông tin người dùng. Ở mobile KHÔNG có chế độ này (đã là drawer), nên nút thu gọn bị ẩn dưới 820px.
 
-type NavItem = { key: string; label: string; href: string; count?: "queue" | "approval" };
+type NavItem = { key: string; label: string; href: string; icon: string; count?: "queue" | "approval" };
 
 const NAV: NavItem[] = [
-  { key: "all", label: "Hội thoại", href: "/admin" },
-  { key: "queue", label: "Hàng đợi chuyển tiếp", href: "/admin?filter=queue", count: "queue" },
-  { key: "approval", label: "Duyệt nháp", href: "/admin?filter=approval", count: "approval" },
-  { key: "knowledge", label: "Quản lý tri thức", href: "/admin/knowledge" },
-  { key: "gate", label: "Cấu hình Gate", href: "/admin/gate" },
-  { key: "reports", label: "Báo cáo", href: "/admin/reports" },
+  { key: "all", label: "Hội thoại", href: "/admin", icon: "/icons/conversations.svg" },
+  { key: "queue", label: "Hàng đợi chuyển tiếp", href: "/admin?filter=queue", icon: "/icons/escalation.svg", count: "queue" },
+  { key: "approval", label: "Duyệt nháp", href: "/admin?filter=approval", icon: "/icons/approval.svg", count: "approval" },
+  { key: "knowledge", label: "Quản lý tri thức", href: "/admin/knowledge", icon: "/icons/rag.svg" },
+  { key: "gate", label: "Cấu hình Gate", href: "/admin/gate", icon: "/icons/gate.svg" },
+  { key: "reports", label: "Báo cáo", href: "/admin/reports", icon: "/icons/report.svg" },
 ];
 
 const COLLAPSE_KEY = "tys_side_collapsed";
@@ -147,16 +148,22 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         <div
           className={`flex items-center gap-2 pb-[18px] pt-1 ${collapsed ? "desk:flex-col desk:gap-3 desk:px-0" : "px-2.5"}`}
         >
-          {/* Ô "T": vừa là dấu thương hiệu ở chế độ rail, vừa là nút bật/tắt thu gọn (design). */}
+          {/* Ô icon: vừa là dấu thương hiệu ở chế độ rail, vừa là nút bật/tắt thu gọn (design). */}
           <button
             onClick={toggleSide}
             title={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
             aria-label={collapsed ? "Mở rộng thanh bên" : "Thu gọn thanh bên"}
-            className={`hidden h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] bg-ink font-serif text-[17px] text-ink-paper ${
+            className={`hidden h-[34px] w-[34px] flex-none items-center justify-center overflow-hidden rounded-[9px] ${
               collapsed ? "desk:flex" : ""
             }`}
           >
-            T
+            <Image
+              src="/icon-192.png"
+              alt="ThriftYourStyle"
+              width={34}
+              height={34}
+              className="h-full w-full object-cover"
+            />
           </button>
           <div className={`min-w-0 flex-1 ${hideWhenRail}`}>
             <div className="truncate font-serif text-[19px] text-ink">ThriftYourStyle</div>
@@ -189,9 +196,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   collapsed ? "desk:justify-center desk:gap-0 desk:px-0" : ""
                 } ${active ? "bg-cream font-semibold text-ink" : "font-medium text-muted hover:bg-cream/60"}`}
               >
-                <span className="relative flex-none">
-                  <span
-                    className={`block h-2 w-2 rounded-[2px] ${active ? "bg-olive" : "bg-[#DAD5C8]"}`}
+                <span className="relative flex flex-none items-center justify-center">
+                  <Image
+                    src={n.icon}
+                    alt=""
+                    width={20}
+                    height={20}
+                    className={`h-5 w-5 transition-opacity ${
+                      active ? "opacity-100" : "opacity-60"
+                    }`}
                   />
                   {/* Ở chế độ rail nhãn + số đếm bị ẩn → chấm đỏ giữ lại tín hiệu "có việc chờ". */}
                   {n.count && count > 0 && collapsed && (
