@@ -1,4 +1,5 @@
 import type { EscalationCard } from "shared-types";
+import { FLAG_LABEL, SEVERITY_LABEL, formatEscalationReason, parseBlockingFlags } from "@/components/reports/labels";
 
 // EscalationCard (design, PRD §11): vì sao ca này cần người — ưu tiên/mức độ, lý do + cờ, tóm tắt,
 // intent & thực thể, tri thức RAG đã truy hồi. Đây là ngữ cảnh để admin nắm ca trong vài giây.
@@ -9,16 +10,6 @@ const PRIO: Record<string, { color: string; soft: string; label: string }> = {
   low: { color: "#8E887B", soft: "#F0EDE6", label: "thấp" },
 };
 
-// escalation_reason có dạng `blocking_flags=['out_of_domain', ...]` → tách thành chip cho dễ đọc.
-function flagsFromReason(reason?: string | null): string[] {
-  const m = reason?.match(/\[(.*)\]/);
-  if (!m) return [];
-  return m[1]
-    .split(",")
-    .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
-    .filter(Boolean);
-}
-
 export function EscalationCardPanel({
   card,
   identifier,
@@ -27,7 +18,9 @@ export function EscalationCardPanel({
   identifier?: string | null;
 }) {
   const prio = PRIO[card.priority ?? ""] ?? PRIO.low;
-  const flags = flagsFromReason(card.escalation_reason);
+  const flags = parseBlockingFlags(card.escalation_reason);
+  const severityLabel = SEVERITY_LABEL[card.severity ?? ""] ?? card.severity ?? "—";
+  const formattedReason = formatEscalationReason(card.escalation_reason);
 
   return (
     <section className="flex flex-col gap-[18px]">
@@ -44,22 +37,23 @@ export function EscalationCardPanel({
             Ưu tiên {prio.label}
           </span>
           <span className="rounded-[7px] bg-line-soft px-[11px] py-[5px] text-xs text-faint">
-            Mức độ {card.severity ?? "—"}
+            Mức độ {severityLabel}
           </span>
         </div>
       </div>
 
       <div className="rounded-[11px] border border-terracotta-line bg-terracotta-soft px-4 py-3.5">
         <div className="mb-1.5 text-[11px] uppercase tracking-[0.8px] text-terracotta">Lý do chuyển tiếp</div>
-        <div className="text-sm leading-[1.5] text-terracotta-ink">{card.escalation_reason ?? "—"}</div>
+        <div className="text-sm leading-[1.5] text-terracotta-ink">{formattedReason}</div>
         {flags.length > 0 && (
           <div className="mt-2.5 flex flex-wrap gap-[7px]">
             {flags.map((f) => (
               <span
                 key={f}
-                className="rounded-[5px] border border-terracotta-line bg-white px-2 py-0.5 font-mono text-[11px] text-terracotta"
+                title={f}
+                className="rounded-[5px] border border-terracotta-line bg-white px-2 py-0.5 text-[11.5px] font-medium text-terracotta"
               >
-                {f}
+                {FLAG_LABEL[f] ?? f}
               </span>
             ))}
           </div>

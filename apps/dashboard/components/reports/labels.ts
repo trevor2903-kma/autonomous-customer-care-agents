@@ -57,7 +57,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
 
 // Cờ bất định → giải thích ngắn (dùng ở phần bóc tách lý do chuyển người).
 export const FLAG_LABEL: Record<string, string> = {
-  low_retrieval_score: "Tri thức khớp yếu",
+  low_retrieval_score: "Điểm truy hồi thấp",
   no_relevant_knowledge: "Không có tri thức liên quan",
   out_of_domain: "Ngoài phạm vi shop",
   multi_intent: "Khách hỏi nhiều việc",
@@ -74,6 +74,37 @@ export const KB_TYPE_LABEL: Record<string, string> = {
   promotion: "Khuyến mãi",
   upload: "Tải lên",
 };
+
+export const SEVERITY_LABEL: Record<string, string> = {
+  high: "cao",
+  medium: "trung bình",
+  low: "thấp",
+};
+
+export const PRIORITY_LABEL: Record<string, string> = {
+  high: "cao",
+  medium: "trung bình",
+  low: "thấp",
+};
+
+export function parseBlockingFlags(reason?: string | null): string[] {
+  const m = reason?.match(/\[(.*)\]/);
+  if (!m) return [];
+  return m[1]
+    .split(",")
+    .map((s) => s.trim().replace(/^['"]|['"]$/g, ""))
+    .filter(Boolean);
+}
+
+export function formatEscalationReason(reason?: string | null): string {
+  if (!reason) return "—";
+  const flags = parseBlockingFlags(reason);
+  if (flags.length > 0) {
+    const translated = flags.map((f) => FLAG_LABEL[f] ?? f).join(", ");
+    return `Cờ chặn: ${translated}`;
+  }
+  return reason;
+}
 
 export function fmtMs(ms: number | null | undefined): string {
   if (ms === null || ms === undefined) return "—";

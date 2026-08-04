@@ -11,6 +11,9 @@ import {
   NODE_SHORT,
   OUTCOME_LABEL,
   OUTCOME_TONE,
+  PRIORITY_LABEL,
+  SEVERITY_LABEL,
+  formatEscalationReason,
   fmtClock,
   fmtMs,
 } from "./labels";
@@ -46,11 +49,13 @@ function stepSummary(step: TurnStep, d: TurnDetail): { line: string; sub: string
     }
     case "decision": {
       const blocking = (detail.blocking_flags as string[]) ?? [];
+      const prio = PRIORITY_LABEL[String(detail.priority)] ?? String(detail.priority ?? "—");
+      const sev = SEVERITY_LABEL[String(detail.severity)] ?? String(detail.severity ?? "—");
       return {
         line: ACTION_LABEL[String(step.action)] ?? String(step.action ?? "—"),
         sub: blocking.length
-          ? `Cờ chặn: ${blocking.join(", ")}`
-          : `Ưu tiên ${String(detail.priority ?? "—")} · mức ${String(detail.severity ?? "—")}`,
+          ? `Cờ chặn: ${blocking.map((f) => FLAG_LABEL[f] ?? f).join(", ")}`
+          : `Ưu tiên ${prio} · mức ${sev}`,
       };
     }
     case "response": {
@@ -168,7 +173,7 @@ export function TurnDetailView({ turnId }: { turnId: string }) {
           </>
         )}
         {data.escalation_reason && (
-          <p className="mt-3 font-mono text-[12px] text-terracotta">{data.escalation_reason}</p>
+          <p className="mt-3 text-[12.5px] font-medium text-terracotta">{formatEscalationReason(data.escalation_reason)}</p>
         )}
         <Timeline steps={pipelineSteps} />
       </div>
