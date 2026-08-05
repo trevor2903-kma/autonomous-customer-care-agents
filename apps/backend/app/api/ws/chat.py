@@ -7,6 +7,10 @@ Mỗi kết nối khách chạy HAI task (`asyncio.wait` FIRST_COMPLETED):
   MỌI lượt (kể cả lượt AI tự trả lời) đều dội tin khách + trả lời lên hub → admin mở ca thấy realtime, không F5.
 - `_hub_listener`: nhận tin admin (từ hub) → đẩy xuống socket khách (`{type:"message", from:"admin"}`).
 
+Tín hiệu ra socket khách: `typing` → `reply` (trả lời tự động) | `handoff` (Agent 3 đã chuyển người, ca vào
+hàng đợi) | `pending` (gate giữ nháp chờ duyệt). `handoff` là TYPE riêng để FE bám TRẠNG THÁI THẬT thay vì
+dò chữ trong câu trả lời.
+
 Persist guarded (DB lỗi KHÔNG chặn chat). `db_conversation_id` = khoá hub (TÁCH khỏi thread_id checkpointer).
 Hub IN-PROCESS 1 worker (Redis pub/sub đa-worker = sau, FR-ASYNC-7). Handoff → EscalationCard vào hàng đợi (08b).
 """
@@ -323,7 +327,11 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
                 await _persist_escalation_card(st.conv_id, final, msg, suggested_reply=reply)
                 continue  # nháp giữ trong card, chờ admin duyệt/sửa/gửi
 
-            await websocket.send_json({"type": "reply", "content": reply})
+            # TÍN HIỆU chuyển người là TYPE riêng, không để FE đoán qua nội dung câu chữ: escalation là
+            # QUYẾT ĐỊNH của Agent 3 (status IN_HUMAN_QUEUE), nên FE phải bám state chứ không dò chữ
+            # "nhân viên hỗ trợ" — auto_reply nhắc tới nhân viên KHÔNG phải là đã chuyển người.
+            queued = status_out == ConversationStatus.IN_HUMAN_QUEUE
+            await websocket.send_json({"type": "handoff" if queued else "reply", "content": reply})
             total_ms = _elapsed_ms(started)  # đo tới lúc khách NHẬN reply, chưa tính persist phía sau
             # Sau khi khách nhận (không tính vào total_ms): dội trả lời AI lên hub cho admin đang theo dõi.
             await _publish(

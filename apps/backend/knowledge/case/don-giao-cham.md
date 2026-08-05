@@ -13,11 +13,11 @@ questions:
 Khách báo đã đặt một số ngày nhưng chưa nhận được hàng.
 
 ## Bot Diagnostic Flow
-1. Hỏi **mã đơn** (nếu khách chưa cung cấp).
-2. Hỏi **ngày đặt** và **khu vực nhận** (toàn quốc hay đảo/vùng đặc biệt).
+1. Hỏi **mã đơn** (nếu khách chưa cung cấp và chưa có dữ liệu đơn nào).
+2. Xác định **ngày đặt** và **khu vực nhận** (toàn quốc hay đảo/vùng đặc biệt) — dùng dữ liệu đơn nếu đã có, chỉ hỏi khi còn thiếu.
 3. Đối chiếu thời gian dự kiến (2–5 ngày toàn quốc; đảo/vùng đặc biệt 8–14 ngày):
    - Nếu **còn trong thời gian dự kiến** → trấn an, nêu mốc giao dự kiến, nhắc khách theo dõi qua mã vận đơn (email).
-   - Nếu **đã quá thời gian dự kiến** → xin lỗi, báo sẽ kiểm tra với đơn vị vận chuyển và **chuyển nhân viên** xử lý.
+   - Nếu **đã quá thời gian dự kiến** → xin lỗi và báo shop **đang kiểm tra lại với đơn vị vận chuyển**, sẽ cập nhật sớm. KHÔNG hứa "sẽ chuyển nhân viên": việc chuyển ca cho nhân viên do hệ thống quyết, không phải bot hứa.
 4. Lưu ý đơn được giao lại tối đa 3 lần; nếu nghi thất bại giao hàng, xác minh trước.
 5. **Không** tự hứa hoàn tiền/đền bù — do nhân viên quyết sau khi kiểm tra.
 

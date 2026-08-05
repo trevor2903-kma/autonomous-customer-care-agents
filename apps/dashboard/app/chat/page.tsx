@@ -13,17 +13,16 @@ import { chatWsUrl, getMyThread, getToken } from "@/lib/api";
 // Cổng chat khách (PRD §6, §16). Câu trả lời tự động CHỈ đến từ Response Generator (§7.4);
 // tin nhân viên tới qua hub sau khi admin tiếp quản.
 //
-// Thông báo chuyển người là tin do BE phát (HANDOFF_NOTICE / câu xin lỗi khi pipeline lỗi) — cả hai đều
-// mang nghĩa "đang chờ người". Nhận diện theo cụm chung để hiển thị dạng system + trạng thái chờ.
-const HANDOFF_HINT = "nhân viên hỗ trợ";
-
+// "Đang chờ nhân viên" bám TÍN HIỆU THẬT (`type:"handoff"` = Agent 3 đã chuyển người), KHÔNG dò chữ trong
+// câu trả lời: một câu auto_reply có nhắc "nhân viên hỗ trợ" KHÔNG có nghĩa ca đã được chuyển — dò chữ làm
+// khách thấy "đang chờ nhân viên" trong khi AI vẫn đang trả lời bình thường.
 const now = () => new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 
-// Map tin trong mạch ghép (lịch sử) → bong bóng khách. Tin AI mang HANDOFF_NOTICE hiển thị dạng "system".
-function threadFrom(sender: string, content: string): ChatMessage["from"] {
+// Map tin trong mạch ghép (lịch sử) → bong bóng khách. Trạng thái lúc nạp lại lấy từ `thread.active_status`.
+function threadFrom(sender: string): ChatMessage["from"] {
   if (sender === "customer") return "you";
   if (sender === "admin") return "admin";
-  return content.toLowerCase().includes(HANDOFF_HINT) ? "system" : "ai";
+  return "ai";
 }
 const timeOf = (iso: string) =>
   new Date(iso).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
@@ -52,7 +51,7 @@ function ChatInner() {
     seededRef.current = true;
     const seeded: ChatMessage[] = thread.messages.map((m) => ({
       id: idRef.current++,
-      from: threadFrom(m.sender, m.content),
+      from: threadFrom(m.sender),
       text: m.content,
       time: timeOf(m.created_at),
     }));
@@ -77,11 +76,15 @@ function ChatInner() {
         if (data.type === "typing") {
           setTyping(true);
         } else if (data.type === "reply") {
+          // Trả lời tự động — LUÔN là bong bóng AI, kể cả khi câu chữ có nhắc tới nhân viên.
           setTyping(false);
-          const text = String(data.content);
-          const handoff = text.toLowerCase().includes(HANDOFF_HINT);
-          push({ from: handoff ? "system" : "ai", text });
-          setStatus(handoff ? "waiting" : "ai");
+          push({ from: "ai", text: String(data.content) });
+          setStatus("ai");
+        } else if (data.type === "handoff") {
+          // Agent 3 đã chuyển người THẬT (ca vào hàng đợi, AI dừng cho hội thoại này).
+          setTyping(false);
+          push({ from: "system", text: String(data.content) });
+          setStatus("waiting");
         } else if (data.type === "pending") {
           // Ca nhạy cảm: nháp đang chờ nhân viên duyệt (08a) — gỡ typing, đổi trạng thái, KHÔNG kẹt chờ.
           setTyping(false);
