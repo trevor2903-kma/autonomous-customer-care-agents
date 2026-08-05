@@ -99,6 +99,28 @@ class Severity(StrEnum):
     HIGH = "high"
 
 
+class OrderStatus(StrEnum):
+    # Vòng đời đơn hàng (slice tích hợp đơn). Hệ thống chỉ TRA CỨU trạng thái — KHÔNG thao tác trên đơn.
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SHIPPED = "shipped"
+    DELIVERING = "delivering"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+
+
+# Nhãn tiếng Việt của trạng thái đơn — Agent 4 nói tiếng Việt nên khối context phải là nhãn khách hiểu,
+# KHÔNG phải mã enum (nói "shipped" với khách là rò chi tiết kỹ thuật).
+ORDER_STATUS_LABEL_VI: dict[OrderStatus, str] = {
+    OrderStatus.PENDING: "chờ xác nhận",
+    OrderStatus.PROCESSING: "đang chuẩn bị hàng",
+    OrderStatus.SHIPPED: "đã bàn giao cho đơn vị vận chuyển",
+    OrderStatus.DELIVERING: "đang trên đường giao",
+    OrderStatus.DELIVERED: "đã giao thành công",
+    OrderStatus.CANCELLED: "đã huỷ",
+}
+
+
 class TicketStatus(StrEnum):
     # Cấp ticket — thô hơn conversation (PRD §15 ghi chú)
     OPEN = "open"

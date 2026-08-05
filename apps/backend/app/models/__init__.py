@@ -9,6 +9,7 @@ from .enums import (
     AgentAction,
     ConversationStatus,
     MessageSender,
+    OrderStatus,
     TicketStatus,
     UserRole,
 )
@@ -16,6 +17,7 @@ from .gate_config import GateConfig
 from .gate_intent_rule import GateIntentRule
 from .knowledge_document import KnowledgeDocument
 from .message import Message
+from .order import Order
 from .user import User
 
 __all__ = [
@@ -27,11 +29,13 @@ __all__ = [
     "KnowledgeDocument",
     "AuditLog",
     "User",
+    "Order",
     "GateConfig",
     "GateIntentRule",
     "ConversationStatus",
     "MessageSender",
     "AgentAction",
+    "OrderStatus",
     "TicketStatus",
     "UserRole",
 ]
