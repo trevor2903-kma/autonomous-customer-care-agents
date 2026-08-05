@@ -4,6 +4,7 @@ Mỗi kết nối khách chạy HAI task (`asyncio.wait` FIRST_COMPLETED):
 - `_customer_reader`: đọc tin khách. **STATUS-GATE (08c):** nếu hội thoại đang có người xử lý (IN_HUMAN_QUEUE/
   HUMAN_HANDLING/PENDING_APPROVAL) → AI KHÔNG chạy; lưu tin + đẩy lên admin qua hub. Ngược lại chạy ĐỦ pipeline
   (intent→knowledge→decision→response) rồi trả lời (Response Generator = điểm phát ngôn TỰ ĐỘNG duy nhất, §7.4).
+  MỌI lượt (kể cả lượt AI tự trả lời) đều dội tin khách + trả lời lên hub → admin mở ca thấy realtime, không F5.
 - `_hub_listener`: nhận tin admin (từ hub) → đẩy xuống socket khách (`{type:"message", from:"admin"}`).
 
 Persist guarded (DB lỗi KHÔNG chặn chat). `db_conversation_id` = khoá hub (TÁCH khỏi thread_id checkpointer).
@@ -79,6 +80,24 @@ async def _persist_message(conv_id: uuid.UUID | None, sender: str, content: str)
             await conversation_service.add_message(s, conv_id, content=content, sender=sender)
     except Exception as exc:  # noqa: BLE001 — persist là phụ, đừng để hỏng chat.
         log.warning("persist message failed (bỏ qua): %s", exc)
+
+
+async def _publish(
+    conv_key: str | None,
+    payload: dict[str, Any],
+    *,
+    exclude: asyncio.Queue[dict[str, Any]] | None = None,
+) -> None:
+    """Phát 1 payload lên hub của ca (admin đang MỞ ca thấy ngay, không phải F5).
+
+    Degrade AN TOÀN: chưa có ca / hub lỗi → bỏ qua, KHÔNG làm rớt hay chậm lượt của khách (bất biến §1).
+    """
+    if conv_key is None:
+        return
+    try:
+        await hub.publish(conv_key, payload, exclude=exclude)
+    except Exception as exc:  # noqa: BLE001 — realtime admin là phụ, đừng để hỏng chat.
+        log.warning("publish to hub failed (bỏ qua): %s", exc)
 
 
 async def _persist_status(conv_id: uuid.UUID | None, status: str | None) -> None:
@@ -263,7 +282,7 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
             if not should_run_ai(status):
                 # Đang có người xử lý → KHÔNG chạy AI: lưu tin khách + đẩy lên admin qua hub.
                 await _persist_message(st.conv_id, MessageSender.CUSTOMER, msg)
-                await hub.publish(
+                await _publish(
                     st.conv_key, {"type": "message", "from": "customer", "content": msg}, exclude=st.queue
                 )
                 continue
@@ -277,6 +296,11 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
             await websocket.send_json({"type": "typing"})
             history = await _load_history(st.conv_id)
             await _persist_message(st.conv_id, MessageSender.CUSTOMER, msg)
+            # Trước khi chạy pipeline: admin đang mở ca thấy câu hỏi NGAY (mọi nhánh sau đó — reply thường,
+            # gate giữ nháp, handoff — đều đã đi qua đây).
+            await _publish(
+                st.conv_key, {"type": "message", "from": "customer", "content": msg}, exclude=st.queue
+            )
             status_out, final, reply = await _run_pipeline_safe(msg, history, turn_id)
 
             # Gate động P3: auto_reply không "gửi thẳng" → GIỮ nháp (PENDING_APPROVAL), KHÔNG gửi thẳng cho khách.
@@ -291,6 +315,10 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
 
             await websocket.send_json({"type": "reply", "content": reply})
             total_ms = _elapsed_ms(started)  # đo tới lúc khách NHẬN reply, chưa tính persist phía sau
+            # Sau khi khách nhận (không tính vào total_ms): dội trả lời AI lên hub cho admin đang theo dõi.
+            await _publish(
+                st.conv_key, {"type": "message", "from": "ai", "content": reply}, exclude=st.queue
+            )
             await _audit_turn(st, turn_id, msg, final, reply, _outcome_of(status_out, final), total_ms)
             await _persist_message(st.conv_id, MessageSender.AI, reply)
             await _persist_status(st.conv_id, status_out)
