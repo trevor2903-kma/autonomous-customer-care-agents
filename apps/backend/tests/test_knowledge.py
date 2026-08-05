@@ -115,3 +115,82 @@ async def test_knowledge_node_greeting_marks_skipped_in_trace(monkeypatch: pytes
     out = await kn.knowledge_node({"input": "xin chào", "intent": "greeting"})
     assert out["uncertainty_flags"] == []
     assert out["trace"][0]["detail"]["skipped"] is True  # audit phân biệt "bỏ qua" với "tìm mà rỗng"
+
+
+# ── Tra đơn SCOPED (plan §2.3) — 3 nhánh. KHÔNG chạm DB thật: stub order_service.lookup ────────────
+_CUSTOMER = "11111111-1111-1111-1111-111111111111"
+
+
+class _FakeOrder:
+    order_code, status, items_summary, region = "865276", "delivering", "Áo thun x1", "Hà Nội"
+    ordered_at = shipped_at = delivered_at = cancelled_at = estimated_delivery = None
+    tracking_code = "GHN123456789"
+
+
+async def test_resolve_order_found_gives_context_no_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    async def fake_lookup(code: str, customer_id: object) -> _FakeOrder:
+        seen["code"], seen["customer_id"] = code, str(customer_id)
+        return _FakeOrder()
+
+    monkeypatch.setattr(kn.order_service, "lookup", fake_lookup)
+    r = await kn.resolve_order("order_status", {"order_id": "865276"}, _CUSTOMER)
+    # Tra ĐÚNG mã + ĐÚNG chủ đơn (scoped) — không lộ đơn người khác.
+    assert seen == {"code": "865276", "customer_id": _CUSTOMER}
+    assert r["uncertainty_flags"] == []
+    assert r["order_context"]["Mã đơn"] == "865276"
+    assert r["order_context"]["Trạng thái"] == "đang trên đường giao"  # nhãn VI, không phải mã enum
+
+
+async def test_resolve_order_not_found_flags_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Mã không tồn tại HOẶC của người khác → cùng một kết quả None → escalate (không lộ sự tồn tại).
+    async def fake_lookup(code: str, customer_id: object) -> None:
+        return None
+
+    monkeypatch.setattr(kn.order_service, "lookup", fake_lookup)
+    r = await kn.resolve_order("order_status", {"order_id": "9999"}, _CUSTOMER)
+    assert r["order_context"] is None
+    assert r["uncertainty_flags"] == ["order_unresolved"]
+
+
+async def test_resolve_order_no_code_does_not_escalate(monkeypatch: pytest.MonkeyPatch) -> None:
+    # KHÔNG mã đơn → KHÔNG cờ (Agent 4 hỏi mã); và KHÔNG được gọi lookup.
+    async def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("không được tra đơn khi khách chưa đưa mã")
+
+    monkeypatch.setattr(kn.order_service, "lookup", boom)
+    r = await kn.resolve_order("order_status", {}, _CUSTOMER)
+    assert r == {"order_context": None, "uncertainty_flags": []}
+
+
+async def test_resolve_order_skips_non_order_intent(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Intent không gắn với đơn (hỏi size) → không tra đơn dù câu có con số trông như mã.
+    async def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("không được tra đơn cho intent ngoài ORDER_INTENTS")
+
+    monkeypatch.setattr(kn.order_service, "lookup", boom)
+    r = await kn.resolve_order("size_consulting", {"order_id": "865276"}, _CUSTOMER)
+    assert r == {"order_context": None, "uncertainty_flags": []}
+
+
+async def test_resolve_order_db_error_escalates(monkeypatch: pytest.MonkeyPatch) -> None:
+    # DB lỗi → KHÔNG ném, KHÔNG im lặng: escalate (im lặng thì Agent 4 trả lời chay về đơn nó chưa thấy).
+    async def boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(kn.order_service, "lookup", boom)
+    r = await kn.resolve_order("order_status", {"order_id": "865276"}, _CUSTOMER)
+    assert r["uncertainty_flags"] == ["order_unresolved"]
+
+
+async def test_resolve_order_without_identity_never_leaks(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Chưa có danh tính khách → KHÔNG tra được đơn nào → escalate, KHÔNG trả đơn của bất kỳ ai.
+    async def fake_lookup(code: str, customer_id: object) -> None:
+        assert customer_id is None
+        return None
+
+    monkeypatch.setattr(kn.order_service, "lookup", fake_lookup)
+    r = await kn.resolve_order("order_status", {"order_id": "865276"}, None)
+    assert r["order_context"] is None
+    assert r["uncertainty_flags"] == ["order_unresolved"]

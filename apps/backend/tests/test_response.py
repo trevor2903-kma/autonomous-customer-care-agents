@@ -177,7 +177,7 @@ def test_context_block_labels_case_as_process() -> None:
 
 async def test_response_node_is_single_speaker(monkeypatch: pytest.MonkeyPatch) -> None:
     # response_node là node DUY NHẤT ghi tin AI: messages[sender=ai] + result.reply + REPLIED.
-    async def fake_gen(query, intent, entities, rag_contexts, history=None):  # type: ignore[no-untyped-def]
+    async def fake_gen(query, intent, entities, rag_contexts, history=None, order_context=None):  # type: ignore[no-untyped-def]
         return {"reply": "Dạ shop cho đổi trả trong 7 ngày ạ.", "uncertainty_flags": []}
 
     monkeypatch.setattr(resp, "generate_reply", fake_gen)

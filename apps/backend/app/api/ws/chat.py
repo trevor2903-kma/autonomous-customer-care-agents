@@ -157,11 +157,21 @@ async def _load_status(conv_id: uuid.UUID | None) -> str | None:
 
 
 async def _run_pipeline_safe(
-    msg: str, history: list[dict[str, str]] | None, turn_id: uuid.UUID
+    msg: str,
+    history: list[dict[str, str]] | None,
+    turn_id: uuid.UUID,
+    customer_id: uuid.UUID | None = None,
 ) -> tuple[str | None, dict[str, Any] | None, str]:
-    """Chạy pipeline → (status, final, reply). Lỗi → (None, None, _ERROR_REPLY), KHÔNG rớt WS."""
+    """Chạy pipeline → (status, final, reply). Lỗi → (None, None, _ERROR_REPLY), KHÔNG rớt WS.
+
+    `customer_id` = danh tính khách từ JWT → Agent 2 tra đơn SCOPED (chỉ đơn của chính khách này)."""
     try:
-        final = await run_pipeline(input_text=msg, history=history, turn_id=str(turn_id))
+        final = await run_pipeline(
+            input_text=msg,
+            history=history,
+            turn_id=str(turn_id),
+            customer_id=str(customer_id) if customer_id else None,
+        )
         reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
         return final.get("status"), final, reply
     except Exception as exc:  # noqa: BLE001 — lỗi pipeline → xin lỗi, KHÔNG rớt kết nối.
@@ -301,7 +311,7 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
             await _publish(
                 st.conv_key, {"type": "message", "from": "customer", "content": msg}, exclude=st.queue
             )
-            status_out, final, reply = await _run_pipeline_safe(msg, history, turn_id)
+            status_out, final, reply = await _run_pipeline_safe(msg, history, turn_id, st.customer_id)
 
             # Gate động P3: auto_reply không "gửi thẳng" → GIỮ nháp (PENDING_APPROVAL), KHÔNG gửi thẳng cho khách.
             if final is not None and await gate_holds(status_out, final.get("intent")):

@@ -102,9 +102,11 @@ def _initial_state(
     turn_id: str,
     force_handoff: bool,
     history: list[dict[str, Any]] | None,
+    customer_id: str | None,
 ) -> ConversationState:
     return {
         "conversation_id": conversation_id,
+        "customer_id": customer_id,
         "turn_id": turn_id,
         "input": input_text,
         "history": history or [],  # đầu vào chỉ-đọc (lịch sử đa lượt từ DB)
@@ -122,6 +124,7 @@ def _initial_state(
         "intent": None,
         "entities": {},
         "rag_contexts": [],
+        "order_context": None,
         "action": None,
         "draft_reply": None,
         "awaiting_customer": False,
@@ -135,8 +138,12 @@ async def run_pipeline(
     conversation_id: str | None = None,
     history: list[dict[str, Any]] | None = None,
     turn_id: str | None = None,
+    customer_id: str | None = None,
 ) -> dict[str, Any]:
     """Chạy pipeline 1 lượt, trả final state. force_handoff=True -> demo nhánh human_handoff.
+
+    `customer_id` (danh tính khách đã đăng nhập) do CALLER truyền — Agent 2 dùng nó để tra đơn SCOPED.
+    Không truyền (route dev/demo, khách chưa đăng nhập) → không tra được đơn nào (an toàn, KHÔNG lộ đơn).
 
     `thread_id` sinh MỚI mỗi lượt (MemorySaver in-memory tích luỹ reduce-channel nếu tái dùng) → bộ nhớ đa lượt
     KHÔNG từ checkpointer mà từ `history` (nạp từ DB, đầu vào chỉ-đọc). Durable checkpointer = slice 09b.
@@ -151,6 +158,7 @@ async def run_pipeline(
         turn_id=turn_id or str(uuid4()),
         force_handoff=force_handoff,
         history=history,
+        customer_id=customer_id,
     )
     # Span GỐC cho Langfuse (obs P3): các lời gọi LLM/embedding bên trong lượt nằm lồng vào đây, nên
     # xem được tổng độ trễ + chi phí của MỘT lượt. No-op nếu chưa cấu hình Langfuse.

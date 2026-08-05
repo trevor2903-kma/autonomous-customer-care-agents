@@ -20,6 +20,9 @@ from ..state import ConversationState
 #     nếu grounding yếu thì chính cờ grounding đã chặn. Giữ ambiguous_intent như cờ THÔNG TIN (priority/audit).
 #   - `multi_intent` VẪN chặn: khách hỏi HAI việc khác nhau → trả một cái là thiếu (xử lý multi-intent = sau).
 #   - `out_of_domain`: câu ngoài phạm vi CSKH (intent=other) → handoff.
+#   - `order_unresolved`: khách ĐƯA mã đơn nhưng bot tra không ra (không tồn tại / không thuộc khách / DB lỗi)
+#     → đúng nghĩa "KHÔNG trả lời được", phải có người xem. KB nói được chính sách vận chuyển nhưng KHÔNG
+#     nói được đơn CỦA KHÁCH này đang ở đâu, nên cờ RAG không bắt được ca này.
 #   - `hallucination_risk` KHÔNG thuộc: Agent 4 phát SAU decision (phanh dự phòng cuối, không định tuyến ở đây).
 BLOCKING_FLAGS: frozenset[str] = frozenset(
     {
@@ -27,6 +30,7 @@ BLOCKING_FLAGS: frozenset[str] = frozenset(
         "out_of_domain",
         "no_relevant_knowledge",
         "low_retrieval_score",
+        "order_unresolved",
         "llm_unavailable",
         "search_error",
     }

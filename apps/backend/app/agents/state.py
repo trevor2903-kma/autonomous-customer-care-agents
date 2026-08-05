@@ -16,6 +16,9 @@ from typing import Annotated, Any, TypedDict
 class ConversationState(TypedDict, total=False):
     # ── Lõi điều phối ─────────────────────────────────────────────────────────
     conversation_id: str | None
+    # Danh tính khách ĐÃ ĐĂNG NHẬP (JWT-over-WS). Khoá PHẠM VI của tra cứu đơn: Agent 2 chỉ được thấy đơn
+    # của chính khách này. None = chưa có danh tính → KHÔNG tra được đơn nào (an toàn).
+    customer_id: str | None
     # Khoá gom MỘT lượt khách cho audit_log (observability). CHỈ để quan sát — KHÔNG node nào
     # được đọc nó để ra quyết định.
     turn_id: str | None
@@ -43,6 +46,9 @@ class ConversationState(TypedDict, total=False):
     intent: str | None
     entities: dict[str, Any]
     rag_contexts: list[dict[str, Any]]
+    # Dữ liệu ĐƠN của khách (Agent 2 tra scoped, chỉ khi mã đơn tra được) — nguồn grounding THỨ BA của
+    # Agent 4 bên cạnh facts.md + rag_contexts. Vắng = không tra được đơn, KHÔNG phải đơn không tồn tại.
+    order_context: dict[str, str] | None
     action: str | None  # auto_reply | human_handoff (Decision Engine, PRD §7.3)
     priority: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)
     severity: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)

@@ -36,7 +36,7 @@ def _offline_agents(monkeypatch: pytest.MonkeyPatch) -> None:
             "uncertainty_flags": [],
         }
 
-    async def fake_generate(query, intent, entities, rag_contexts, history=None) -> dict:  # type: ignore[no-untyped-def]
+    async def fake_generate(query, intent, entities, rag_contexts, history=None, order_context=None) -> dict:  # type: ignore[no-untyped-def]
         return {"reply": "[stub] phản hồi grounded", "uncertainty_flags": []}
 
     monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)

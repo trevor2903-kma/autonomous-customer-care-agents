@@ -1,11 +1,12 @@
 """Node 4 — Response Generator (Agent 4). ĐIỂM PHÁT NGÔN DUY NHẤT tới khách. PRD §7.4, §14 FR-PIPE-5.
 
-- `generate_reply(query, intent, entities, rag_contexts)` = hàm THUẦN (tái dùng): sinh câu trả lời CSKH
-  tiếng Việt GROUNDED từ **`facts.md` (luôn-bật) + `rag_contexts`**. Phanh anti-hallucination (PRD §5 trụ cột 3,
-  §14 FR-PIPE-5): `rag_contexts` rỗng **hoặc** thiếu `settings.llm_api_key` → KHÔNG gọi LLM bịa → câu fallback
-  lịch sự + cờ `hallucination_risk`. (Phanh này TẠM gánh vai an toàn thay Decision Engine/Agent 3 — ROADMAP 05.)
-- **Grounding cả HÀNH ĐỘNG**: chỉ được hứa việc hệ thống LÀM ĐƯỢC. Chưa tra được đơn / chưa hoàn được tiền →
-  nói sẽ chuyển nhân viên, KHÔNG nói "đã hoàn tiền/đã kiểm tra đơn cho bạn".
+- `generate_reply(query, intent, entities, rag_contexts, ..., order_context)` = hàm THUẦN (tái dùng): sinh câu
+  trả lời CSKH tiếng Việt GROUNDED từ **`facts.md` (luôn-bật) + `rag_contexts` + `order_context`** (dữ liệu đơn
+  Agent 2 tra scoped, khi có). Phanh anti-hallucination (PRD §5 trụ cột 3, §14 FR-PIPE-5): KHÔNG nguồn nào
+  **hoặc** thiếu `settings.llm_api_key` → KHÔNG gọi LLM bịa → câu fallback lịch sự + cờ `hallucination_risk`.
+  (Phanh này TẠM gánh vai an toàn thay Decision Engine/Agent 3 — ROADMAP 05.)
+- **Grounding cả HÀNH ĐỘNG**: chỉ được hứa/khẳng định việc hệ thống LÀM ĐƯỢC. Tra trạng thái đơn thì LÀM ĐƯỢC
+  (khi có `order_context`); huỷ/hoàn/đổi đơn thì KHÔNG — đừng nói "đã hoàn tiền/đã huỷ đơn cho bạn".
 - **Grounding HAI CHIỀU**: cấm bịa *có* (đã có) VÀ cấm suy diễn *không có* từ chỗ nguồn im lặng. KB không nhắc
   tới "giao đi Mỹ" chỉ nghĩa là KB chưa nói, KHÔNG phải shop không giao — trả lời "không giao" là bịa một chính
   sách theo hướng ngược lại (đo được ở `docs/rag-refactor-results.md` §5).
@@ -103,11 +104,28 @@ def _system_prompt() -> str:
         "nhưng KHÔNG được kết luận thứ khách hỏi là không tồn tại.\n"
         "BÁM QUY TRÌNH: nếu có đoạn '[Quy trình xử lý]', làm theo ĐÚNG THỨ TỰ các bước — hỏi thông tin còn "
         "thiếu ở bước hiện tại (vd mã đơn) TRƯỚC, mỗi lượt chỉ hỏi 1–2 điều, KHÔNG nhảy tới kết luận.\n"
-        "GIỚI HẠN HÀNH ĐỘNG: bạn chỉ TRẢ LỜI, không thao tác được trên hệ thống. TUYỆT ĐỐI KHÔNG nói đã tra "
-        "đơn, đã kiểm tra vận đơn, đã hoàn tiền, đã đổi hàng hay đã tạo yêu cầu. Việc cần thao tác thật → nói "
-        "sẽ chuyển nhân viên xử lý. KHÔNG hứa thời hạn/số tiền không có trong nguồn."
+        "DỮ LIỆU ĐƠN: khi có khối 'ĐƠN HÀNG CỦA KHÁCH', hãy báo trạng thái theo ĐÚNG khối đó (mã đơn, trạng "
+        "thái, ngày, mã vận đơn) — KHÔNG suy đoán ngày giao, KHÔNG bịa mã vận đơn. Mốc nào KHÔNG có trong "
+        "khối là CHƯA TỚI mốc đó (đơn chưa gửi thì chưa có ngày gửi), đừng diễn thành 'không có'. Khi KHÔNG "
+        "có khối đó nghĩa là bạn CHƯA tra được đơn nào: TUYỆT ĐỐI không mô tả trạng thái của bất kỳ đơn nào — "
+        "nếu khách hỏi về đơn mà chưa cho mã, hãy HỎI mã đơn.\n"
+        "LỊCH SỬ KHÔNG PHẢI DỮ LIỆU ĐƠN: dù các lượt TRƯỚC có nói về đơn nào, trạng thái đơn chỉ được lấy từ "
+        "khối ĐƠN HÀNG CỦA KHÁCH của LƯỢT NÀY. Lượt này không có khối đó thì KHÔNG được nhắc lại trạng thái/"
+        "ngày/mã vận đơn đã nói ở lượt trước (dữ liệu có thể đã đổi) — hãy hỏi lại mã đơn.\n"
+        "GIỚI HẠN HÀNH ĐỘNG: bạn TRA CỨU được trạng thái đơn (khi có khối ĐƠN HÀNG CỦA KHÁCH), nhưng KHÔNG "
+        "thao tác được trên hệ thống. TUYỆT ĐỐI KHÔNG nói đã hoàn tiền, đã huỷ/đổi đơn, đã đổi địa chỉ hay đã "
+        "tạo yêu cầu. Việc cần thao tác thật → nói sẽ chuyển nhân viên xử lý. KHÔNG hứa thời hạn/số tiền "
+        "không có trong nguồn."
         f"{facts_block}"
     )
+
+
+def _order_block(order_context: dict[str, str] | None) -> str:
+    """Khối DỮ LIỆU ĐƠN của chính khách (Agent 2 tra scoped) — nguồn grounding, đặt cạnh ĐOẠN TRI THỨC."""
+    if not order_context:
+        return ""
+    lines = "\n".join(f"{k}: {v}" for k, v in order_context.items())
+    return f"\n\nĐƠN HÀNG CỦA KHÁCH (dữ liệu hệ thống, chính xác — dùng để báo trạng thái):\n{lines}"
 
 
 def _context_block(rag_contexts: list[dict[str, Any]]) -> str:
@@ -129,12 +147,14 @@ async def generate_reply(
     entities: dict[str, Any] | None,
     rag_contexts: list[dict[str, Any]] | None,
     history: list[dict[str, Any]] | None = None,
+    order_context: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Sinh câu trả lời GROUNDED từ facts.md + `rag_contexts`. Trả `{reply, uncertainty_flags}`. `history`
-    (đầu vào chỉ-đọc) giúp hiểu tham chiếu đa lượt — NHƯNG nội dung vẫn grounded từ nguồn được cấp,
-    KHÔNG từ lịch sử.
+    """Sinh câu trả lời GROUNDED từ facts.md + `rag_contexts` (+ `order_context` khi Agent 2 tra được đơn).
+    Trả `{reply, uncertainty_flags}`. `history` (đầu vào chỉ-đọc) giúp hiểu tham chiếu đa lượt — NHƯNG nội
+    dung vẫn grounded từ nguồn được cấp, KHÔNG từ lịch sử.
 
-    Phanh: rag_contexts rỗng HOẶC thiếu llm_api_key → fallback + `hallucination_risk` (KHÔNG gọi LLM bịa)."""
+    Phanh: KHÔNG nguồn nào (rag_contexts rỗng VÀ không có order_context) HOẶC thiếu llm_api_key → fallback +
+    `hallucination_risk` (KHÔNG gọi LLM bịa). Đơn tra được LÀ tri thức, nên nó gỡ phanh như rag_contexts."""
     # TRƯỚC phanh: lượt xã giao KHÔNG có (và không cần) rag_contexts — nếu để rơi xuống phanh thì khách
     # chào lại nhận câu "xin chuyển nhân viên hỗ trợ". Đi cặp với `knowledge.NO_RETRIEVAL_INTENTS` (P4).
     canned = CANNED_INTENTS.get(intent or "")
@@ -142,7 +162,7 @@ async def generate_reply(
         return {"reply": canned, "uncertainty_flags": []}
 
     contexts = rag_contexts or []
-    if not contexts or not settings.llm_api_key:
+    if (not contexts and not order_context) or not settings.llm_api_key:
         # KHÔNG có tri thức để bám (hoặc không thể gọi LLM) → KHÔNG bịa (PRD §14 FR-PIPE-5).
         return {"reply": FALLBACK_REPLY, "uncertainty_flags": ["hallucination_risk"]}
 
@@ -151,6 +171,7 @@ async def generate_reply(
         f"Câu hỏi của khách: {query!r}\n"
         f"(intent: {intent}; entities: {entities or {}})\n\n"
         f"ĐOẠN TRI THỨC:\n{_context_block(contexts)}"
+        f"{_order_block(order_context)}"
     )
     try:
         with tracing.observe_llm(
@@ -198,6 +219,7 @@ async def response_node(state: ConversationState) -> dict[str, Any]:
             entities=state.get("entities") or {},
             rag_contexts=state.get("rag_contexts") or [],
             history=state.get("history"),
+            order_context=state.get("order_context"),
         )
         reply = result["reply"]
         status = ConversationStatus.REPLIED

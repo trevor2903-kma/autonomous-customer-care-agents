@@ -20,6 +20,15 @@ def test_blocking_flag_routes_handoff() -> None:
     assert "no_relevant_knowledge" in out["escalation_reason"]
 
 
+def test_order_unresolved_routes_handoff() -> None:
+    # Khách đưa mã đơn mà bot tra không ra → chuyển người THẬT (cờ, không phải chữ Agent 4 nói).
+    # RAG vận chuyển vẫn trúng nên KHÔNG có cờ grounding — chỉ cờ này bắt được ca đơn.
+    out = _decide(intent="order_status", uncertainty_flags=["order_unresolved"])
+    assert out["action"] == "human_handoff"
+    assert out["require_human_handoff"] is True
+    assert "order_unresolved" in out["escalation_reason"]
+
+
 def test_clean_flags_routes_auto_reply() -> None:
     out = _decide(intent="product_price", uncertainty_flags=[])
     assert out["action"] == "auto_reply"
