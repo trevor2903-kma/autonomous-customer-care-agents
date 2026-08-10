@@ -11,6 +11,9 @@ Tín hiệu ra socket khách: `typing` → `reply` (trả lời tự động) | 
 hàng đợi) | `pending` (gate giữ nháp chờ duyệt). `handoff` là TYPE riêng để FE bám TRẠNG THÁI THẬT thay vì
 dò chữ trong câu trả lời.
 
+Ca sinh LƯỜI: lúc `accept()` chỉ TÌM ca đang mở; chưa có thì để trống và chỉ mở ca ở tin nhắn ĐẦU TIÊN —
+mở /chat rồi thoát KHÔNG để lại ca rỗng trong hàng đợi admin.
+
 Persist guarded (DB lỗi KHÔNG chặn chat). `db_conversation_id` = khoá hub (TÁCH khỏi thread_id checkpointer).
 Hub IN-PROCESS 1 worker (Redis pub/sub đa-worker = sau, FR-ASYNC-7). Handoff → EscalationCard vào hàng đợi (08b).
 """
@@ -238,7 +241,11 @@ _SWITCH = object()  # sentinel: đánh thức _hub_listener để đọc queue c
 
 
 class _CustomerSession:
-    """Khách + ca đang mở + queue hub của ca đó. `conv_id/conv_key/queue` đổi khi mở ca mới."""
+    """Khách + ca đang mở + queue hub của ca đó. `conv_id/conv_key/queue` đổi khi mở ca mới.
+
+    Tạo ca LƯỜI: mở chat mà chưa nhắn thì `conv_id` còn None (chưa có ca nào trong DB). `attached` báo cho
+    `_hub_listener` biết lúc đã có ca để bắt đầu đọc queue.
+    """
 
     def __init__(self, customer_id: uuid.UUID, display: str | None) -> None:
         self.customer_id = customer_id
@@ -246,6 +253,7 @@ class _CustomerSession:
         self.conv_id: uuid.UUID | None = None
         self.conv_key: str | None = None
         self.queue: asyncio.Queue[dict[str, Any]] | None = None
+        self.attached = asyncio.Event()  # set khi kết nối đã gắn vào MỘT ca (lần đầu)
 
 
 def _switch_conversation(st: _CustomerSession, new_conv_id: uuid.UUID) -> None:
@@ -254,21 +262,26 @@ def _switch_conversation(st: _CustomerSession, new_conv_id: uuid.UUID) -> None:
     st.conv_id = new_conv_id
     st.conv_key = str(new_conv_id)
     st.queue = hub.register(st.conv_key)
+    st.attached.set()  # gỡ chốt cho _hub_listener (kết nối mở trước khi có ca — tạo lười)
     if old_key is not None and old_queue is not None:
         hub.unregister(old_key, old_queue)
         old_queue.put_nowait(_SWITCH)  # đánh thức _hub_listener để đọc st.queue mới
 
 
 async def _open_new_case(st: _CustomerSession) -> None:
-    """Mở ca MỚI (AI-first) cho khách + chuyển hub sang ca mới. DB lỗi → giữ ca cũ (đừng rớt WS)."""
+    """Mở ca MỚI (AI-first) cho khách + chuyển hub sang ca mới.
+
+    Dùng ở HAI chỗ: tin nhắn đầu tiên (tạo lười) và khi ca cũ đã đóng. DB lỗi → giữ nguyên ca hiện tại
+    (có thể là CHƯA có ca) → lượt vẫn chạy nhưng không persist/hub; KHÔNG rớt WS.
+    """
     try:
         async with AsyncSessionLocal() as s:
             conv = await conversation_service.open_case_for_customer(
                 s, st.customer_id, display=st.display
             )
         _switch_conversation(st, conv.id)
-    except Exception as exc:  # noqa: BLE001 — không mở được ca mới → giữ ca cũ.
-        log.warning("open new case failed (giữ ca cũ): %s", exc)
+    except Exception as exc:  # noqa: BLE001 — không mở được ca → chạy tiếp không persist.
+        log.warning("open new case failed (chạy tiếp, không persist): %s", exc)
 
 
 async def _load_customer_display(customer_id: uuid.UUID) -> str | None:
@@ -288,11 +301,17 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
     try:
         while True:
             msg = await websocket.receive_text()
-            status = await _load_status(st.conv_id)
-            if status in _CLOSED_STATUSES:
-                # Ca đã đóng (admin resolve giữa các lượt) → mở ca mới, agent chạy lại từ đầu (AI-first).
+            if st.conv_id is None:
+                # TẠO LƯỜI: ca chỉ sinh khi khách THỰC SỰ nhắn. Mở /chat rồi thoát KHÔNG để lại ca rỗng
+                # `ACTIVE_AI` làm loãng hàng đợi admin.
                 await _open_new_case(st)
                 status = ConversationStatus.ACTIVE_AI
+            else:
+                status = await _load_status(st.conv_id)
+                if status in _CLOSED_STATUSES:
+                    # Ca đã đóng (admin resolve giữa các lượt) → mở ca mới, agent chạy lại từ đầu (AI-first).
+                    await _open_new_case(st)
+                    status = ConversationStatus.ACTIVE_AI
             if not should_run_ai(status):
                 # Đang có người xử lý → KHÔNG chạy AI: lưu tin khách + đẩy lên admin qua hub.
                 await _persist_message(st.conv_id, MessageSender.CUSTOMER, msg)
@@ -352,11 +371,15 @@ async def _hub_listener(websocket: WebSocket, st: _CustomerSession) -> None:
 
     `_SWITCH` = ca đã chuyển (mở ca mới) → vòng sau đọc st.queue mới. Nhờ vậy khách vẫn nhận được tin admin
     nếu ca mới sau này escalate + có người tiếp quản, dù conv_id đã đổi giữa kết nối.
+
+    Chưa có ca (tạo lười) → CHỜ `attached` chứ KHÔNG kết thúc task: task này xong là `asyncio.wait`
+    (FIRST_COMPLETED) sẽ huỷ luôn reader và đóng kết nối của khách chưa kịp nhắn gì.
     """
     while True:
         queue = st.queue
         if queue is None:
-            return
+            await st.attached.wait()
+            continue
         payload = await queue.get()
         if payload is _SWITCH:
             continue  # ca đã chuyển → đọc st.queue mới ở vòng sau
@@ -391,19 +414,18 @@ async def chat_ws(websocket: WebSocket) -> None:
     display = await _load_customer_display(customer_id)
     st = _CustomerSession(customer_id, display)
 
-    # Mô hình hội thoại theo khách (P2): tìm-ca-active-hoặc-mở-ca-mới (thay tạo-ca-mỗi-kết-nối).
+    # Mô hình hội thoại theo khách: chỉ TÌM ca đang mở. KHÔNG mở ca mới ở đây — ca sinh LƯỜI ở tin nhắn
+    # ĐẦU TIÊN (`_customer_reader`), nếu không thì mỗi lần khách mở /chat rồi thoát lại đẻ một ca rỗng.
     try:
         async with AsyncSessionLocal() as s:
             conv = await conversation_service.get_active_conversation_for_customer(s, customer_id)
-            if conv is None:
-                conv = await conversation_service.open_case_for_customer(s, customer_id, display=display)
-            initial_conv_id = conv.id
     except Exception as exc:  # noqa: BLE001 — DB lỗi → chat AI-only (KHÔNG persist/hub/status-gate).
         log.warning("resolve conversation failed (ai-only): %s", exc)
         await _customer_ai_only(websocket)
         return
 
-    _switch_conversation(st, initial_conv_id)  # đăng ký hub cho ca hiện tại
+    if conv is not None:
+        _switch_conversation(st, conv.id)  # đăng ký hub cho ca đang mở (lịch sử nạp qua GET /me/thread)
     await websocket.send_json({"type": "system", "message": "connected"})
     log.info("customer WS connected (customer=%s conv=%s)", customer_id, st.conv_id)
 
