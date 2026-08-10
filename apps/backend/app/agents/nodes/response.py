@@ -47,6 +47,17 @@ FALLBACK_REPLY = (
 # đầy đủ (EscalationCard + admin queue) = slice 08b.
 HANDOFF_NOTICE = "Yêu cầu của bạn đã được chuyển tới nhân viên hỗ trợ."
 
+# Đơn tra không ra (Agent 2 phát `order_not_found`): câu CỐ ĐỊNH, KHÔNG qua LLM — nội dung nhạy về quyền
+# riêng tư nên phải đúng từng chữ. Luôn nói "trong tài khoản CỦA ANH/CHỊ": mã của người khác và mã không tồn
+# tại nhận CÙNG một câu, nên không lộ cả sự tồn tại của đơn người khác.
+# Hai lối thoát nêu trong câu đều là tín hiệu THẬT: gửi lại mã sai lần nữa → `order_unresolved`; nhắn xin gặp
+# nhân viên → `human_requested`. Cả hai đều chuyển người thật, nên đây KHÔNG phải lời hứa suông.
+ORDER_NOT_FOUND_TEMPLATE = (
+    "Dạ em không tìm thấy đơn {code} trong tài khoản của anh/chị ạ. "
+    "Anh/chị kiểm tra rồi gửi lại mã đơn giúp em nhé; nếu mã vẫn không ra, "
+    "anh/chị nhắn muốn gặp nhân viên để em chuyển nhân viên kiểm tra giúp ạ."
+)
+
 # Lượt xã giao: câu mẫu cố định, KHÔNG gọi LLM (không có gì để grounded, cũng không có gì để bịa).
 GREETING_REPLY = (
     "Dạ em chào anh/chị ạ! Em là trợ lý của shop. "
@@ -156,6 +167,7 @@ async def generate_reply(
     rag_contexts: list[dict[str, Any]] | None,
     history: list[dict[str, Any]] | None = None,
     order_context: dict[str, str] | None = None,
+    order_not_found: str | None = None,
 ) -> dict[str, Any]:
     """Sinh câu trả lời GROUNDED từ facts.md + `rag_contexts` (+ `order_context` khi Agent 2 tra được đơn).
     Trả `{reply, uncertainty_flags}`. `history` (đầu vào chỉ-đọc) giúp hiểu tham chiếu đa lượt — NHƯNG nội
@@ -168,6 +180,11 @@ async def generate_reply(
     canned = CANNED_INTENTS.get(intent or "")
     if canned:
         return {"reply": canned, "uncertainty_flags": []}
+
+    # Đơn tra không ra: câu cố định (grounded trên KẾT QUẢ lookup), KHÔNG để LLM tự diễn đạt — nó dễ nói
+    # trại thành "đơn này không tồn tại" (suy diễn vượt dữ liệu) hoặc lộ rằng đơn có thật của người khác.
+    if order_not_found:
+        return {"reply": ORDER_NOT_FOUND_TEMPLATE.format(code=order_not_found), "uncertainty_flags": []}
 
     contexts = rag_contexts or []
     if (not contexts and not order_context) or not settings.llm_api_key:
@@ -228,6 +245,7 @@ async def response_node(state: ConversationState) -> dict[str, Any]:
             rag_contexts=state.get("rag_contexts") or [],
             history=state.get("history"),
             order_context=state.get("order_context"),
+            order_not_found=state.get("order_not_found"),
         )
         reply = result["reply"]
         status = ConversationStatus.REPLIED

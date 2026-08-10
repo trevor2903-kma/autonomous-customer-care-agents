@@ -125,6 +125,7 @@ def _initial_state(
         "entities": {},
         "rag_contexts": [],
         "order_context": None,
+        "order_not_found": None,
         "action": None,
         "draft_reply": None,
         "awaiting_customer": False,

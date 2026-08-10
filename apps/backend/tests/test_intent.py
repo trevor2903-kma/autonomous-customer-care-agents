@@ -15,6 +15,29 @@ def test_extract_order_id_keyword_anchored() -> None:
     assert extract_entities_rule("kiểm tra giúp đơn #98765 nhé")["order_id"] == "98765"
 
 
+def test_wants_human_detects_explicit_requests() -> None:
+    # Taxonomy KHÔNG có intent "xin gặp nhân viên" (đo thực tế: LLM xếp mấy câu này vào `greeting`),
+    # nên phải bắt bằng LUẬT trên LỜI KHÁCH — không phải dò chữ trong câu trả lời của bot.
+    for text in (
+        "cho mình gặp nhân viên với",
+        "mình muốn nói chuyện với nhân viên thật",
+        "cho tôi gặp người hỗ trợ đi, bot không giải quyết được",
+        "chuyển cho nhân viên giúp mình",
+        "cho gặp cskh",
+    ):
+        assert intent_mod.wants_human(text), text
+
+
+def test_wants_human_no_false_positive() -> None:
+    # Nhắc tới "nhân viên" KHÔNG phải là xin gặp nhân viên — neo theo ĐỘNG TỪ LIÊN HỆ đứng trước.
+    for text in (
+        "nhân viên trả lời trống không, thái độ quá tệ",
+        "shop có bao nhiêu nhân viên vậy",
+        "cho mình hỏi chính sách đổi trả với",
+    ):
+        assert not intent_mod.wants_human(text), text
+
+
 def test_extract_no_false_positive_order_id() -> None:
     # Số không neo từ khoá đơn/mã -> KHÔNG nhận nhầm là order_id.
     assert "order_id" not in extract_entities_rule("áo này giá 250000 đồng phải không shop")

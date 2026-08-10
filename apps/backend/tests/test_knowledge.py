@@ -143,15 +143,47 @@ async def test_resolve_order_found_gives_context_no_flag(monkeypatch: pytest.Mon
     assert r["order_context"]["Trạng thái"] == "đang trên đường giao"  # nhãn VI, không phải mã enum
 
 
-async def test_resolve_order_not_found_flags_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Mã không tồn tại HOẶC của người khác → cùng một kết quả None → escalate (không lộ sự tồn tại).
+async def test_resolve_order_not_found_informs_instead_of_escalating(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # LẦN ĐẦU không thấy (mã lạ HOẶC của người khác — cùng kết quả None, không lộ sự tồn tại):
+    # BÁO cho khách kiểm tra lại mã, KHÔNG escalate. Phần lớn ca này là khách gõ nhầm.
     async def fake_lookup(code: str, customer_id: object) -> None:
         return None
 
     monkeypatch.setattr(kn.order_service, "lookup", fake_lookup)
     r = await kn.resolve_order("order_status", {"order_id": "9999"}, _CUSTOMER)
     assert r["order_context"] is None
+    assert r["order_not_found"] == "9999"  # Agent 4 nhắc lại đúng mã khách đưa
+    assert r["uncertainty_flags"] == []
+
+
+async def test_resolve_order_second_failure_in_case_escalates(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Lần THỨ HAI vẫn không ra trong CÙNG ca → chuyển người. Suy từ LỜI KHÁCH trong history + sự thật DB,
+    # KHÔNG dò chữ trong câu trả lời của bot.
+    async def fake_lookup(code: str, customer_id: object) -> None:
+        return None
+
+    monkeypatch.setattr(kn.order_service, "lookup", fake_lookup)
+    history = [
+        {"sender": "customer", "content": "đơn 111222 của mình đâu rồi"},
+        {"sender": "ai", "content": "Dạ em không tìm thấy đơn 111222…"},
+    ]
+    r = await kn.resolve_order("order_status", {"order_id": "9999"}, _CUSTOMER, history)
+    assert r["order_not_found"] is None
     assert r["uncertainty_flags"] == ["order_unresolved"]
+
+
+async def test_resolve_order_prior_success_does_not_escalate(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Lượt trước tra RA đơn, lượt này gõ nhầm mã khác → vẫn chỉ là lần hỏng ĐẦU TIÊN → báo, đừng escalate.
+    async def fake_lookup(code: str, customer_id: object):  # type: ignore[no-untyped-def]
+        return _FakeOrder() if code == "111222" else None
+
+    monkeypatch.setattr(kn.order_service, "lookup", fake_lookup)
+    history = [{"sender": "customer", "content": "đơn 111222 tới đâu rồi"}]
+    r = await kn.resolve_order("order_status", {"order_id": "9999"}, _CUSTOMER, history)
+    assert r["order_not_found"] == "9999"
+    assert r["uncertainty_flags"] == []
 
 
 async def test_resolve_order_no_code_does_not_escalate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -161,7 +193,7 @@ async def test_resolve_order_no_code_does_not_escalate(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(kn.order_service, "lookup", boom)
     r = await kn.resolve_order("order_status", {}, _CUSTOMER)
-    assert r == {"order_context": None, "uncertainty_flags": []}
+    assert r == {"order_context": None, "order_not_found": None, "uncertainty_flags": []}
 
 
 async def test_resolve_order_skips_non_order_intent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -171,21 +203,23 @@ async def test_resolve_order_skips_non_order_intent(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(kn.order_service, "lookup", boom)
     r = await kn.resolve_order("size_consulting", {"order_id": "865276"}, _CUSTOMER)
-    assert r == {"order_context": None, "uncertainty_flags": []}
+    assert r == {"order_context": None, "order_not_found": None, "uncertainty_flags": []}
 
 
 async def test_resolve_order_db_error_escalates(monkeypatch: pytest.MonkeyPatch) -> None:
-    # DB lỗi → KHÔNG ném, KHÔNG im lặng: escalate (im lặng thì Agent 4 trả lời chay về đơn nó chưa thấy).
+    # DB lỗi → escalate, KHÔNG hạ xuống "không tìm thấy": lookup HỎNG khác lookup TRẢ RỖNG, nói "không thấy
+    # đơn trong tài khoản của bạn" khi chưa tra được là nói SAI.
     async def boom(*args: object, **kwargs: object) -> None:
         raise RuntimeError("db down")
 
     monkeypatch.setattr(kn.order_service, "lookup", boom)
     r = await kn.resolve_order("order_status", {"order_id": "865276"}, _CUSTOMER)
+    assert r["order_not_found"] is None
     assert r["uncertainty_flags"] == ["order_unresolved"]
 
 
 async def test_resolve_order_without_identity_never_leaks(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Chưa có danh tính khách → KHÔNG tra được đơn nào → escalate, KHÔNG trả đơn của bất kỳ ai.
+    # Chưa có danh tính khách → lookup luôn scoped theo None → KHÔNG trả đơn của bất kỳ ai.
     async def fake_lookup(code: str, customer_id: object) -> None:
         assert customer_id is None
         return None
@@ -193,4 +227,3 @@ async def test_resolve_order_without_identity_never_leaks(monkeypatch: pytest.Mo
     monkeypatch.setattr(kn.order_service, "lookup", fake_lookup)
     r = await kn.resolve_order("order_status", {"order_id": "865276"}, None)
     assert r["order_context"] is None
-    assert r["uncertainty_flags"] == ["order_unresolved"]

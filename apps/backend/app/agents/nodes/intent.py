@@ -7,7 +7,8 @@
 - ENTITIES = LLM (schema + few-shot) ⊕ regex (`extract_entities_rule`), merge `{**rule, **llm}`; regex chạy MỌI
   nhánh (kể cả degrade) → `order_id` không bao giờ mất.
 - `confidence` = độ tự tin LLM (KHÔNG phải điểm cosine). `category` từ `INTENT_CATEGORY`. Cờ Agent 1:
-  `ambiguous_intent`/`multi_intent` (LLM báo) + `out_of_domain` (intent ngoài enum).
+  `ambiguous_intent`/`multi_intent` (LLM báo) + `out_of_domain` (intent ngoài enum) + `human_requested`
+  (LUẬT trên lời khách — xem `wants_human`, chạy cả nhánh degrade).
 - Degrade AN TOÀN: thiếu key / ENABLE_LLM=false / LLM lỗi → `intent="unknown"`, `confidence=0.0`,
   `["llm_unavailable"]`, entities = regex (KHÔNG network, KHÔNG ném lỗi) → `make test` offline.
 """
@@ -15,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from ...core import tracing
@@ -31,6 +33,23 @@ log = get_logger("agent.intent")
 
 _VALID_INTENTS = {i.value for i in Intent}
 _AGENT1_FLAGS = {"ambiguous_intent", "multi_intent"}  # cờ hợp lệ Agent 1 (ngoài out_of_domain)
+
+# Khách XIN GẶP NGƯỜI → cờ `human_requested` (Agent 3 chuyển người). Bắt bằng LUẬT trên CHÍNH LỜI KHÁCH
+# (tín hiệu ĐẦU VÀO) — KHÔNG dò chữ trong câu trả lời của bot (đúng cái bug handoff cũ).
+# Vì sao cần luật: taxonomy KHÔNG có intent "xin gặp nhân viên"; đo thực tế thấy LLM xếp "cho mình gặp nhân
+# viên với" và "cho gặp cskh" vào `greeting` → yêu cầu gặp người bị lọt, khách nói mãi mà không ai tới.
+# Neo theo ĐỘNG TỪ LIÊN HỆ đứng trước danh từ chỉ người, nên "nhân viên thái độ quá tệ" (than phiền) hay
+# "shop có bao nhiêu nhân viên" KHÔNG dính.
+_HUMAN_REQUEST_RE = re.compile(
+    r"(gặp|chuyển|nói\s*chuyện|kết\s*nối|liên\s*hệ)\s*(?:\w+\s+){0,3}?"
+    r"(nhân\s*viên|người\s*thật|người\s*hỗ\s*trợ|cskh|tư\s*vấn\s*viên)",
+    re.IGNORECASE,
+)
+
+
+def wants_human(text: str) -> bool:
+    """Khách có XIN GẶP NGƯỜI rõ ràng không (luật tất định, chạy MỌI nhánh kể cả khi không có LLM)."""
+    return bool(_HUMAN_REQUEST_RE.search(text or ""))
 
 
 def _degrade(rule: dict[str, str], flags: list[str]) -> dict[str, Any]:
@@ -135,13 +154,18 @@ async def classify_intent(
     chỉ-đọc) giúp hiểu ngữ cảnh đa lượt. Trả {intent, category, entities, confidence, uncertainty_flags}.
     Degrade an toàn khi offline."""
     rule = extract_entities_rule(text)  # tính sớm — dùng cho MỌI nhánh (order_id không mất)
+    # Cờ LUẬT, gắn ở MỌI nhánh (kể cả degrade): khách xin gặp người thì phải tới được người, kể cả khi LLM
+    # chết hoặc nhãn intent trôi.
+    rule_flags = ["human_requested"] if wants_human(text) else []
     if not settings.llm_api_key or not settings.enable_llm:
-        return _degrade(rule, ["llm_unavailable"])
+        return _degrade(rule, ["llm_unavailable", *rule_flags])
     try:
-        return await _classify_llm(text, rule, history)
+        result = await _classify_llm(text, rule, history)
     except Exception as exc:  # noqa: BLE001 — LLM lỗi -> degrade + cờ (đừng im lặng), entities = regex.
         log.warning("intent.llm failed -> degrade llm_unavailable: %s", exc)
-        return _degrade(rule, ["llm_unavailable"])
+        return _degrade(rule, ["llm_unavailable", *rule_flags])
+    result["uncertainty_flags"] = [*result["uncertainty_flags"], *rule_flags]
+    return result
 
 
 async def intent_node(state: ConversationState) -> dict[str, Any]:

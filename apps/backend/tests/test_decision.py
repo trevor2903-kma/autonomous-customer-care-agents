@@ -20,6 +20,14 @@ def test_blocking_flag_routes_handoff() -> None:
     assert "no_relevant_knowledge" in out["escalation_reason"]
 
 
+def test_human_requested_routes_handoff() -> None:
+    # Khách xin gặp người → chuyển thẳng, kể cả khi nhãn intent vô hại (đo thực tế: "cho gặp cskh" bị
+    # LLM xếp `greeting`).
+    out = _decide(intent="greeting", uncertainty_flags=["human_requested"])
+    assert out["action"] == "human_handoff"
+    assert "human_requested" in out["escalation_reason"]
+
+
 def test_order_unresolved_routes_handoff() -> None:
     # Khách đưa mã đơn mà bot tra không ra → chuyển người THẬT (cờ, không phải chữ Agent 4 nói).
     # RAG vận chuyển vẫn trúng nên KHÔNG có cờ grounding — chỉ cờ này bắt được ca đơn.

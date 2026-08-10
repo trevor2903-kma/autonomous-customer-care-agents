@@ -123,6 +123,27 @@ async def test_greeting_returns_canned_reply_before_fallback_brake(monkeypatch: 
     assert r["uncertainty_flags"] == []  # KHÔNG hallucination_risk
 
 
+async def test_order_not_found_returns_privacy_safe_canned_reply(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Đơn tra không ra → câu CỐ ĐỊNH, KHÔNG gọi LLM (nội dung nhạy về quyền riêng tư, phải đúng từng chữ).
+    monkeypatch.setattr(resp.settings, "llm_api_key", "sk-test")
+
+    def _spy() -> object:
+        raise AssertionError("KHÔNG được gọi LLM cho câu 'không tìm thấy đơn'")
+
+    monkeypatch.setattr(resp, "get_openai", _spy)
+    r = await resp.generate_reply(
+        "đơn 9999 của mình đâu", "order_status", {"order_id": "9999"}, [], order_not_found="9999"
+    )
+    assert "9999" in r["reply"]
+    # Luôn quy về "tài khoản của anh/chị": mã của người khác và mã không tồn tại nhận CÙNG câu này,
+    # nên không lộ cả sự TỒN TẠI của đơn người khác.
+    assert "tài khoản của anh/chị" in r["reply"]
+    assert "không tồn tại" not in r["reply"]  # không suy diễn vượt kết quả lookup
+    assert r["uncertainty_flags"] == []  # có grounding (kết quả lookup) → không phải hallucination
+
+
 async def test_non_greeting_empty_context_still_hits_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     # Phanh grounding KHÔNG bị nới: chỉ greeting được miễn, intent khác rỗng context vẫn FALLBACK.
     monkeypatch.setattr(resp.settings, "llm_api_key", "sk-test")
@@ -177,7 +198,7 @@ def test_context_block_labels_case_as_process() -> None:
 
 async def test_response_node_is_single_speaker(monkeypatch: pytest.MonkeyPatch) -> None:
     # response_node là node DUY NHẤT ghi tin AI: messages[sender=ai] + result.reply + REPLIED.
-    async def fake_gen(query, intent, entities, rag_contexts, history=None, order_context=None):  # type: ignore[no-untyped-def]
+    async def fake_gen(query, intent, entities, rag_contexts, history=None, order_context=None, order_not_found=None):  # type: ignore[no-untyped-def]
         return {"reply": "Dạ shop cho đổi trả trong 7 ngày ạ.", "uncertainty_flags": []}
 
     monkeypatch.setattr(resp, "generate_reply", fake_gen)

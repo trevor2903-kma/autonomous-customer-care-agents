@@ -49,6 +49,10 @@ class ConversationState(TypedDict, total=False):
     # Dữ liệu ĐƠN của khách (Agent 2 tra scoped, chỉ khi mã đơn tra được) — nguồn grounding THỨ BA của
     # Agent 4 bên cạnh facts.md + rag_contexts. Vắng = không tra được đơn, KHÔNG phải đơn không tồn tại.
     order_context: dict[str, str] | None
+    # Mã đơn khách đưa mà tra KHÔNG RA (không tồn tại / không thuộc khách). TÍN HIỆU cho Agent 4 báo lại,
+    # **KHÔNG phải cờ chặn**: "không tìm thấy" tự nó là câu trả lời được (kết quả lookup chính là grounding),
+    # phần lớn do khách gõ nhầm mã → escalate ngay là quá vội.
+    order_not_found: str | None
     action: str | None  # auto_reply | human_handoff (Decision Engine, PRD §7.3)
     priority: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)
     severity: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)
