@@ -1,114 +1,72 @@
-# plan.md — Sửa 4 lỗi trước slice 13: markdown · real-time admin · tích hợp đơn hàng · tín hiệu handoff
+# plan.md — 3 tinh chỉnh: tạo hội thoại lười · đơn không thấy → báo (không escalate ngay) · dọn hiển thị ngưỡng
 
 > Repo: `github.com/trevor2903-kma/autonomous-customer-care-agents`. BE `apps/backend` (FastAPI+LangGraph+Alembic).
 > Scripts + `.env` ở **gốc repo**. FE `apps/dashboard` (Next.js, Tailwind thuần + TanStack, **KHÔNG shadcn**).
-> Nguyên tắc: cấu hình từ env, **KHÔNG hardcode**; sửa **có phẫu thuật**.
+> Nguyên tắc: cấu hình từ env, **KHÔNG hardcode**; sửa **có phẫu thuật**. Slice nhỏ, 3 pha độc lập.
 
 ---
 
-## 0. Bối cảnh & gốc lỗi (grounded từ code, tip `564f1f8`)
+## 0. Bối cảnh (grounded từ code, tip hiện tại)
 
-Bốn lỗi, nhưng **P2+P3 cùng một gốc**: _escalation đang bị suy ra từ CHỮ trong câu trả lời, không phải từ QUYẾT ĐỊNH của Agent 3._
-
-- **Lỗi markdown**: `_system_prompt` (`response.py`) **chưa cấm markdown** → GPT-4o-mini phát `**...**` (thói quen + tài liệu KB `.md` có sẵn `**bold**`). Khung chat render văn bản thuần → hiện `**` nguyên xi. _Nội dung vẫn grounded đúng — chỉ rò định dạng._
-- **Real-time admin**: `ws/chat.py` nhánh **AI thường** persist tin khách + gửi reply vào socket khách, nhưng **KHÔNG `hub.publish`** lên channel (chỉ nhánh HUMAN_HANDLING publish). FE admin `app/admin/[conversationId]/page.tsx` **đã** xử lý `type:"message"` → chỉ thiếu backend publish.
-- **Tín hiệu handoff GIẢ**: FE khách `app/chat/page.tsx` dòng 82–84 **dò CHỮ** `text.includes(HANDOFF_HINT)` → nếu reply chứa "chuyển nhân viên" thì set `waiting`. Nhưng đó là `type:"reply"` (auto_reply) — backend **chưa escalate**. → khách thấy "đang chờ nhân viên" (giả), admin thấy "AI đang xử lý" (thật), AI vẫn trả lời.
-- **Order không escalate thật**: `order_status` **không** ∈ `BLOCKING_FLAGS`; Agent 2 truy hồi KB vận chuyển _thành công_ → không cờ chặn → auto_reply. Mà câu hỏi về **một đơn cụ thể không thể trả lời từ KB** (chưa có dữ liệu đơn). Case doc `knowledge/case/don-giao-cham.md` dòng 20 dặn "**chuyển nhân viên**" → Agent 4 nói ra, nhưng không có escalation thật. Entity `order_id` **đã** được taxonomy trích cho intent đơn hàng.
+- **P0 (tạo hội thoại lười):** `ws/chat.py` (~dòng 381–399) tạo/tìm conversation **ngay khi `websocket.accept()`** (khách MỞ chat, chưa gửi tin) → sinh conversation `ACTIVE_AI` rỗng → card thừa, loãng danh sách. Đăng ký tài khoản KHÔNG tạo hội thoại; chỉ mở-chat mới tạo.
+- **P1 (đơn không thấy):** `knowledge_node` order-lookup hiện: mã có + lookup `None` (không thấy/không thuộc khách) → cờ **`order_unresolved`** (blocking) → **escalate ngay**. Nhưng "không tìm thấy" là **câu trả lời được** (kết quả lookup chính là grounding) — phần lớn do khách **gõ nhầm mã**, escalate ngay là quá vội + phí nhân viên.
+- **P2 (ngưỡng):** cột `gate_config.retrieval_threshold` = **0.35 (chết)** — pipeline KHÔNG đọc; Agent 2 dùng `settings.retrieval_threshold` = **0.40** (`config.py`). Slider hiển thị 0.35 (sai) và từng định "chỉnh được ở phiên bản sau". Bạn đã chọn: **gỡ slider + bỏ cột chết**. Ngưỡng là **giá trị ĐO** từ `measure_threshold.py`, không phải nút UI.
 
 ---
 
 ## 1. Bất biến kiến trúc (KHÔNG phá)
 
-- Pipeline 4-agent cố định/không Supervisor; **Agent 4 egress DUY NHẤT luồng tự động**; Agent 3 tất định theo cờ; 1 worker + hub in-process.
-- **Escalation là QUYẾT ĐỊNH của Agent 3 (theo cờ), KHÔNG phải chữ của Agent 4.** Mọi "cần người" phải thành **cờ** để Agent 3 xử → state đổi thật (`IN_HUMAN_QUEUE`), FE bám state, không bám chữ.
-- **Grounding**: Agent 4 chỉ nói từ `facts.md` + `rag_contexts` (+ nay **dữ liệu đơn** khi có). Không bịa _có_, không suy diễn _không có_. **Grounding hành động**: chỉ hứa/khẳng định việc hệ thống LÀM ĐƯỢC.
-- **Quyền riêng tư đơn hàng**: "đơn 1234 của TÔI" là dữ liệu cá nhân → lookup **CHỈ trong phạm vi khách đã đăng nhập** (slice 11 đã cấp danh tính qua JWT-over-WS). Không lộ đơn của người khác.
+- Mô hình hội thoại **giữ nguyên**: một ca active/khách, ca cũ đóng → khách nhắn lại mở ca MỚI (AI-first). P0 chỉ **dời thời điểm tạo**, không tạo nhiều ca active song song.
+- **Escalation = QUYẾT ĐỊNH của Agent 3 (theo cờ), không phải chữ.** P1 chỉ **thu hẹp điều kiện** bật cờ escalate cho ca đơn, không đổi cơ chế.
+- **Grounding + quyền riêng tư đơn hàng giữ nguyên:** câu "không tìm thấy" grounded trên kết quả lookup; lookup **scoped theo khách**; **KHÔNG lộ** đơn thuộc người khác (luôn nói "trong tài khoản CỦA BẠN").
+- Ngưỡng thật vẫn ở `config.retrieval_threshold` (đặt từ script). Ghi/log **degrade an toàn**.
 
 ---
 
-## 2. Thiết kế cốt lõi (P2 — tích hợp đơn hàng)
+## 2. Các pha (P0–P2) — Claude Code chạy tuần tự, commit từng pha
 
-### 2.1 Model `order` + seed
+### P0 — Tạo hội thoại LƯỜI (chỉ khi có tin đầu) `fix(chat): P0 lazy-create conversation on first message`
 
-`order`: `id` (UUID PK) · `order_code` (str, UNIQUE — mã "1234") · **`customer_id`** (UUID FK→user, chủ đơn) · `status` (enum `OrderStatus`) · `items_summary` (str) · `region` (str) · `ordered_at` · `shipped_at` (null) · `estimated_delivery` (null) · `tracking_code` (str, null) · `created_at`.
-`OrderStatus` (StrEnum): `pending`/`processing`/`shipped`/`delivering`/`delivered`/`cancelled` + **map nhãn tiếng Việt** dùng khi dựng khối context (Agent 4 nói tiếng Việt).
-**`scripts/seed_orders.py`** (pattern `seed_admin.py`): **truy vấn các khách đã có trong DB** (role=customer) và tạo **đơn đa dạng phủ ĐỦ mọi `OrderStatus`** cho mỗi khách (mỗi khách ~6–8 đơn rải khắp: `pending`/`processing`/`shipped`/`delivering`/`delivered`/`cancelled`), dữ liệu thật-như: `order_code` duy nhất (vd `TYS-<mã khách ngắn>-<i>`), `items_summary` biến hoá, `region` đa dạng (Hà Nội/Đà Nẵng/HCM/tỉnh), **ngày & mã vận đơn nhất quán với trạng thái** (`delivered`→có đủ ngày đặt/gửi/giao + tracking; `delivering`→có gửi + tracking, chưa giao; `pending`/`processing`→chỉ mới đặt, tracking null; `cancelled`→có ngày huỷ). **Idempotent**: bỏ qua `order_code` đã tồn tại (chạy lại an toàn; thêm khách mới rồi chạy lại thì seed cho khách mới). **KHÔNG cần env chỉ-định-khách** — tự lấy từ DB. Migration Alembic tạo bảng.
+- **In (`ws/chat.py`):**
+  - Lúc **connect** (`accept()`): chỉ xác thực + `get_active_conversation_for_customer` (nếu có → nạp lịch sử để hiển thị). **BỎ `open_case_for_customer` ở đây.** Nếu chưa có ca active → giữ `conv = None`, **chưa tạo gì**.
+  - Lúc **`receive_text` ĐẦU TIÊN**: nếu `conv is None` → **lúc này mới `open_case_for_customer`** → đăng ký hub queue theo ca mới → chạy pipeline. Nếu đã có ca → dùng ca đó.
+  - Đảm bảo đăng ký hub queue (`hub.register(conv_key)`) diễn ra **sau khi có conv** (dời theo).
+- **Out:** không đổi mô hình ca (P2 cũ: ca đóng → tin mới mở ca mới — giữ nguyên).
+- **Verify:** khách mở `/chat` mà **không** nhắn → **không** sinh conversation, admin **không** thấy card rỗng "AI đang xử lý". Khách nhắn tin đầu → ca mới tạo + agent chạy. Khách có ca đang mở từ phiên trước → connect nạp đúng lịch sử.
 
-### 2.2 Tra cứu SCOPED
+### P1 — Đơn không thấy → BÁO (auto_reply), escalate SAU `fix(order): P1 order-not-found informs instead of escalating immediately`
 
-`order_service.lookup(order_code, customer_id) -> Order | None`: trả đơn **chỉ khi** tồn tại **VÀ** thuộc `customer_id`. `order_code` có nhưng thuộc người khác → trả `None` (không lộ sự tồn tại).
+- **In (`knowledge_node` + `response.py`):**
+  - Order-lookup: mã có + lookup `None` (không thấy / không thuộc khách) → **KHÔNG** đặt `order_unresolved` nữa; đặt tín hiệu **`order_not_found`** (state, **KHÔNG** phải blocking flag) + kèm `order_code` để Agent 4 nhắc lại.
+  - `response.py`: khi state có `order_not_found` → **auto_reply** câu **privacy-safe**: _"Mình không thấy đơn `<mã>` trong tài khoản của bạn. Bạn kiểm tra lại mã giúp mình nhé; nếu mã đúng mà vẫn không thấy, mình sẽ chuyển nhân viên kiểm tra giúp bạn."_ (KHÔNG lộ đơn của người khác — luôn "trong tài khoản của bạn"; KHÔNG hứa chuyển ngay — grounding hành động vẫn giữ.)
+  - **Escalate SAU (giữ `order_unresolved`, nhưng chỉ khi khách thật sự cần người):** đặt `order_unresolved` (→ Agent 3 human_handoff) khi **một trong hai**: (i) khách **xin gặp/chuyển nhân viên rõ ràng**; (ii) đây là **lần thứ hai** vẫn không giải được trong CÙNG ca. Phát hiện (ii) qua **`history`** (truyền vào lookup) — đếm số lượt khách hỏi đơn với `order_id` không giải được trong ca; ≥2 → escalate. **KHÔNG dò chữ trong reply.**
+    > Nếu (ii) khó làm gọn, ưu tiên làm (i) trước ("xin nhân viên → escalate"); (ii) là tinh chỉnh — ghi rõ nếu tạm bỏ.
+  - Ba nhánh còn lại **giữ nguyên**: mã + thấy (thuộc khách) → `order_context` báo trạng thái; không mã → hỏi mã.
+- **Out:** không đổi cơ chế Agent 3 (vẫn theo cờ).
+- **Verify:** (khách A có seed đơn) hỏi **mã lạ/gõ nhầm** → bot **báo "không thấy, kiểm tra lại mã"** (auto_reply, KHÔNG escalate); khách A hỏi **mã của khách B** → **cùng câu "không thấy trong tài khoản của bạn"** (không lộ đơn B); sau đó khách **xin gặp nhân viên** → **escalate thật** (admin "Chờ nhận ca", AI dừng); mã đúng → báo trạng thái thật.
 
-### 2.3 Gộp vào Agent 2 + luật "hỏi mã đơn một lần rồi escalate"
-
-Truyền `customer_id` xuống pipeline: đổi chữ ký `run_pipeline(input_text, history, turn_id, customer_id)`; WS truyền `customer_id` (từ token) → vào `state`.
-Trong `knowledge_node` (sau RAG), **khi intent là đơn hàng** (`order_status`; và `shipping` nếu có `order_id`):
-
-- **Có `order_id` + lookup THẤY** (thuộc khách) → gắn khối **`order_context`** vào state (Agent 4 đọc): mã đơn · trạng thái (nhãn VI) · items · khu vực · ngày đặt/gửi · dự kiến giao · mã vận đơn. _(RAG vẫn chạy song song — đơn + chính sách bổ trợ nhau.)_
-- **Có `order_id` nhưng KHÔNG thấy / không thuộc khách** → đặt cờ **`order_unresolved`** → escalate thật.
-- **KHÔNG có `order_id`** → **KHÔNG escalate**; để Agent 4 **hỏi mã đơn** (auto_reply bình thường). Đây là bước "hỏi một lần".
-
-### 2.4 Agent 3 — thêm cờ chặn
-
-`BLOCKING_FLAGS` thêm **`order_unresolved`** (khách đưa mã nhưng bot không giải được → human_handoff). Logic decision **không đổi** khác. Cập nhật `_PRIORITY_SEVERITY` nếu cần (order_unresolved theo intent order_status = medium/low như hiện tại).
-
-### 2.5 Agent 4 — dùng dữ liệu đơn + chỉnh grounding hành động
-
-- Nếu state có `order_context` → Agent 4 **báo trạng thái đơn** dựa trên khối đó (grounded). Vẫn **KHÔNG** tự huỷ/hoàn/đổi đơn (chỉ báo trạng thái).
-- Nếu không có `order_context` và intent đơn hàng thiếu mã → **hỏi mã đơn** (không hứa handoff — xem P3).
-
----
-
-## 3. Các pha (P0–P3) — Claude Code chạy tuần tự, commit từng pha
-
-### P0 — Cấm markdown ở Agent 4 `fix(agent): P0 plain-text replies (no markdown)`
-
-- **In:** thêm luật `_system_prompt` (`response.py`): _"Trả lời bằng văn xuôi hội thoại thuần như nhân viên nhắn tin với khách; KHÔNG dùng markdown (`**`, `#`, `-`, `_`), KHÔNG in đậm/tiêu đề/gạch đầu dòng."_
-- **Verify (live):** hỏi "chính sách đổi trả" → câu trả lời **không còn `**`\*\*, văn xuôi tự nhiên; nội dung vẫn đúng chính sách (30 ngày, còn tag…).
-
-### P1 — Real-time màn admin (publish hub) `fix(chat): P1 publish customer+ai messages to hub`
-
-- **In:** trong `ws/chat.py` nhánh AI thường, publish lên hub (`exclude=st.queue` để không dội lại khách):
-  - Sau `_persist_message(CUSTOMER, msg)` → `hub.publish(st.conv_key, {"type":"message","from":"customer","content":msg}, exclude=st.queue)`.
-  - Sau `send_json({"type":"reply",...})` → `hub.publish(st.conv_key, {"type":"message","from":"ai","content":reply}, exclude=st.queue)`.
-  - Publish tin khách cả ở nhánh `pending`/`handoff` (để admin thấy câu hỏi). Publish **degrade an toàn**.
-- **Out:** không đụng FE (đã xử lý `type:"message"`).
-- **Verify:** admin mở một ca `ACTIVE_AI`, khách nhắn → **tin khách + reply AI hiện ngay** trong khung chat admin (không cần F5).
-
-### P2 — Tích hợp đơn hàng (lookup scoped trong Agent 2 + escalate thật) `feat(order): P2 mock orders + scoped lookup in agent 2 + escalate-on-unresolved`
-
-- **In:** (theo §2)
-  - Model `order` + `OrderStatus` + migration; **`scripts/seed_orders.py`**.
-  - `order_service.lookup(order_code, customer_id)` (scoped).
-  - `run_pipeline(...)` + WS truyền **`customer_id`** vào state.
-  - `knowledge_node`: gộp order lookup (§2.3) → `order_context` (thấy) / cờ `order_unresolved` (có mã, không thấy) / để Agent 4 hỏi mã (không mã).
-  - `decision.py`: `BLOCKING_FLAGS` + `order_unresolved`.
-  - `response.py`: dùng `order_context` báo trạng thái (grounded); không tự thao tác đơn.
-- **Out:** tín hiệu handoff FE (P3).
-- **Verify:** (khách đăng nhập có seed đơn) "đơn <MÃ_ĐÚNG> giao đến đâu" → bot **báo trạng thái thật** từ dữ liệu đơn; "đơn 9999" (không thuộc khách) → **escalate** (không bịa); "đơn của tôi giao đến đâu" (không mã) → bot **hỏi mã đơn** (không escalate).
-- **Tự chạy (KHÔNG cần user thao tác):** Claude Code **commit migration TRƯỚC** (để đảo được: `alembic downgrade -1` + git revert), rồi tự chạy `alembic upgrade head` và `uv run python ../../scripts/seed_orders.py`, rồi **báo cáo** đã chạy gì + seed ra bao nhiêu đơn/khách. Seed idempotent nên chạy lại vô hại. (Chỉ dừng nếu DB không kết nối được hoặc migration/seed lỗi.)
-
-### P3 — Tín hiệu handoff THẬT (bỏ dò-chữ + action-grounding) `fix(handoff): P3 real handoff signal + agent4 action-grounding`
+### P2 — Dọn hiển thị ngưỡng (gỡ slider + bỏ cột chết) `chore(gate): P2 remove threshold slider + drop dead gate_config column`
 
 - **In:**
-  - **(Backend)** khi `status_out == IN_HUMAN_QUEUE`, WS gửi **`{"type":"handoff","content":<HANDOFF_NOTICE>}`** thay vì `{"type":"reply"}` (tín hiệu rõ ràng, không để FE đoán).
-  - **(FE khách)** `app/chat/page.tsx`: **BỎ** `HANDOFF_HINT`/dò-chữ. Xác định `waiting` từ tín hiệu thật: nhận `type:"handoff"` → render system message + `setStatus("waiting")`; `type:"reply"` → luôn `"ai"`. (Reconnect vẫn lấy từ `thread.active_status`.)
-  - **(Agent 4 action-grounding)** thêm luật `_system_prompt`: _"Bạn KHÔNG tự chuyển được cho nhân viên (hệ thống quyết). Khi đang trả lời tự động mà chưa đủ thông tin: HỎI thêm (vd mã đơn) hoặc nói thẳng chưa có thông tin — TUYỆT ĐỐI không hứa 'sẽ chuyển nhân viên'/'đang kết nối nhân viên'."_
-  - **(KB, nhẹ)** rà bước "chuyển nhân viên" trong `knowledge/case/don-giao-cham.md`: escalation ca đơn nay đi qua cờ `order_unresolved` (P2) → viết lại bước đó thành hành động khách-thấy ("báo đang kiểm tra") thay vì lời hứa chuyển. _(Các case sensitive refund/exchange/complaint đã được gate giữ nháp cho admin duyệt — không đổi.)_
-- **Out:** —
-- **Verify:** khách hỏi đơn không giải được → escalate thật: **admin thấy "Chờ nhận ca"**, **AI DỪNG** (khách nhắn tiếp không được AI trả lời), khách thấy "đang chờ nhân viên" (thật, từ tín hiệu). Auto_reply thường → **không** còn câu "sẽ chuyển nhân viên" giả.
+  - **(FE)** Gỡ **card/slider "Ngưỡng độ tin cậy tri thức"** khỏi màn Cấu hình Gate (`apps/dashboard`).
+  - **(BE)** Bỏ `retrieval_threshold` khỏi: model `GateConfig`, `gate_service` (`GateSnapshot`/`send_directly_for`-adjacent), response API `GET /admin/gate-config` (bỏ trường trả về). **Migration Alembic** drop cột `gate_config.retrieval_threshold`.
+  - Nguồn chân lý ngưỡng = **`config.retrieval_threshold`** (đặt từ `measure_threshold.py` → env/config). Không UI, không cột DB.
+- **Out:** không đổi hành vi pipeline (Agent 2 vẫn đọc `config`, 0.40).
+- **Verify:** màn Cấu hình Gate **không còn** slider ngưỡng; `GET /admin/gate-config` không trả `retrieval_threshold`; `alembic upgrade head` chạy sạch (+ `downgrade` OK); pipeline vẫn dùng 0.40 như cũ.
+- **Tự chạy:** Claude Code commit migration TRƯỚC → `alembic upgrade head` → báo cáo (đảo được). Chỉ dừng nếu DB không kết nối được / migration lỗi.
 
 ---
 
-## 4. Ghi chú cho Claude Code
+## 3. Ghi chú cho Claude Code
 
-- Đọc `apps/backend/CLAUDE.md`. Cấu hình từ **`.env` gốc repo**; **KHÔNG hardcode**. Scripts gốc `scripts/` theo pattern `seed_admin.py` (`sys.path.insert(apps/backend)` + `load_dotenv(.env gốc)`).
-- **KHÔNG phá bất biến §1**: escalation = cờ→Agent 3 (không phải chữ); Agent 4 egress duy nhất; grounding (facts+RAG+order, không bịa/không suy diễn vắng mặt, grounding hành động); lookup scoped theo khách; 1 worker + hub in-process.
-- **P2+P3 cùng gốc** ("escalation phải THẬT") — làm liền mạch. Publish/log **degrade an toàn**, không làm rớt/chậm lượt.
+- Đọc `apps/backend/CLAUDE.md`. Cấu hình từ **`.env` gốc repo**; **KHÔNG hardcode**.
+- **KHÔNG phá bất biến §1**: mô hình một-ca-active (P0 chỉ dời thời điểm tạo); escalation = cờ→Agent 3 (P1 chỉ thu hẹp điều kiện); grounding + privacy đơn hàng (không lộ đơn người khác); ngưỡng thật ở `config`. Ghi/log degrade an toàn.
+- **P1 — KHÔNG dò chữ**: phát hiện "cần người" bằng ý định/history, không match text reply (tránh đúng cái bug handoff cũ).
 - FE: Tailwind thuần + TanStack, KHÔNG shadcn. Sửa có phẫu thuật.
 - Commit **từng pha** với prefix ở tiêu đề. Dừng/nghỉ giữa pha được.
-- **Stop-point:** P2 **KHÔNG cần dừng** — Claude Code tự commit migration → `alembic upgrade head` → `seed_orders.py` → báo cáo (migration đảo được, seed idempotent). Chỉ dừng nếu chạm bất biến §1, DB không kết nối được, hoặc phải xoá/viết lại nhiều file.
+- **Stop-point:** P2 **tự chạy** migration (commit trước, đảo được). Chỉ dừng nếu chạm bất biến §1, DB không kết nối được, hoặc phải xoá/viết lại nhiều file.
 
-## 5. Phạm vi & không-phạm-vi
+## 4. Phạm vi & không-phạm-vi
 
-- **Trong:** cấm markdown; real-time admin (publish hub); tích hợp đơn hàng mock (model+seed+lookup scoped trong Agent 2 + cờ `order_unresolved` escalate) + Agent 4 báo trạng thái đơn; tín hiệu handoff thật (backend `{type:handoff}` + FE bỏ dò-chữ + Agent 4 action-grounding + dọn case doc đơn).
-- **Ngoài (sau):** thao tác đơn thật (huỷ/hoàn/đổi qua tool) — chỉ _tra cứu_ ở slice này; dùng 1 đơn active khi khách không đưa mã (enhancement); slice 13 anti-injection; 14 deploy; 15 corrections pipeline.
+- **Trong:** tạo hội thoại lười (chỉ khi có tin đầu); đơn không thấy → auto_reply báo (privacy-safe) + escalate-sau (xin nhân viên / lần 2); gỡ slider ngưỡng + bỏ cột `gate_config.retrieval_threshold`.
+- **Ngoài (sau):** lọc/ẩn card hội thoại rỗng cũ đã tồn tại (nếu muốn dọn dữ liệu cũ — P0 chỉ chặn phát sinh MỚI); intent riêng "yêu cầu gặp nhân viên" (nếu (i) cần tổng quát hơn); đo ngưỡng trên traffic thật (phân bố `retrieval_confidence` ở tab Báo cáo — đã hoãn); slice 13 anti-injection; 14 deploy.
