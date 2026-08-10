@@ -263,7 +263,6 @@ export interface GateConfig {
   auto_reply_enabled: boolean;
   auto_resolve_enabled: boolean;
   auto_resolve_minutes: number;
-  retrieval_threshold: number; // read-only hiển thị (P3-b hoãn)
   rules: GateIntentRule[];
 }
 export interface GateConfigUpdate {

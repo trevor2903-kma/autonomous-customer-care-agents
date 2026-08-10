@@ -1,8 +1,10 @@
 """Gate động (slice 11 P3) — đọc/ghi cấu hình gate từ DB (thay env), cache nhẹ TTL (1 worker).
 
 §4: gate = VAN cho nhánh auto_reply (status REPLIED). Escalation an toàn (blocking flags của Agent 3 →
-human_handoff) KHÔNG đọc gate, KHÔNG toggle. `retrieval_threshold` chỉ để hiển thị read-only slice này
-(Agent 2 VẪN đọc env — P3-b hoãn); `update_gate_config` KHÔNG nhận nó.
+human_handoff) KHÔNG đọc gate, KHÔNG toggle.
+
+Gate KHÔNG giữ `retrieval_threshold`: ngưỡng truy hồi là giá trị ĐO (`scripts/measure_threshold.py`) và
+nguồn chân lý là `settings.retrieval_threshold` — không phải nút bấm trên UI.
 """
 
 from __future__ import annotations
@@ -57,7 +59,6 @@ class GateSnapshot:
     auto_reply_enabled: bool
     auto_resolve_enabled: bool
     auto_resolve_minutes: int
-    retrieval_threshold: float
     rules: tuple[GateIntentRuleView, ...]
 
     def send_directly_for(self, intent: str | None) -> bool:
@@ -87,7 +88,6 @@ async def _load_snapshot() -> GateSnapshot:
         auto_reply_enabled=cfg.auto_reply_enabled,
         auto_resolve_enabled=cfg.auto_resolve_enabled,
         auto_resolve_minutes=cfg.auto_resolve_minutes,
-        retrieval_threshold=cfg.retrieval_threshold,
         rules=tuple(
             GateIntentRuleView(intent=r.intent, label=r.label, sensitive=r.sensitive, send_directly=r.send_directly)
             for r in rules

@@ -1,7 +1,7 @@
 """Pydantic schemas — Gate config (slice 11 P3, admin).
 
-`GET` trả kèm `retrieval_threshold` (chỉ hiển thị read-only); `PUT` KHÔNG nhận nó (plan §4).
 Per-intent chỉ chỉnh được `send_directly` (label/sensitive cố định theo seed).
+KHÔNG có `retrieval_threshold`: ngưỡng truy hồi thuộc `settings` (giá trị ĐO), không phải cấu hình UI.
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ class GateConfigOut(BaseModel):
     auto_reply_enabled: bool
     auto_resolve_enabled: bool
     auto_resolve_minutes: int
-    retrieval_threshold: float  # READ-ONLY hiển thị (P3-b hoãn — Agent 2 vẫn đọc env)
     rules: list[GateIntentRuleSchema]
 
 
@@ -30,7 +29,7 @@ class GateIntentRuleUpdate(BaseModel):
 
 
 class GateConfigUpdate(BaseModel):
-    """PUT — mọi field optional (chỉ cập nhật field gửi lên). KHÔNG có retrieval_threshold."""
+    """PUT — mọi field optional (chỉ cập nhật field gửi lên)."""
 
     auto_reply_enabled: bool | None = None
     auto_resolve_enabled: bool | None = None

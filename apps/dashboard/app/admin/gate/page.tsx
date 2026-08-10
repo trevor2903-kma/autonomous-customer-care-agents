@@ -175,26 +175,6 @@ export default function GatePage() {
               ))}
             </div>
           </section>
-
-          {/* Slider READ-ONLY (P3-b hoãn) */}
-          <div className="rounded-[12px] border border-line bg-white px-[18px] py-4 shadow-soft">
-            <div className="flex items-center justify-between">
-              <h2 className="text-[14px] font-semibold text-ink">Ngưỡng độ tin cậy tri thức</h2>
-              <span className="font-mono text-[14px] font-semibold text-olive">
-                {cfg.retrieval_threshold.toFixed(2)}
-              </span>
-            </div>
-            <div className="mt-3 h-1.5 w-full rounded-full bg-[#EFEBE2]" aria-hidden>
-              <div
-                className="h-full rounded-full bg-olive/70"
-                style={{ width: `${Math.max(0, Math.min(1, cfg.retrieval_threshold)) * 100}%` }}
-              />
-            </div>
-            <p className="mt-2.5 text-[12px] leading-[1.5] text-dim">
-              Tri thức truy hồi được có điểm dưới ngưỡng này → hệ thống chuyển ca cho nhân viên thay vì
-              tự trả lời · chỉnh được ở phiên bản sau.
-            </p>
-          </div>
         </div>
       )}
     </div>

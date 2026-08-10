@@ -166,7 +166,6 @@ def _gate_out(snap: gate_service.GateSnapshot) -> GateConfigOut:
         auto_reply_enabled=snap.auto_reply_enabled,
         auto_resolve_enabled=snap.auto_resolve_enabled,
         auto_resolve_minutes=snap.auto_resolve_minutes,
-        retrieval_threshold=snap.retrieval_threshold,
         rules=[
             GateIntentRuleSchema(
                 intent=r.intent, label=r.label, sensitive=r.sensitive, send_directly=r.send_directly
@@ -178,13 +177,13 @@ def _gate_out(snap: gate_service.GateSnapshot) -> GateConfigOut:
 
 @router.get("/gate-config", response_model=GateConfigOut)
 async def get_gate_config() -> GateConfigOut:
-    """Cấu hình gate hiện tại (2 toggle + bảng per-intent + retrieval_threshold read-only)."""
+    """Cấu hình gate hiện tại (2 toggle + bảng per-intent)."""
     return _gate_out(await gate_service.get_gate_config())
 
 
 @router.put("/gate-config", response_model=GateConfigOut)
 async def update_gate_config(payload: GateConfigUpdate) -> GateConfigOut:
-    """Cập nhật toggle hệ thống + `send_directly` per-intent. KHÔNG nhận retrieval_threshold (slider read-only)."""
+    """Cập nhật toggle hệ thống + `send_directly` per-intent."""
     snap = await gate_service.update_gate_config(
         auto_reply_enabled=payload.auto_reply_enabled,
         auto_resolve_enabled=payload.auto_resolve_enabled,

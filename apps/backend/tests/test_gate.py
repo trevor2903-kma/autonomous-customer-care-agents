@@ -15,7 +15,6 @@ def _snap(*, auto_reply_enabled: bool = True, rules: list[GateIntentRuleView] | 
         auto_reply_enabled=auto_reply_enabled,
         auto_resolve_enabled=True,
         auto_resolve_minutes=30,
-        retrieval_threshold=0.35,
         rules=tuple(rules or ()),
     )
 
