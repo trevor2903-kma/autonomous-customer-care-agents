@@ -85,7 +85,7 @@ export function ChatWindow({
                   {m.sources.map((s) => (
                     <span
                       key={s}
-                      className="rounded-md border border-line-olive bg-olive-soft px-2 py-0.5 font-mono text-[11.5px] text-olive-dark"
+                      className="rounded-md border border-line-olive bg-olive-soft px-2 py-0.5 text-[11.5px] text-olive-dark"
                     >
                       {s}
                     </span>

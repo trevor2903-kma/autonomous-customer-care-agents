@@ -12,6 +12,7 @@ import {
   reindexRag,
   uploadKnowledgeDoc,
 } from "@/lib/api";
+import { formatIntent } from "@/components/reports/labels";
 
 // Console tri thức (P3). Đường nạp CHÍNH = "Nạp lại từ repo" (reset-and-reingest từ apps/backend/knowledge).
 // Upload chỉ là AD-HOC: non-canonical, mất khi nạp lại. Doc canonical không xoá được ở đây (xoá file trong repo).
@@ -48,9 +49,9 @@ function DocRow({ doc, onDelete, deleting }: { doc: KnowledgeDocument; onDelete:
             </span>
           )}
         </div>
-        <span className="truncate font-mono text-[11.5px] text-dim">
+        <span className="truncate text-[11.5px] text-dim">
           {doc.source}
-          {doc.intent ? ` · ${doc.intent}` : ""}
+          {doc.intent ? ` · ${formatIntent(doc.intent)}` : ""}
         </span>
       </div>
       <div className="flex flex-none items-center gap-3">
@@ -138,8 +139,8 @@ export function DocumentsPanel() {
         <div className="min-w-0">
           <h2 className="text-[14px] font-semibold text-ink">Tài liệu tri thức</h2>
           <p className="mt-0.5 text-[12.5px] leading-[1.5] text-faint">
-            Nguồn chân lý là thư mục <code className="font-mono text-[11.5px]">knowledge/</code> trong repo —
-            sửa file <code className="font-mono text-[11.5px]">.md</code> rồi nạp lại.
+            Nguồn chân lý là thư mục <code className="text-[11.5px]">knowledge/</code> trong repo —
+            sửa file <code className="text-[11.5px]">.md</code> rồi nạp lại.
           </p>
         </div>
         <button
@@ -155,7 +156,7 @@ export function DocumentsPanel() {
 
       {info.data && (
         <div className="border-b border-line-soft bg-[#FBFAF7] px-[18px] py-2.5 text-[12.5px] text-faint">
-          Collection <code className="font-mono text-[11.5px] text-dim">{info.data.collection}</code> ·{" "}
+          Collection <code className="text-[11.5px] text-dim">{info.data.collection}</code> ·{" "}
           <span className="font-medium text-ink">{info.data.points_count}</span> point ·{" "}
           <span className="font-medium text-ink">{docs.data?.length ?? 0}</span> tài liệu
         </div>
@@ -200,7 +201,7 @@ export function DocumentsPanel() {
 
         <p className="mt-2 text-center text-[11.5px] leading-relaxed text-faint">
           Tài liệu tải lên là tạm thời — sẽ mất khi nạp lại từ repo. Tri thức lâu dài hãy thêm file vào{" "}
-          <code className="font-mono text-[11px]">knowledge/</code>.
+          <code className="text-[11px]">knowledge/</code>.
         </p>
       </div>
 

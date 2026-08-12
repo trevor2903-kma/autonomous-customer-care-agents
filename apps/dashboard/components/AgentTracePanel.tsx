@@ -55,7 +55,7 @@ export function AgentTracePanel() {
           <ol className="flex flex-wrap items-center gap-1 text-sm">
             {result.trace.map((step, i) => (
               <li key={i} className="flex items-center gap-1">
-                <span className="rounded border border-neutral-300 bg-neutral-50 px-2 py-1 font-mono text-xs">
+                <span className="rounded border border-neutral-300 bg-neutral-50 px-2 py-1 text-xs">
                   {step.node}
                   <span className="ml-1 text-neutral-400">({step.confidence ?? "—"})</span>
                 </span>

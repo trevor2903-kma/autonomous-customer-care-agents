@@ -5,7 +5,6 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 
-type Tab = "customer" | "admin";
 type CustomerMode = "login" | "register";
 
 function routeFor(role: string): string {
@@ -16,7 +15,6 @@ export default function LoginPage() {
   const { user, loading, login, register } = useAuth();
   const router = useRouter();
 
-  const [tab, setTab] = useState<Tab>("customer");
   const [mode, setMode] = useState<CustomerMode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,7 +27,7 @@ export default function LoginPage() {
     if (!loading && user) router.replace(routeFor(user.role));
   }, [loading, user, router]);
 
-  const isRegister = tab === "customer" && mode === "register";
+  const isRegister = mode === "register";
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -61,25 +59,6 @@ export default function LoginPage() {
           />
           <span className="font-serif text-[22px] tracking-[0.2px] text-ink">ThriftYourStyle</span>
           <span className="text-[12.5px] text-faint">Chăm sóc khách hàng</span>
-        </div>
-
-        {/* Tabs Khách / Quản trị */}
-        <div className="mb-6 flex rounded-[9px] border border-line bg-cream-soft p-1">
-          {(["customer", "admin"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => {
-                setTab(t);
-                setError(null);
-              }}
-              className={`flex-1 rounded-[7px] py-2 text-[13.5px] font-medium transition-colors ${
-                tab === t ? "bg-white text-ink shadow-soft" : "text-faint hover:text-muted"
-              }`}
-            >
-              {t === "customer" ? "Khách hàng" : "Quản trị"}
-            </button>
-          ))}
         </div>
 
         <h1 className="mb-5 text-center font-serif text-[21px] text-ink">
@@ -127,21 +106,19 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {tab === "customer" && (
-          <p className="mt-5 text-center text-[13px] text-faint">
-            {mode === "login" ? "Chưa có tài khoản? " : "Đã có tài khoản? "}
-            <button
-              type="button"
-              onClick={() => {
-                setMode(mode === "login" ? "register" : "login");
-                setError(null);
-              }}
-              className="font-medium text-olive hover:text-olive-dark"
-            >
-              {mode === "login" ? "Tạo tài khoản" : "Đăng nhập"}
-            </button>
-          </p>
-        )}
+        <p className="mt-5 text-center text-[13px] text-faint">
+          {mode === "login" ? "Chưa có tài khoản? " : "Đã có tài khoản? "}
+          <button
+            type="button"
+            onClick={() => {
+              setMode(mode === "login" ? "register" : "login");
+              setError(null);
+            }}
+            className="font-medium text-olive hover:text-olive-dark"
+          >
+            {mode === "login" ? "Tạo tài khoản" : "Đăng nhập"}
+          </button>
+        </p>
 
         <p className="mt-6 text-center text-[11.5px] text-dim">
           Hệ thống chăm sóc khách hàng tự trị · Multi-Agent AI

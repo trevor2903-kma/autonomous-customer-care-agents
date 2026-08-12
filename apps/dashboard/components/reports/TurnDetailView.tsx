@@ -14,6 +14,7 @@ import {
   PRIORITY_LABEL,
   SEVERITY_LABEL,
   formatEscalationReason,
+  formatIntent,
   fmtClock,
   fmtMs,
 } from "./labels";
@@ -34,7 +35,7 @@ function stepSummary(step: TurnStep, d: TurnDetail): { line: string; sub: string
     case "intent": {
       const ents = Object.keys((detail.entities as Record<string, unknown>) ?? {});
       return {
-        line: `Ý định: ${String(detail.intent ?? "—")}`,
+        line: `Ý định: ${formatIntent(detail.intent as string)}`,
         sub: ents.length ? `Thực thể: ${ents.join(", ")}` : "Không có thực thể",
       };
     }
@@ -79,7 +80,7 @@ function AgentCard({ step, detail, index }: { step: TurnStep; detail: TurnDetail
     <div className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-[12px] border border-line bg-white p-[15px] shadow-soft">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] uppercase tracking-[0.6px] text-dim">Tác tử {index + 1}</span>
-        <span className="font-mono text-[11.5px] font-semibold text-muted">{fmtMs(step.duration_ms)}</span>
+        <span className="text-[11.5px] font-semibold text-muted">{fmtMs(step.duration_ms)}</span>
       </div>
       <div className="text-[13.5px] font-semibold text-ink">{NODE_SHORT[step.node] ?? step.node}</div>
       <div className={`text-[12.5px] leading-[1.5] ${bad ? "text-terracotta" : "text-muted"}`}>{line}</div>
@@ -108,7 +109,7 @@ function Timeline({ steps }: { steps: TurnStep[] }) {
       <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-faint">
         {measured.map((s) => (
           <span key={s.node}>
-            {NODE_SHORT[s.node] ?? s.node} <span className="font-mono text-muted">{fmtMs(s.duration_ms)}</span>
+            {NODE_SHORT[s.node] ?? s.node} <span className="text-muted">{fmtMs(s.duration_ms)}</span>
           </span>
         ))}
       </div>
@@ -122,7 +123,7 @@ function auditResult(step: TurnStep): string {
     case "customer":
       return "—";
     case "intent":
-      return `${String(d.intent ?? "—")}${step.confidence !== null ? ` · ${step.confidence.toFixed(2)}` : ""}`;
+      return `${formatIntent(d.intent as string)}${step.confidence !== null ? ` · ${step.confidence.toFixed(2)}` : ""}`;
     case "knowledge":
       return d.skipped === true
         ? "bỏ qua"
@@ -154,11 +155,11 @@ export function TurnDetailView({ turnId }: { turnId: string }) {
       {/* Đầu lượt */}
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-[14px] font-semibold text-ink">Chi tiết lượt xử lý</h2>
-        <span className="font-mono text-[12.5px] text-faint">{data.short_id}</span>
+        <span className="text-[12.5px] text-faint">{data.short_id}</span>
         <span className={`rounded-[6px] border px-2 py-0.5 text-[11.5px] font-medium ${tone.border} ${tone.bg} ${tone.text}`}>
           {OUTCOME_LABEL[data.outcome] ?? data.outcome}
         </span>
-        <span className="ml-auto font-mono text-[12.5px] font-semibold text-muted">
+        <span className="ml-auto text-[12.5px] font-semibold text-muted">
           Tổng {fmtMs(data.total_ms)}
         </span>
       </div>
@@ -200,8 +201,8 @@ export function TurnDetailView({ turnId }: { turnId: string }) {
                   {KB_TYPE_LABEL[s.type ?? ""] ?? s.type ?? "—"}
                 </span>
                 <span className="text-[13px] font-medium text-ink">{s.title ?? "—"}</span>
-                <code className="font-mono text-[11.5px] text-dim">{s.source}</code>
-                <span className="ml-auto font-mono text-[12px] font-semibold text-muted">
+                <code className="text-[11.5px] text-dim">{s.source}</code>
+                <span className="ml-auto text-[12px] font-semibold text-muted">
                   {s.score !== null ? s.score.toFixed(4) : "—"}
                 </span>
               </div>
@@ -213,7 +214,7 @@ export function TurnDetailView({ turnId }: { turnId: string }) {
       {/* Nhật ký kiểm toán per-step */}
       <div className="mt-7 flex flex-wrap items-center gap-3">
         <h3 className="text-[14px] font-semibold text-ink">Nhật ký kiểm toán</h3>
-        <span className="font-mono text-[12.5px] text-faint">
+        <span className="text-[12.5px] text-faint">
           {data.short_id} · {data.steps.length} bản ghi
         </span>
       </div>
@@ -230,7 +231,7 @@ export function TurnDetailView({ turnId }: { turnId: string }) {
               key={`${s.node}-${i}`}
               className="grid grid-cols-[100px_190px_minmax(0,1fr)_140px] gap-3 border-b border-line-soft px-[18px] py-2.5 text-[12.5px] last:border-b-0"
             >
-              <span className="font-mono text-faint">{fmtClock(s.created_at)}</span>
+              <span className="text-faint">{fmtClock(s.created_at)}</span>
               <span className="text-ink">{NODE_LABEL[s.node] ?? s.node}</span>
               <span className="min-w-0 text-muted">
                 {AUDIT_ACTION_LABEL[String(s.action)] ?? String(s.action ?? "—")}
@@ -240,7 +241,7 @@ export function TurnDetailView({ turnId }: { turnId: string }) {
                   </span>
                 )}
               </span>
-              <span className="truncate font-mono text-muted">{auditResult(s)}</span>
+              <span className="truncate text-muted">{auditResult(s)}</span>
             </div>
           ))}
         </div>

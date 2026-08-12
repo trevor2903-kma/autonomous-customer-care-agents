@@ -155,7 +155,7 @@ export default function GatePage() {
                         </span>
                       )}
                     </div>
-                    <span className="font-mono text-[11.5px] text-dim">{r.intent}</span>
+                    <span className="text-[11.5px] text-dim">{r.intent}</span>
                   </div>
                   <div className="flex flex-none items-center gap-2.5">
                     <span

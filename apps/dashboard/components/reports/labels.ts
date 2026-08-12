@@ -65,7 +65,33 @@ export const FLAG_LABEL: Record<string, string> = {
   search_error: "Lỗi truy hồi",
   ambiguous_intent: "Ý định mơ hồ",
   hallucination_risk: "Thiếu căn cứ để trả lời",
+  order_unresolved: "Không tra cứu được đơn hàng",
+  human_requested: "Khách yêu cầu gặp nhân viên",
 };
+
+// Nhãn tiếng Việt cho các Intent của khách hàng (PRD §7.1).
+export const INTENT_LABEL: Record<string, string> = {
+  product_price: "Hỏi giá sản phẩm",
+  product_information: "Thông tin sản phẩm",
+  size_consulting: "Tư vấn kích cỡ",
+  shipping: "Vận chuyển & giao hàng",
+  order_status: "Tra cứu đơn hàng",
+  payment: "Thanh toán",
+  membership: "Thành viên & tích điểm",
+  store_information: "Thông tin cửa hàng",
+  return_exchange_policy: "Chính sách đổi trả",
+  refund: "Yêu cầu hoàn tiền",
+  exchange: "Yêu cầu đổi hàng",
+  complaint: "Khiếu nại & phản ánh",
+  promotion: "Khuyến mãi & ưu đãi",
+  greeting: "Chào hỏi",
+  other: "Ý định khác",
+};
+
+export function formatIntent(intent?: string | null): string {
+  if (!intent) return "—";
+  return INTENT_LABEL[intent] ?? intent;
+}
 
 export const KB_TYPE_LABEL: Record<string, string> = {
   faq: "Hỏi đáp",

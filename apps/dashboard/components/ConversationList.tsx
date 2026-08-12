@@ -28,7 +28,7 @@ export function ConversationList() {
           {data.slice(0, 10).map((c) => (
             <li key={c.id} className="flex items-center justify-between py-2 text-sm">
               <span className="truncate">
-                <span className="font-mono text-xs text-neutral-400">{c.id.slice(0, 8)}</span>{" "}
+                <span className="text-xs text-neutral-400">{c.id.slice(0, 8)}</span>{" "}
                 {c.customer_identifier ?? "guest"}
                 {c.messages && c.messages.length > 0 && (
                   <span className="ml-2 text-neutral-500">

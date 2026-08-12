@@ -13,7 +13,7 @@ import {
   getReportTurns,
 } from "@/lib/api";
 import { TurnDetailView } from "@/components/reports/TurnDetailView";
-import { FLAG_LABEL, OUTCOME_LABEL, OUTCOME_TONE, fmtMs, fmtTime } from "@/components/reports/labels";
+import { FLAG_LABEL, OUTCOME_LABEL, OUTCOME_TONE, fmtMs, fmtTime, formatIntent } from "@/components/reports/labels";
 
 // Tab "Báo cáo hoạt động" (slice obs P4). NGUỒN: audit_log qua /api/admin/reports/* — Langfuse chỉ là
 // link bổ trợ. Bố cục theo design: lọc thời gian → 3 thẻ KPI → bảng theo intent → danh sách lượt →
@@ -62,7 +62,7 @@ function KpiCard({ label, value, note }: { label: string; value: string; note: R
   return (
     <div className="min-w-0 flex-1 rounded-[12px] border border-line bg-white px-[18px] py-[15px] shadow-soft">
       <div className="text-[11px] uppercase tracking-[0.8px] text-dim">{label}</div>
-      <div className="mt-[7px] font-serif text-[29px] leading-[1.1] text-ink">{value}</div>
+      <div className="mt-[7px] font-medium text-[29px] leading-[1.1] text-ink">{value}</div>
       <div className="mt-[3px] text-[12px] leading-[1.5] text-faint">{note}</div>
     </div>
   );
@@ -122,7 +122,7 @@ function EscalationReasons({ s }: { s: ReportSummary }) {
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#EFEBE2]">
               <div className="h-full rounded-full bg-terracotta/60" style={{ width: `${r.pct}%` }} />
             </div>
-            <span className="w-[92px] flex-none text-right font-mono text-[12px] text-faint">
+            <span className="w-[92px] flex-none text-right text-[12px] text-faint">
               {r.count} lượt · {r.pct}%
             </span>
           </div>
@@ -157,12 +157,15 @@ function IntentTable({ rows }: { rows: IntentRow[] }) {
               key={r.intent}
               className="grid grid-cols-[minmax(0,1fr)_70px_80px_90px_110px_90px] gap-3 border-b border-line-soft px-[18px] py-2.5 text-[12.5px] last:border-b-0"
             >
-              <code className="truncate font-mono text-[12px] text-ink">{r.intent}</code>
+              <div className="flex items-center gap-1.5 truncate">
+                <span className="font-medium text-ink">{formatIntent(r.intent)}</span>
+                <code className="text-[11px] text-faint">({r.intent})</code>
+              </div>
               <span className="text-right text-muted">{r.turns}</span>
               <span className="text-right text-olive-dark">{r.auto_pct}%</span>
               <span className="text-right text-gold">{r.draft_pct}%</span>
               <span className="text-right text-terracotta">{r.handoff_pct}%</span>
-              <span className="text-right font-mono text-muted">{fmtMs(r.avg_latency_ms)}</span>
+              <span className="text-right text-muted">{fmtMs(r.avg_latency_ms)}</span>
             </div>
           ))}
         </div>
@@ -278,17 +281,17 @@ export default function ReportsPage() {
                       active ? "bg-cream" : "hover:bg-cream/50"
                     }`}
                   >
-                    <span className="w-[95px] flex-none font-mono text-[11.5px] text-dim">
+                    <span className="w-[95px] flex-none text-[11.5px] text-dim">
                       {t.short_id}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">
                       {t.customer_text || "—"}
                     </span>
-                    <span className="w-[100px] flex-none text-right">
+                    <span className="w-[120px] flex-none text-right truncate">
                       {t.intent ? (
-                        <code className="truncate font-mono text-[11.5px] text-faint">
-                          {t.intent}
-                        </code>
+                        <span className="text-[12px] text-faint" title={t.intent}>
+                          {formatIntent(t.intent)}
+                        </span>
                       ) : (
                         <span className="text-[11.5px] text-faint">—</span>
                       )}
@@ -300,7 +303,7 @@ export default function ReportsPage() {
                         {OUTCOME_LABEL[t.outcome] ?? t.outcome}
                       </span>
                     </span>
-                    <span className="w-[65px] flex-none text-right font-mono text-[12px] text-muted">
+                    <span className="w-[65px] flex-none text-right text-[12px] text-muted">
                       {fmtMs(t.duration_ms)}
                     </span>
                     <span className="w-[110px] flex-none text-right text-[11.5px] text-faint">

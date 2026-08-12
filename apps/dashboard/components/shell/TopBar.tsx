@@ -49,7 +49,7 @@ export function TopBar() {
           )}
         </div>
       ) : (
-        <Link href="/login" className="text-[12.5px] text-dim hover:text-muted mob:hidden">
+        <Link href="/login" className="text-[12.5px] text-dim hover:text-muted hidden">
           Đăng nhập
         </Link>
       )}
