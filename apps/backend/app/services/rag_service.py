@@ -37,6 +37,7 @@ from ..core.config import settings
 from ..core.embeddings import embed_text, embed_texts, embedding_dim
 from ..core.logging import get_logger
 from ..core.qdrant_client import get_qdrant
+from ..core.sanitize import sanitize_untrusted_document
 from ..models.enums import Intent
 
 log = get_logger("rag")
@@ -280,10 +281,15 @@ async def ingest_knowledge_base(root: Path | None = None) -> dict:
 
 
 async def ingest_document(text: str, source: str, *, type: str = "upload", title: str | None = None) -> int:
-    """Upload AD-HOC: chunk tổng quát → embed → upsert. Payload cùng schema KB nhưng `intent=None`
-    (không có frontmatter) → Agent 2 chỉ thấy nó ở lượt không-filter. Trả số chunk."""
+    """Upload AD-HOC: sanitize → chunk tổng quát → embed → upsert. Payload cùng schema KB nhưng
+    `intent=None` (không có frontmatter) → Agent 2 chỉ thấy nó ở lượt không-filter. Trả số chunk.
+
+    Sanitize (Lớp D, slice 13): file ad-hoc KHÔNG do team viết nên là bề mặt injection GIÁN TIẾP —
+    chuẩn hoá + vô hiệu câu ra lệnh TRƯỚC khi thành vector. Đường KB repo (`ingest_kb_document`)
+    KHÔNG đi qua đây: tài liệu canonical là nguồn tin cậy.
+    """
     await ensure_collection()
-    chunks = chunk_text(text)
+    chunks = chunk_text(sanitize_untrusted_document(text))
     if not chunks:
         return 0
     vectors = await embed_texts(chunks)

@@ -78,6 +78,9 @@ _TYPE_LABEL = {
     "reference": "Tra cứu",
     "faq": "Hỏi đáp",
     "promotion": "Khuyến mãi",
+    # Upload ad-hoc (non-canonical): giữ NHÃN đúng nguồn gốc trong prompt (Lớp D) — nhãn TRUNG TÍNH,
+    # không kèm chỉ dẫn, để không làm Agent 4 ngại dùng tài liệu admin vừa nạp.
+    "upload": "Tài liệu tải lên",
 }
 
 
