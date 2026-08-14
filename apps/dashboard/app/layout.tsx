@@ -58,8 +58,8 @@ export default function RootLayout({
     <html lang="vi" className={`${sans.variable} ${serif.variable}`}>
       <body className="font-sans">
         <Providers>
-          {/* Vỏ app (design): cột dọc 100vh — top bar 53px + vùng nội dung co giãn. */}
-          <div className="flex min-h-screen flex-col bg-page">
+          {/* Vỏ app (design): cột dọc 100dvh — top bar 53px + vùng nội dung co giãn không cuộn layout ngoài. */}
+          <div className="flex h-screen h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-page">
             <TopBar />
             {children}
           </div>

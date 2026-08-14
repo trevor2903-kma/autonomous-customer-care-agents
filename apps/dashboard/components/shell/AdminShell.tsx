@@ -131,7 +131,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const hideWhenRail = collapsed ? "desk:hidden" : "";
 
   return (
-    <div className="flex h-[calc(100vh_-_53px)] min-h-0 overflow-hidden">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
       {open && (
         <div
           onClick={() => setOpen(false)}
@@ -254,7 +254,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="hidden flex-none items-center gap-3 border-b border-line bg-white px-4 py-[11px] mob:flex">
+        <div className="sticky top-0 z-40 hidden flex-none items-center gap-3 border-b border-line bg-white px-4 py-[11px] mob:flex">
           <button
             onClick={() => setOpen(true)}
             aria-label="Mở menu điều hướng"

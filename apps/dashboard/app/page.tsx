@@ -15,7 +15,7 @@ export default function HomePage() {
   }, [loading, user, router]);
 
   return (
-    <div className="flex min-h-[calc(100vh_-_53px)] items-center justify-center text-sm text-dim">
+    <div className="flex flex-1 min-h-0 items-center justify-center text-sm text-dim">
       Đang chuyển hướng…
     </div>
   );

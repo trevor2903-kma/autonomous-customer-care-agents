@@ -110,7 +110,7 @@ function ChatInner() {
 
   return (
     // Khoá chiều cao dưới top bar 53px → vùng tin nhắn tự cuộn, ô nhập luôn nằm đáy màn.
-    <main className="flex h-[calc(100vh_-_53px)] min-h-0 w-full justify-center overflow-hidden">
+    <main className="flex flex-1 min-h-0 w-full justify-center overflow-hidden">
       <div className="flex w-full max-w-[840px] flex-1 flex-col overflow-hidden px-6 mob:px-3.5">
         <div className="flex flex-none flex-col gap-3.5 px-1 pb-4 pt-[22px]">
           <ChatHeader status={status} />
