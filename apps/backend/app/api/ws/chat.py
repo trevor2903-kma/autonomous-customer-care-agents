@@ -32,6 +32,7 @@ from ...core import tracing
 from ...core.config import settings
 from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
+from ...core.sanitize import sanitize_customer_message
 from ...models import User
 from ...models.enums import ConversationStatus, MessageSender, TurnOutcome, UserRole
 from ...services import audit_service, conversation_service, escalation_service, gate_service
@@ -300,7 +301,9 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
     """Đọc tin khách. Ca đóng giữa lượt → mở ca mới (AI-first). Người đang xử lý → route admin; ngược lại pipeline."""
     try:
         while True:
-            msg = await websocket.receive_text()
+            # Lớp A (slice 13): chuẩn hoá + cap NGAY tại biên — mọi đường phía sau (persist, hub,
+            # pipeline, prompt LLM) chỉ thấy bản đã sạch. Cắt bớt, KHÔNG rớt kết nối.
+            msg = sanitize_customer_message(await websocket.receive_text())
             if st.conv_id is None:
                 # TẠO LƯỜI: ca chỉ sinh khi khách THỰC SỰ nhắn. Mở /chat rồi thoát KHÔNG để lại ca rỗng
                 # `ACTIVE_AI` làm loãng hàng đợi admin.
@@ -390,7 +393,7 @@ async def _customer_ai_only(websocket: WebSocket) -> None:
     """Degrade: KHÔNG tạo được conversation → chạy AI trực tiếp, KHÔNG persist/hub/status-gate."""
     try:
         while True:
-            msg = await websocket.receive_text()
+            msg = sanitize_customer_message(await websocket.receive_text())  # Lớp A (slice 13)
             await websocket.send_json({"type": "typing"})
             # KHÔNG audit nhánh này: tới đây nghĩa là DB không dùng được, ghi audit chỉ tổ sinh log lỗi.
             _, _, reply = await _run_pipeline_safe(msg, None, uuid.uuid4())

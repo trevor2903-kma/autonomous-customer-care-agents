@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     sensitive_intents: str = "refund,complaint,exchange"
     auto_reply_review: bool = True  # tắt (env=false) -> auto_reply gửi thẳng kể cả intent nhạy cảm
 
+    # ── Chống prompt-injection (slice 13, NFR-7 — Lớp A) ──────────────────────
+    # Cap độ dài tin nhắn khách tại biên WS: tin dài bị CẮT BỚT (không rớt kết nối). Đủ rộng cho
+    # câu hỏi thật, đủ hẹp để chặn "tường văn bản" nhồi chỉ dẫn vào prompt.
+    max_message_chars: int = 2000
+
     # ── Auth (slice 11 — JWT + RBAC) ──────────────────────────────────────────
     # Secret ký JWT (HS256) — BẮT BUỘC, đọc env JWT_SECRET (KHÔNG hardcode secret).
     jwt_secret: str
