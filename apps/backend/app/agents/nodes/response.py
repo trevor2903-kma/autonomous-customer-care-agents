@@ -67,8 +67,17 @@ GREETING_REPLY = (
 # Intent trả câu mẫu, KHÔNG qua LLM — khớp `knowledge.NO_RETRIEVAL_INTENTS` (Agent 2 đã bỏ retrieval).
 CANNED_INTENTS: dict[str, str] = {"greeting": GREETING_REPLY}
 
+def _resolve_facts_path() -> Path:
+    curr = Path(__file__).resolve().parent
+    for p in [curr, *curr.parents]:
+        candidate = p / "knowledge" / "facts.md"
+        if candidate.is_file():
+            return candidate
+    return Path(__file__).resolve().parents[2] / "knowledge" / "facts.md"
+
+
 # facts.md = sự thật lõi cửa hàng, LUÔN nạp vào prompt (plan §2.6). Không vào Qdrant (ingest bỏ qua).
-_FACTS_PATH = Path(__file__).resolve().parents[3] / "knowledge" / "facts.md"
+_FACTS_PATH = _resolve_facts_path()
 _facts_cache: str | None = None
 
 # Nhãn hiển thị theo `type` của chunk — cho LLM biết đoạn nào là QUY TRÌNH phải bám từng bước, đoạn nào

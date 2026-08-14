@@ -47,8 +47,16 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?…])\s+")
 # Heading cấp 2+ ở đầu dòng = ranh giới section (một `#` là tiêu đề tài liệu, đã có ở frontmatter `title`).
 _SECTION_RE = re.compile(r"^#{2,}\s+.*$", re.MULTILINE)
 
-# rag_service.py = apps/backend/app/services/... -> parents[2] = apps/backend
-KNOWLEDGE_DIR = Path(__file__).resolve().parents[2] / "knowledge"
+def _resolve_knowledge_dir() -> Path:
+    curr = Path(__file__).resolve().parent
+    for p in [curr, *curr.parents]:
+        candidate = p / "knowledge"
+        if candidate.is_dir():
+            return candidate
+    return Path(__file__).resolve().parents[1] / "knowledge"
+
+
+KNOWLEDGE_DIR = _resolve_knowledge_dir()
 # `facts.md` KHÔNG vào Qdrant — Agent 4 nạp thẳng vào system prompt (plan §2.6). README không phải tri thức.
 _ROOT_FILES_SKIPPED = {"facts.md", "README.md"}
 # Section giữ NGUYÊN KHỐI dù dài: cắt câu giữa chừng làm mất thứ tự các bước chẩn đoán (plan §2.4).

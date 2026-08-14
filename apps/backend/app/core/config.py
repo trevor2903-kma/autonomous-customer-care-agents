@@ -9,13 +9,20 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# config.py = apps/backend/app/core/config.py -> parents[4] = gốc repo
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+def _find_env_files() -> tuple[str, ...]:
+    """Tìm tất cả các file .env khả dĩ từ thư mục hiện tại ngược lên root."""
+    files: list[str] = [".env"]
+    curr = Path(__file__).resolve().parent
+    for p in [curr, *curr.parents]:
+        env_file = p / ".env"
+        if env_file.is_file():
+            files.append(str(env_file))
+    return tuple(dict.fromkeys(files))
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=str(_REPO_ROOT / ".env"),
+        env_file=_find_env_files(),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
