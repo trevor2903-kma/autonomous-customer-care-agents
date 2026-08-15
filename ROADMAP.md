@@ -38,8 +38,11 @@
   (short sessions); `history_window` recent turns from DB fed into Agent 1 + Agent 4 prompts (reply still grounded
   in `rag_contexts`, **not** history). **`thread_id` stays per-message ON PURPOSE** — memory comes from the **DB**,
   not the checkpointer (stable per-conversation `thread_id` + durable checkpointer = 09b).
-- **FE Pipeline Inspector** (§17). `/rag` panel calls `/api/agents/pipeline` (single-shot, no persist) → observe
-  ALL 4 agents for a test query, incl. Agent 3 `action/priority/severity/escalation_reason`.
+- **FE Pipeline Inspector** (§17). `/rag` panel calls `/api/agents/analyze` (single-shot, no persist) → Agent 1 +
+  Agent 2 metadata for a test query. *(`/api/agents/classify` and `/api/agents/pipeline` were removed in slice 12 —
+  observing the pipeline is now the **Báo cáo** tab's job, reading real customer turns from `audit_log`.)*
+- **Phase 2 (08a/08b/08c) · 10a · 11 · 12 · 13 · 16 — all DONE.** Details in their phase sections below; the
+  short version is in Quick status at the bottom.
 
 > **Autonomous core reached:** the pipeline now **decides + escalates on real traffic** (not just the happy path):
 > KB-answerable → grounded auto-reply; out-of-domain / no-grounding → `human_handoff` + IN_HUMAN_QUEUE. Conversations
@@ -77,26 +80,26 @@
 
 ---
 
-## 🟡 PHASE 2 — Human-in-the-loop (gates + escalation + admin handling) — **← NEXT**
+## ✅ PHASE 2 — Human-in-the-loop (gates + escalation + admin handling) — **DONE**
 
-> Escalation is now real (05 produces real `human_handoff` + conversations persist), but nobody on the human side
-> receives it yet. HITL is the safety story — this is the next gap to close.
+> Milestone reached: escalate → admin receives → admin handles → customer served, end to end.
 
-- **08b — human_handoff + EscalationCard + admin queue** (§11) **← NEXT.** Escalation case + card (summary + intent
-  + context + reason + suggested draft); admin queue UI + badge/push. *(Unblocked: Agent 3 emits real handoffs and
-  conversations are persisted to attach the card to.)*
-- **08a — Gates** (§9). auto-reply gate (system-wide + per category); three-way delivery: direct /
-  PENDING_APPROVAL / IN_HUMAN_QUEUE. Invariant FR-GATE-2. `GateConfig` + admin toggle.
-- **08c — Admin chat / takeover + draft approval** (§11). Admin takes a conversation (AI pauses), admin ↔ customer
-  live; PENDING_APPROVAL (approve / edit & send); audit admin actions.
-  → **Milestone:** full HITL — escalate → admin handles → customer served.
+- **08b — human_handoff + EscalationCard + admin queue** (§11) — **DONE.** Card (summary + intent + context +
+  reason + suggested draft) persisted on escalation; queue at `GET /admin/escalations`, sorted priority then recency.
+- **08a — Gates** (§9) — **DONE.** auto-reply gate (system-wide + per-intent `send_directly`) via
+  `gate_service.holds_auto_reply` + `/admin/gate-config`; three-way delivery: direct / PENDING_APPROVAL /
+  IN_HUMAN_QUEUE. Invariant FR-GATE-2 holds — the gate only touches confident+safe cases.
+- **08c — Admin chat / takeover + draft approval** (§11) — **DONE.** takeover/resolve/approve/reject routes;
+  status-gate in `/ws/chat` pauses the AI while a human holds the case; admin ↔ customer live over the in-process hub.
 
 ---
 
 ## 🔵 PHASE 3 — Async robustness (memory + suspend/resume + auto-resolve)
 
-- **09a — Conversation memory** (§12). Session memory (Redis short-term + Postgres) + context window; replaces the
-  current single-turn `thread_id`-per-message with a stable per-conversation `thread_id`. Feeds Agent 1 + Agent 3.
+- **09a — Conversation memory** (§12) — **CORE DONE, rest with 09b.** Multi-turn memory works: `history`
+  (history_window) loaded from Postgres into the Agent 1 + Agent 4 prompts. Still open: the stable
+  per-conversation `thread_id` (today it's generated per turn) — that only matters once there's a durable
+  checkpointer, so it ships with 09b.
 - **09b — Suspend/resume** (§10). Clarification turn (`AWAITING_CUSTOMER`); human-handoff pause via `interrupt` +
   **durable checkpointer** (Redis/Postgres, replacing `MemorySaver`, FR-ASYNC-6). *(This — plus running >1 worker
   — is the real trigger to drop MemorySaver; not "many concurrent chats", which 1 async worker already handles.)*
@@ -108,22 +111,29 @@
 
 ## 🔵 PHASE 4 — Admin dashboard (full operational view)
 
-- **10a — Conversation list + filters** (§17). Status buckets; open a conversation (customer/AI/admin).
-- **10b — System + Agent monitoring** (§17 Modules 2–3). Latency, accuracy, confidence, escalation rate.
-- **10c — Analytics + Audit log** (§17 Modules 4–5). Auto-reply/escalation/CSAT/resolution; audit viewer.
+- **10a — Conversation list + filters** (§17) — **DONE.** `GET /admin/conversations` with status filter +
+  `/admin` list and `/admin/[conversationId]` detail (customer/AI/admin transcript).
+- **10b — System + Agent monitoring** (§17 Modules 2–3) — **PARTIAL.** Latency + escalation rate are in the
+  Báo cáo tab (from `audit_log`); per-agent accuracy/confidence views still open.
+- **10c — Analytics + Audit log** (§17 Modules 4–5) — **PARTIAL.** Auto-reply/escalation KPIs done; CSAT,
+  resolution stats and a raw audit viewer still open.
   → **Milestone:** full admin operations + KPI visibility (§19).
 
 ---
 
 ## 🔵 PHASE 5 — Auth + hardening + deploy
 
-- **11 — Auth** (§18 NFR-5; §4). JWT + RBAC for admin routes/pages. **Customer stays guest/low-barrier in
-  Phase 1 per PRD §4** — a lightweight customer login (email → `customer_id`) is optional and only needed for
-  per-customer history / personal data. *(Can move earlier — see the reprioritization note below.)*
-- **12 — Observability** (NFR-8). Langfuse: token cost, latency, LLM error rates.
-- **13 — Anti-prompt-injection** (NFR-7). Sanitize customer messages AND RAG doc content before the LLM.
+- **11 — Auth** (§18 NFR-5; §4) — **DONE.** JWT HS256 + RBAC (`require_admin`); customer login too — `/ws/chat`
+  authenticates `?token=` and the conversation is keyed by `customer_id` (needed for per-customer history +
+  scoped order lookup).
+- **12 — Observability** (NFR-8) — **DONE.** 6 `audit_log` rows per customer turn (shared `turn_id` +
+  `duration_ms`) feeding the Báo cáo tab; Langfuse is supplementary (no-op without keys).
+- **13 — Anti-prompt-injection** (NFR-7) — **DONE.** Four layers: A normalize + cap at the WS edge · B
+  `<tin_nhan_khach>`/`<tri_thuc>` data delimiting (fake tags neutralized) · C anti-injection rules in the
+  Agent 1 + Agent 4 system prompts · D sanitize ad-hoc RAG uploads. **No injection flag/detector by design** —
+  defense is the structure (deterministic Agent 3, scoped lookup, grounding) plus these layers.
 - **UI redesign.** End-phase visual pass, incremental, no-backend-touched, plain Tailwind.
-- **14 — Deploy.** Backend → Render/Railway; frontend → Vercel; cloud infra; env secrets; personal-data care (NFR-6).
+- **14 — Deploy ← NEXT.** Backend → Render/Railway; frontend → Vercel; cloud infra; env secrets; personal-data care (NFR-6).
   → **Milestone:** running on the internet, demo-able remotely.
 
 ---
@@ -182,8 +192,10 @@ multi-customer demo. Decision, filtered through the PRD:
 - [x] Scaffold · PWA · 01 Agent 1 · 02 RAG + UI · 03 Agent 2 + role split · 04 role-split UI
 - [x] 06 Agent 4 (grounded + brake) · 07a integration · 07b realtime chat · 07c chat UI
 - [x] **05 Agent 3 · Decision Engine (deterministic, flag-based)** · **09a-core memory (multi-turn from DB)** · FE pipeline inspector
-- [ ] **08b human_handoff + EscalationCard + admin queue ← NEXT** · 08a gates · 08c admin chat + draft approval
+- [x] **08b human_handoff + EscalationCard + admin queue** · **08a gates** · **08c admin chat + draft approval**
+- [x] **10a conversation list** · **11 auth (JWT + RBAC, customer login)** · **12 observability (audit_log + Báo cáo + Langfuse)**
+- [x] **13 anti-injection (4 lớp, NFR-7)** · **16 order lookup scoped theo customer_id**
+- [ ] **14 deploy ← NEXT** · UI redesign
 - [ ] 09b suspend/resume + durable checkpointer · 09c auto-resolve + offline
-- [ ] 10a conversation list · 10b system/agent monitoring · 10c analytics + audit log
-- [ ] 11 auth (admin RBAC; optional customer login) · 12 observability · 13 anti-injection · UI redesign · 14 deploy
-- [ ] 15 learning loop · 16 order-system integration (mock orders + scoped tool) · 17 others
+- [ ] 10b system/agent monitoring · 10c analytics + audit viewer (một phần đã có ở tab Báo cáo)
+- [ ] 15 learning loop · 17 others

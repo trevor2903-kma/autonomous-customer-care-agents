@@ -35,10 +35,11 @@ Ba kết cục giao phản hồi: **gửi thẳng** / **duyệt nháp** (`PENDIN
 Kiến trúc đã chốt: **pipeline cố định, KHÔNG Supervisor** — có chủ đích, ưu tiên dự đoán được + kiểm toán +
 an toàn nội dung (không trả lời sai chính sách) (PRD §5, 4 trụ cột).
 
-Giai đoạn hiện tại: **pipeline THẬT, happy-path + lõi tự trị đã chạy live.** Agent 1 (intent), Agent 2 (RAG),
-Agent 3 (Decision Engine tất định), Agent 4 (Response grounded) đều thật; lưu hội thoại + bộ nhớ đa lượt
-(Postgres); cổng chat khách `/chat` + FE pipeline inspector `/rag` chạy live. Việc còn lại (HITL đầy đủ, gate,
-suspend/resume, auth, deploy…) và slice tiếp theo (**08b**) → xem **`ROADMAP.md`**.
+Giai đoạn hiện tại: **lõi tự trị + HITL đầy đủ đã chạy live.** Agent 1 (intent), Agent 2 (RAG), Agent 3
+(Decision Engine tất định), Agent 4 (Response grounded) đều thật; lưu hội thoại + bộ nhớ đa lượt (Postgres);
+chat khách `/chat`, dashboard admin (hàng đợi, takeover, duyệt nháp, gate, báo cáo), auth JWT + RBAC, tra đơn
+scoped, chống prompt-injection 4 lớp — tất cả live. Việc còn lại (suspend/resume + durable checkpointer,
+auto-resolve, Redis pub/sub đa-worker, deploy, vòng học) và slice tiếp theo (**14 deploy**) → xem **`ROADMAP.md`**.
 
 ---
 
@@ -117,21 +118,33 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
   `RETRIEVAL_THRESHOLD` tách khỏi `confidence_threshold`; priority/severity theo intent. KHÔNG LLM/reasoning.
 - **Agent 4** Response Generator — grounded từ `rag_contexts` + phanh anti-hallucination (không tri thức → fallback +
   `hallucination_risk`). **Sole-egress:** phát cả câu trả lời lẫn `HANDOFF_NOTICE`.
-- **Persistence + bộ nhớ đa lượt:** lưu conversation + message (Postgres, guest sid); `history` (history_window) từ DB
-  vào prompt Agent 1 + Agent 4 — **bộ nhớ từ DB**, `thread_id` sinh MỖI lượt (KHÔNG từ checkpointer).
+- **Persistence + bộ nhớ đa lượt:** lưu conversation + message (Postgres, ca theo `customer_id` từ JWT);
+  `history` (history_window) từ DB vào prompt Agent 1 + Agent 4 — **bộ nhớ từ DB**, `thread_id` sinh MỖI lượt
+  (KHÔNG từ checkpointer).
 - **Realtime:** `/ws/chat` chạy đủ pipeline (typing → reply). `ENABLE_LLM=true`.
+- **HITL đầy đủ (08a/08b/08c):** EscalationCard + hàng đợi admin (`GET /admin/escalations`); gate §9 hai van
+  (`/admin/gate-config` + `gate_service.holds_auto_reply`) với ba kết cục gửi thẳng / `PENDING_APPROVAL` /
+  `IN_HUMAN_QUEUE`; admin takeover/resolve/approve/reject + chat admin↔khách qua hub in-process (status-gate:
+  ca đang có người xử lý thì AI KHÔNG chạy).
+- **Auth (11):** JWT HS256 + RBAC; admin routes qua `require_admin`, `/ws/chat` xác thực `?token=` (role customer).
+- **Đơn hàng (16):** `order_service.lookup(order_code, customer_id)` — tra **SCOPED theo khách**; mã người khác
+  và mã không tồn tại trả CÙNG một kết quả (không lộ sự tồn tại).
 - **Observability:** mỗi lượt khách ghi 6 dòng `audit_log` (cùng `turn_id` + `duration_ms`); tab **Báo cáo**
   (`/admin/reports`) tổng hợp từ đó. Langfuse **bổ trợ** (trace LLM), no-op khi thiếu key.
+- **Chống prompt-injection (13, NFR-7):** `core/sanitize.py` — Lớp A chuẩn hoá + cap `max_message_chars` tại
+  biên WS; Lớp B `as_data_block` bọc tin khách `<tin_nhan_khach>` + chunk RAG `<tri_thuc>` (vô hiệu thẻ giả
+  mạo); Lớp C 5 luật chống-injection trong system prompt Agent 1 + Agent 4; Lớp D sanitize upload RAG ad-hoc.
+  **KHÔNG có cờ/detector injection** — phòng thủ là cấu trúc + 4 lớp, cố ý.
 
 **KHÔNG (giữ ranh giới — CHƯA tới lượt, xem ROADMAP):**
-- KHÔNG Supervisor / điều phối động — pipeline cố định (PRD §5). KHÔNG blend confidence cho an toàn.
-- `human_handoff` node đầy đủ (EscalationCard + hàng đợi Admin, 08b), gate §9 / PENDING_APPROVAL (08a), admin
-  takeover (08c), suspend/resume + **durable checkpointer** (09b — nay vẫn `MemorySaver` in-memory), Redis pub/sub
-  multi-client, tích hợp đơn hàng (16), vòng học (15) — **giữ file/`policy.should_handoff` cho 08b, đừng dựng sớm.**
+- KHÔNG Supervisor / điều phối động — pipeline cố định (PRD §5). KHÔNG blend confidence cho an toàn. (Đây là
+  quyết định kiến trúc VĨNH VIỄN, không phải "chưa tới lượt".)
+- suspend/resume + **durable checkpointer** (09b — nay vẫn `MemorySaver` in-memory, `graph.py`); auto-resolve +
+  xử lý ngoài giờ (09c); Redis pub/sub đa-worker (nay hub IN-PROCESS, 1 worker); deploy (14); vòng học (15).
 - KHÔNG worker queue polling Redis — dùng BackgroundTasks/session ngắn (giữ free-tier).
 
-**Slice tiếp theo:** **08b** (human_handoff + EscalationCard + hàng đợi Admin) — nay đã có hội thoại persisted để gắn.
-Code TODO trỏ số slice trong **`ROADMAP.md`**.
+**Slice tiếp theo:** **14 — Deploy** (backend → Render/Railway, FE → Vercel; hạ tầng cloud, secret theo env,
+lưu ý dữ liệu cá nhân NFR-6). Code TODO trỏ số slice trong **`ROADMAP.md`**.
 
 ---
 
