@@ -9,6 +9,7 @@ import { QuickReplies } from "@/components/chat/QuickReplies";
 import { CUST_PLACEHOLDER, custStatusFrom, type CustStatus } from "@/components/chat/custStatus";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { chatWsUrl, getMyThread, getToken } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 // Cổng chat khách (PRD §6, §16). Câu trả lời tự động CHỈ đến từ Response Generator (§7.4);
 // tin nhân viên tới qua hub sau khi admin tiếp quản.
@@ -28,6 +29,7 @@ const timeOf = (iso: string) =>
   new Date(iso).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 
 function ChatInner() {
+  const { user } = useAuth();
   const [connected, setConnected] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [typing, setTyping] = useState(false);
@@ -41,7 +43,7 @@ function ChatInner() {
 
   // Mạch ghép của khách (P2/P6): nạp lịch sử xuyên ca MỘT LẦN → render một đoạn liền mạch.
   const { data: thread } = useQuery({
-    queryKey: ["me-thread"],
+    queryKey: ["me-thread", user?.id],
     queryFn: getMyThread,
     refetchOnWindowFocus: false,
   });
@@ -130,9 +132,10 @@ function ChatInner() {
 }
 
 export default function ChatPage() {
+  const { user } = useAuth();
   return (
     <RequireAuth role="customer">
-      <ChatInner />
+      {user && <ChatInner key={user.id} />}
     </RequireAuth>
   );
 }

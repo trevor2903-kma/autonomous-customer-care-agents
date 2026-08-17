@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   type AuthUser,
   clearToken,
@@ -25,6 +26,7 @@ const AuthContext = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   // Tải trang: nếu có token → validate + nạp user; token hỏng/hết hạn → xoá.
   useEffect(() => {
@@ -39,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!cancelled) setUser(me);
       } catch {
         clearToken();
+        queryClient.clear();
         if (!cancelled) setUser(null);
       } finally {
         if (!cancelled) setLoading(false);
@@ -47,28 +50,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [queryClient]);
 
   const login = useCallback(async (email: string, password: string) => {
+    queryClient.clear();
     const res = await apiLogin(email, password);
     setToken(res.access_token);
     const me = await getMe();
     setUser(me);
     return me;
-  }, []);
+  }, [queryClient]);
 
   const register = useCallback(async (email: string, password: string, displayName?: string) => {
+    queryClient.clear();
     const res = await apiRegister(email, password, displayName);
     setToken(res.access_token);
     const me = await getMe();
     setUser(me);
     return me;
-  }, []);
+  }, [queryClient]);
 
   const logout = useCallback(() => {
     clearToken();
+    queryClient.clear();
     setUser(null);
-  }, []);
+  }, [queryClient]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, register, logout }}>
