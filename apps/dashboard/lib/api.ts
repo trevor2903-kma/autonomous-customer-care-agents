@@ -11,12 +11,37 @@ import type {
   RunDemoResult,
 } from "shared-types";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
-export const WS_URL =
-  process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:8000/ws/chat";
-// Base WS (bỏ đuôi /ws/chat) để dựng URL admin: {base}/ws/admin/{id}.
-export const WS_BASE = WS_URL.replace(/\/ws\/chat$/, "");
+export function getApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_BASE_URL) {
+    return process.env.NEXT_PUBLIC_API_BASE_URL;
+  }
+  if (typeof window !== "undefined") {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+  return "http://localhost:8000";
+}
+
+export function getWsBase(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    return process.env.NEXT_PUBLIC_WS_URL.replace(/\/ws\/chat$/, "");
+  }
+  if (typeof window !== "undefined") {
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${proto}//${window.location.hostname}:8000`;
+  }
+  return "ws://localhost:8000";
+}
+
+export function getWsUrl(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    return process.env.NEXT_PUBLIC_WS_URL;
+  }
+  return `${getWsBase()}/ws/chat`;
+}
+
+export const API_BASE = "http://localhost:8000";
+export const WS_URL = "ws://localhost:8000/ws/chat";
+export const WS_BASE = "ws://localhost:8000";
 
 // ── Auth token (slice 11 P4) — lưu localStorage, gắn Bearer cho mọi request ──
 const TOKEN_KEY = "tys_token";
@@ -39,7 +64,7 @@ function authHeaders(): Record<string, string> {
 
 // Wrapper fetch: prepend API_BASE + gắn Bearer + no-store. Giữ header init (Content-Type) đè lên.
 async function req(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${API_BASE}${path}`, {
+  return fetch(`${getApiBase()}${path}`, {
     cache: "no-store",
     ...init,
     headers: { ...authHeaders(), ...(init.headers ?? {}) },
@@ -59,10 +84,10 @@ async function fail(res: Response, fallback: string): Promise<never> {
 
 // ── WS URL kèm token (browser không set được header WS → query-param) ─────────
 export function chatWsUrl(token: string): string {
-  return `${WS_URL}?token=${encodeURIComponent(token)}`;
+  return `${getWsUrl()}?token=${encodeURIComponent(token)}`;
 }
 export function adminWsUrl(conversationId: string, token: string): string {
-  return `${WS_BASE}/ws/admin/${conversationId}?token=${encodeURIComponent(token)}`;
+  return `${getWsBase()}/ws/admin/${conversationId}?token=${encodeURIComponent(token)}`;
 }
 
 // ── Auth (slice 11) ──────────────────────────────────────────────────────────

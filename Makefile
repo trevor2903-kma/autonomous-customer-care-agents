@@ -27,7 +27,7 @@ install:
 	pnpm install
 
 dev-backend:
-	cd apps/backend && uv run uvicorn app.main:app --reload --port 8000
+	cd apps/backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 dev-dashboard:
 	pnpm --filter dashboard dev

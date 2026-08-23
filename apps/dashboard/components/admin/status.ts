@@ -25,12 +25,15 @@ export type FilterKey = "all" | "active" | "queue" | "approval" | "handling" | "
 
 export const FILTERS: { key: FilterKey; label: string; statuses: string[] }[] = [
   { key: "all", label: "Tất cả", statuses: [] },
-  { key: "active", label: "Đang xử lý (AI)", statuses: ["NEW", "ACTIVE_AI", "REPLIED", "AWAITING_CUSTOMER"] },
   { key: "queue", label: "Chờ nhận ca", statuses: ["IN_HUMAN_QUEUE"] },
   { key: "approval", label: "Chờ duyệt nháp", statuses: ["PENDING_APPROVAL"] },
   { key: "handling", label: "Đang tiếp quản", statuses: ["HUMAN_HANDLING"] },
   { key: "done", label: "Đã đóng", statuses: ["RESOLVED", "CLOSED"] },
+  { key: "active", label: "Đang xử lý (AI)", statuses: ["NEW", "ACTIVE_AI", "REPLIED", "AWAITING_CUSTOMER"] },
 ];
+
+// Danh sách filter hiển thị dạng chip (ẩn "queue" và "approval" vì đã có tab riêng trên sidebar)
+export const VISIBLE_FILTERS = FILTERS.filter((f) => f.key !== "queue" && f.key !== "approval");
 
 export function filterByKey(key: string): (typeof FILTERS)[number] {
   return FILTERS.find((f) => f.key === key) ?? FILTERS[0];

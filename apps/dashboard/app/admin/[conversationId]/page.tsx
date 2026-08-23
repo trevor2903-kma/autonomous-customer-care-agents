@@ -16,6 +16,7 @@ import {
 import { ApprovalPanel } from "@/components/admin/ApprovalPanel";
 import { EscalationCardPanel } from "@/components/admin/EscalationCardPanel";
 import { StatusPill } from "@/components/admin/StatusPill";
+import { ConfirmModal } from "@/components/ConfirmModal";
 
 function CloseCaseIcon() {
   return (
@@ -43,7 +44,10 @@ function CloseCaseIcon() {
 type Msg = { sender: string; content: string; time: string };
 
 const hhmm = (iso?: string) =>
-  new Date(iso ?? Date.now()).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+  new Date(iso ?? Date.now()).toLocaleTimeString("vi-VN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 
 function initials(s?: string | null): string {
   const t = (s ?? "").replace(/[^a-zA-Z0-9]/g, "");
@@ -64,7 +68,9 @@ function Bubble({ sender, content, time }: Msg) {
   const isAdmin = sender === "admin";
   const label = isCustomer ? "Khách" : isAdmin ? "Bạn (CSKH)" : "Trợ lý AI";
   return (
-    <div className={`flex flex-col gap-[5px] ${isCustomer ? "items-start" : "items-end"}`}>
+    <div
+      className={`flex flex-col gap-[5px] ${isCustomer ? "items-start" : "items-end"}`}
+    >
       <span
         className={`px-0.5 text-[11.5px] ${isCustomer ? "text-dim" : isAdmin ? "text-steel" : "text-olive-dark"}`}
       >
@@ -85,17 +91,27 @@ function Bubble({ sender, content, time }: Msg) {
   );
 }
 
-export default function AdminConversationPage({ params }: { params: { conversationId: string } }) {
+export default function AdminConversationPage({
+  params,
+}: {
+  params: { conversationId: string };
+}) {
   const id = params.conversationId;
   const qc = useQueryClient();
   const [live, setLive] = useState<Msg[]>([]);
   const [wsStatus, setWsStatus] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const { data: conv, isLoading, isError, error } = useQuery<AdminConversation, Error>({
+  const {
+    data: conv,
+    isLoading,
+    isError,
+    error,
+  } = useQuery<AdminConversation, Error>({
     queryKey: ["admin-conv", id],
     queryFn: () => getAdminConversation(id),
     staleTime: Infinity, // lịch sử nạp 1 lần, tin mới đến qua WS (tránh trùng)
@@ -116,7 +132,10 @@ export default function AdminConversationPage({ params }: { params: { conversati
         const d = JSON.parse(ev.data);
         if (d.type === "system") setWsStatus(d.status ?? null);
         else if (d.type === "message")
-          setLive((p) => [...p, { sender: d.from, content: String(d.content), time: hhmm() }]);
+          setLive((p) => [
+            ...p,
+            { sender: d.from, content: String(d.content), time: hhmm() },
+          ]);
       } catch {
         /* bỏ qua frame không hợp lệ */
       }
@@ -154,7 +173,8 @@ export default function AdminConversationPage({ params }: { params: { conversati
 
   function sendReply() {
     const text = draft.trim();
-    if (!text || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    if (!text || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)
+      return;
     wsRef.current.send(text);
     setLive((p) => [...p, { sender: "admin", content: text, time: hhmm() }]);
     setDraft("");
@@ -178,7 +198,9 @@ export default function AdminConversationPage({ params }: { params: { conversati
             <div className="truncate text-[15px] font-semibold text-ink">
               {conv?.customer_identifier || `Khách ${id.slice(0, 6)}`}
             </div>
-            <div className="truncate text-xs text-faint">khách · {id.slice(0, 8)}</div>
+            <div className="truncate text-xs text-faint">
+              khách · {id.slice(0, 8)}
+            </div>
           </div>
         </div>
         <div className="flex flex-none items-center gap-2">
@@ -186,7 +208,7 @@ export default function AdminConversationPage({ params }: { params: { conversati
           {/* Hành động phá huỷ/thoát → tông cảnh báo (design §2), khác nút xây dựng (olive). */}
           {status !== "RESOLVED" && (
             <button
-              onClick={() => act(() => resolveConversation(id), "RESOLVED")}
+              onClick={() => setConfirmCloseOpen(true)}
               disabled={busy}
               title="Đóng ca hội thoại này"
               className="inline-flex items-center gap-[7px] whitespace-nowrap rounded-[8px] border border-terracotta-btn-line bg-terracotta-btn px-[13px] py-[7px] text-[12.5px] font-semibold text-terracotta transition-colors hover:border-terracotta-btn-line-hover hover:bg-terracotta-btn-hover disabled:opacity-50 mob:hidden"
@@ -200,17 +222,25 @@ export default function AdminConversationPage({ params }: { params: { conversati
 
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto bg-panel px-[26px] py-6 mob:px-4">
         {isLoading && <p className="text-sm text-dim">Đang tải hội thoại…</p>}
-        {isError && <p className="text-sm text-terracotta">Lỗi: {error.message}</p>}
-
-        {conv?.escalation_card && (status === "IN_HUMAN_QUEUE" || isPending) && (
-          <EscalationCardPanel card={conv.escalation_card} identifier={conv.customer_identifier} />
+        {isError && (
+          <p className="text-sm text-terracotta">Lỗi: {error.message}</p>
         )}
+
+        {conv?.escalation_card &&
+          (status === "IN_HUMAN_QUEUE" || isPending) && (
+            <EscalationCardPanel
+              card={conv.escalation_card}
+              identifier={conv.customer_identifier}
+            />
+          )}
 
         {isPending && conv?.escalation_card?.suggested_reply && (
           <ApprovalPanel
             draft={conv.escalation_card.suggested_reply}
             busy={busy}
-            onApprove={(content) => act(() => approveDraft(id, content), "REPLIED")}
+            onApprove={(content) =>
+              act(() => approveDraft(id, content), "REPLIED")
+            }
             onReject={() => act(() => rejectDraft(id), "IN_HUMAN_QUEUE")}
           />
         )}
@@ -228,26 +258,30 @@ export default function AdminConversationPage({ params }: { params: { conversati
           {isHandling ? (
             <div className="flex flex-1 items-center gap-2 rounded-lg border border-steel-line bg-steel-soft px-3 py-[7px] text-xs text-steel">
               <span className="h-1.5 w-1.5 flex-none rounded-full bg-steel" />
-              AI đã tạm dừng cho hội thoại này — bạn đang trực tiếp trả lời khách.
+              AI đã tạm dừng cho hội thoại này — bạn đang trực tiếp trả lời
+              khách.
             </div>
           ) : (
             <>
               <button
-                onClick={() => act(() => takeoverConversation(id), "HUMAN_HANDLING")}
+                onClick={() =>
+                  act(() => takeoverConversation(id), "HUMAN_HANDLING")
+                }
                 disabled={busy || status === "RESOLVED"}
                 className="rounded-[9px] bg-olive px-[18px] py-2.5 text-sm font-semibold text-white hover:bg-olive-dark disabled:opacity-50"
               >
                 Tiếp quản
               </button>
               <span className="flex-1 text-xs text-faint">
-                Đang ở chế độ xem — ca vẫn nằm trong hàng đợi cho tới khi bạn tiếp quản.
+                Đang ở chế độ xem — ca vẫn nằm trong hàng đợi cho tới khi bạn
+                tiếp quản.
               </span>
             </>
           )}
           {/* Mobile: "Đóng ca" chuyển xuống đây vì header hẹp (tên khách bị cắt nếu nhồi thêm nút). */}
           {status !== "RESOLVED" && (
             <button
-              onClick={() => act(() => resolveConversation(id), "RESOLVED")}
+              onClick={() => setConfirmCloseOpen(true)}
               disabled={busy}
               className="hidden items-center gap-[7px] whitespace-nowrap rounded-[8px] border border-terracotta-btn-line bg-terracotta-btn px-[13px] py-2 text-[12.5px] font-semibold text-terracotta disabled:opacity-50 mob:inline-flex"
             >
@@ -265,7 +299,11 @@ export default function AdminConversationPage({ params }: { params: { conversati
               if (e.key === "Enter") sendReply();
             }}
             disabled={!isHandling}
-            placeholder={isHandling ? "Nhập trả lời gửi tới khách…" : "Tiếp quản để trả lời khách"}
+            placeholder={
+              isHandling
+                ? "Nhập trả lời gửi tới khách…"
+                : "Tiếp quản để trả lời khách"
+            }
             aria-label="Nội dung trả lời khách"
             className="flex-1 border-none bg-transparent text-[14.5px] text-ink outline-none placeholder:text-dim disabled:cursor-not-allowed"
           />
@@ -278,6 +316,31 @@ export default function AdminConversationPage({ params }: { params: { conversati
           </button>
         </div>
       </footer>
+
+      {/* Modal xác nhận đóng ca */}
+      <ConfirmModal
+        isOpen={confirmCloseOpen}
+        onClose={() => setConfirmCloseOpen(false)}
+        onConfirm={() => {
+          setConfirmCloseOpen(false);
+          act(() => resolveConversation(id), "RESOLVED");
+        }}
+        title="Xác nhận đóng ca"
+        message={
+          <>
+            Bạn có chắc chắn muốn đóng ca hội thoại của khách hàng{" "}
+            <span className="font-semibold text-ink">
+              {conv?.customer_identifier || `Khách ${id.slice(0, 6)}`}
+            </span>
+            ? Ca sẽ được chuyển sang trạng thái đã xử lý (Resolved) và AI/CSKH
+            kết thúc phiên này.
+          </>
+        }
+        confirmText="Đồng ý đóng ca"
+        cancelText="Hủy"
+        variant="danger"
+        isLoading={busy}
+      />
     </div>
   );
 }

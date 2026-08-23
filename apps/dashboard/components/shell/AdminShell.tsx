@@ -17,15 +17,22 @@ import { ConversationListPane } from "@/components/admin/ConversationListPane";
 // THU GỌN (P5): trên desktop (≥821px) sidebar rút còn rail 78px chỉ-icon — ẩn nhãn/đếm/tên thương hiệu/
 // thông tin người dùng. Ở mobile KHÔNG có chế độ này (đã là drawer), nên nút thu gọn bị ẩn dưới 820px.
 
-type NavItem = { key: string; label: string; href: string; icon: string; count?: "queue" | "approval" };
+type NavItem = {
+  key: string;
+  label: string;
+  href: string;
+  icon: string;
+  count?: "queue" | "approval";
+  mobHidden?: boolean;
+};
 
 const NAV: NavItem[] = [
   { key: "all", label: "Hội thoại", href: "/admin", icon: "/icons/conversations.svg" },
   { key: "queue", label: "Hàng đợi chuyển tiếp", href: "/admin?filter=queue", icon: "/icons/escalation.svg", count: "queue" },
   { key: "approval", label: "Duyệt nháp", href: "/admin?filter=approval", icon: "/icons/approval.svg", count: "approval" },
-  { key: "knowledge", label: "Quản lý tri thức", href: "/admin/knowledge", icon: "/icons/rag.svg" },
+  { key: "knowledge", label: "Quản lý tri thức", href: "/admin/knowledge", icon: "/icons/rag.svg", mobHidden: true },
   { key: "gate", label: "Cấu hình Gate", href: "/admin/gate", icon: "/icons/gate.svg" },
-  { key: "reports", label: "Báo cáo", href: "/admin/reports", icon: "/icons/report.svg" },
+  { key: "reports", label: "Báo cáo", href: "/admin/reports", icon: "/icons/report.svg", mobHidden: true },
 ];
 
 const COLLAPSE_KEY = "tys_side_collapsed";
@@ -194,7 +201,9 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 title={collapsed ? n.label : undefined}
                 className={`flex items-center gap-[11px] rounded-[9px] px-3 py-2.5 text-sm ${
                   collapsed ? "desk:justify-center desk:gap-0 desk:px-0" : ""
-                } ${active ? "bg-cream font-semibold text-ink" : "font-medium text-muted hover:bg-cream/60"}`}
+                } ${active ? "bg-cream font-semibold text-ink" : "font-medium text-muted hover:bg-cream/60"} ${
+                  n.mobHidden ? "mob:hidden" : ""
+                }`}
               >
                 <span className="relative flex flex-none items-center justify-center">
                   <Image

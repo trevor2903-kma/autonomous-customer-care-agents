@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ConversationListItem } from "shared-types";
 import { getConversations } from "@/lib/api";
-import { FILTERS, filterByKey } from "./status";
+import { VISIBLE_FILTERS, filterByKey } from "./status";
 import { StatusPill } from "./StatusPill";
 
 // Listpane (design, 10a): tiêu đề + tìm kiếm + chip lọc + thẻ hội thoại (tên · thời gian · preview · pill).
@@ -70,7 +70,7 @@ export function ConversationListPane({
         </div>
 
         <div className="mt-3 flex flex-wrap gap-[7px]">
-          {FILTERS.map((f) => {
+          {VISIBLE_FILTERS.map((f) => {
             const on = f.key === active.key;
             return (
               <Link
