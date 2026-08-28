@@ -166,6 +166,7 @@ def _gate_out(snap: gate_service.GateSnapshot) -> GateConfigOut:
         auto_reply_enabled=snap.auto_reply_enabled,
         auto_resolve_enabled=snap.auto_resolve_enabled,
         auto_resolve_minutes=snap.auto_resolve_minutes,
+        auto_resolve_grace_minutes=snap.auto_resolve_grace_minutes,
         rules=[
             GateIntentRuleSchema(
                 intent=r.intent, label=r.label, sensitive=r.sensitive, send_directly=r.send_directly
@@ -188,6 +189,7 @@ async def update_gate_config(payload: GateConfigUpdate) -> GateConfigOut:
         auto_reply_enabled=payload.auto_reply_enabled,
         auto_resolve_enabled=payload.auto_resolve_enabled,
         auto_resolve_minutes=payload.auto_resolve_minutes,
+        auto_resolve_grace_minutes=payload.auto_resolve_grace_minutes,
         rules=[(r.intent, r.send_directly) for r in payload.rules] if payload.rules else None,
     )
     return _gate_out(snap)

@@ -20,6 +20,7 @@ class GateConfigOut(BaseModel):
     auto_reply_enabled: bool
     auto_resolve_enabled: bool
     auto_resolve_minutes: int
+    auto_resolve_grace_minutes: int
     rules: list[GateIntentRuleSchema]
 
 
@@ -34,4 +35,5 @@ class GateConfigUpdate(BaseModel):
     auto_reply_enabled: bool | None = None
     auto_resolve_enabled: bool | None = None
     auto_resolve_minutes: int | None = Field(default=None, ge=1)
+    auto_resolve_grace_minutes: int | None = Field(default=None, ge=1)
     rules: list[GateIntentRuleUpdate] | None = None

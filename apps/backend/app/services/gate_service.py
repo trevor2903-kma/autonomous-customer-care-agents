@@ -59,6 +59,7 @@ class GateSnapshot:
     auto_reply_enabled: bool
     auto_resolve_enabled: bool
     auto_resolve_minutes: int
+    auto_resolve_grace_minutes: int
     rules: tuple[GateIntentRuleView, ...]
 
     def send_directly_for(self, intent: str | None) -> bool:
@@ -88,6 +89,7 @@ async def _load_snapshot() -> GateSnapshot:
         auto_reply_enabled=cfg.auto_reply_enabled,
         auto_resolve_enabled=cfg.auto_resolve_enabled,
         auto_resolve_minutes=cfg.auto_resolve_minutes,
+        auto_resolve_grace_minutes=cfg.auto_resolve_grace_minutes,
         rules=tuple(
             GateIntentRuleView(intent=r.intent, label=r.label, sensitive=r.sensitive, send_directly=r.send_directly)
             for r in rules
@@ -125,6 +127,7 @@ async def update_gate_config(
     auto_reply_enabled: bool | None = None,
     auto_resolve_enabled: bool | None = None,
     auto_resolve_minutes: int | None = None,
+    auto_resolve_grace_minutes: int | None = None,
     rules: list[tuple[str, bool]] | None = None,
 ) -> GateSnapshot:
     """Cập nhật toggle hệ thống + `send_directly` per-intent. KHÔNG nhận retrieval_threshold (§4). Invalidate cache.
@@ -141,6 +144,8 @@ async def update_gate_config(
             cfg.auto_resolve_enabled = auto_resolve_enabled
         if auto_resolve_minutes is not None:
             cfg.auto_resolve_minutes = auto_resolve_minutes
+        if auto_resolve_grace_minutes is not None:
+            cfg.auto_resolve_grace_minutes = auto_resolve_grace_minutes
         if rules:
             existing = {r.intent: r for r in (await s.execute(select(GateIntentRule))).scalars().all()}
             for intent, send_directly in rules:

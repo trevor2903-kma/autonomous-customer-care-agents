@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     # Bộ nhớ đa lượt (PRD §12, NFR-10): số tin gần nhất nạp từ DB vào prompt (Agent 1 + Agent 4).
     history_window: int = 8
     auto_resolve_minutes: int = 30
+    sweep_interval_seconds: int = 60
     context_window_messages: int = 10
     # Intent Classifier (PRD §7.1): 2 ứng viên RAG đầu chênh score < margin -> cờ ambiguous_intent.
     intent_ambiguous_margin: float = 0.05
