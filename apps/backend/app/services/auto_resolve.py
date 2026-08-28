@@ -149,6 +149,7 @@ async def run_sweep_once(now: datetime) -> int:
                         await _broadcast_ai(conv.id, RESOLVE_TEMPLATE)
                         acted += 1
             except Exception as exc:  # noqa: BLE001 — cô lập 1 ca lỗi, KHÔNG làm hỏng cả vòng quét.
+                await s.rollback()  # session dùng chung cả vòng — dọn PendingRollbackError để ca sau chạy tiếp.
                 log.warning("auto-resolve sweep: ca %s lỗi (bỏ qua): %s", conv.id, exc)
     if acted:
         log.info("auto-resolve sweep: %d ca đã xử lý", acted)
