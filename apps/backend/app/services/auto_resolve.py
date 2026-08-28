@@ -10,7 +10,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from ..api.ws.hub import hub
 from ..core.config import settings
@@ -101,27 +101,55 @@ async def run_sweep_once(now: datetime) -> int:
             .scalars()
             .all()
         )
+        # Đọc conv.status/last_message_at/auto_resolve_reminded_at của các row SAU khi row trước đã commit —
+        # an toàn vì AsyncSessionLocal dựng với expire_on_commit=False (core/database.py), object KHÔNG bị
+        # expire giữa vòng lặp.
         for conv in rows:
-            action = classify_idle(
-                status=conv.status,
-                last_message_at=conv.last_message_at,
-                reminded_at=conv.auto_resolve_reminded_at,
-                now=now,
-                t1_minutes=snap.auto_resolve_minutes,
-                t2_minutes=snap.auto_resolve_grace_minutes,
-            )
-            if action is IdleAction.REMIND:
-                conv.auto_resolve_reminded_at = now
-                await s.commit()
-                await conversation_service.send_auto_message(s, conv.id, content=REMIND_TEMPLATE)
-                await _broadcast_ai(conv.id, REMIND_TEMPLATE)
-                acted += 1
-            elif action is IdleAction.RESOLVE:
-                conv.status = ConversationStatus.RESOLVED
-                await s.commit()
-                await conversation_service.send_auto_message(s, conv.id, content=RESOLVE_TEMPLATE)
-                await _broadcast_ai(conv.id, RESOLVE_TEMPLATE)
-                acted += 1
+            try:
+                action = classify_idle(
+                    status=conv.status,
+                    last_message_at=conv.last_message_at,
+                    reminded_at=conv.auto_resolve_reminded_at,
+                    now=now,
+                    t1_minutes=snap.auto_resolve_minutes,
+                    t2_minutes=snap.auto_resolve_grace_minutes,
+                )
+                if action is IdleAction.REMIND:
+                    # UPDATE có điều kiện — chặn race: admin takeover (status đổi khỏi _SWEEPABLE) hoặc
+                    # khách nhắn lại trước khi commit này chạy. rowcount == 0 → bất biến đã đổi, bỏ qua.
+                    result = await s.execute(
+                        update(Conversation)
+                        .where(
+                            Conversation.id == conv.id,
+                            Conversation.status.in_(tuple(_SWEEPABLE)),
+                            Conversation.auto_resolve_reminded_at.is_(None),
+                        )
+                        .values(auto_resolve_reminded_at=now)
+                    )
+                    await s.commit()
+                    if result.rowcount == 1:
+                        await conversation_service.send_auto_message(s, conv.id, content=REMIND_TEMPLATE)
+                        await _broadcast_ai(conv.id, REMIND_TEMPLATE)
+                        acted += 1
+                elif action is IdleAction.RESOLVE:
+                    # Guard kép: status vẫn _SWEEPABLE (chưa bị admin takeover) VÀ đã-nhắc vẫn còn (chưa bị
+                    # add_message reset về None do khách nhắn lại) — cả hai race đều tự loại ở đây.
+                    result = await s.execute(
+                        update(Conversation)
+                        .where(
+                            Conversation.id == conv.id,
+                            Conversation.status.in_(tuple(_SWEEPABLE)),
+                            Conversation.auto_resolve_reminded_at.is_not(None),
+                        )
+                        .values(status=ConversationStatus.RESOLVED)
+                    )
+                    await s.commit()
+                    if result.rowcount == 1:
+                        await conversation_service.send_auto_message(s, conv.id, content=RESOLVE_TEMPLATE)
+                        await _broadcast_ai(conv.id, RESOLVE_TEMPLATE)
+                        acted += 1
+            except Exception as exc:  # noqa: BLE001 — cô lập 1 ca lỗi, KHÔNG làm hỏng cả vòng quét.
+                log.warning("auto-resolve sweep: ca %s lỗi (bỏ qua): %s", conv.id, exc)
     if acted:
         log.info("auto-resolve sweep: %d ca đã xử lý", acted)
     return acted
