@@ -6,6 +6,7 @@ Pipeline cố định + WebSocket. Giai đoạn scaffold: chỉ health + WS echo
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -21,6 +22,7 @@ from .core.embeddings import close_openai
 from .core.logging import configure_logging, get_logger
 from .core.qdrant_client import close_qdrant
 from .core.redis_client import close_redis
+from .services import auto_resolve
 
 configure_logging()
 log = get_logger("app")
@@ -32,7 +34,15 @@ async def lifespan(app: FastAPI):
     # Nạp facts.md 1 lần lúc khởi động (plan §2.6) — sau đó Agent 4 dùng bản cache, không đọc đĩa mỗi lượt.
     log.info("Facts cửa hàng: %d ký tự (knowledge/facts.md)", len(load_facts()))
     log.info("Langfuse (observability cấp LLM): %s", "BẬT" if tracing.enabled() else "tắt (thiếu key)")
+    stop_sweep = asyncio.Event()
+    sweep_task = asyncio.create_task(auto_resolve.sweep_loop(stop_sweep))
     yield
+    stop_sweep.set()
+    sweep_task.cancel()
+    try:
+        await sweep_task
+    except asyncio.CancelledError:
+        pass
     tracing.flush()  # đẩy nốt sự kiện còn trong hàng đợi; no-op nếu tracing tắt
     await close_redis()
     await close_qdrant()

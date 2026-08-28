@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
 
 from app.models.enums import ConversationStatus
 from app.services.auto_resolve import IdleAction, classify_idle
@@ -133,3 +135,23 @@ def test_none_last_message_is_noop() -> None:
         )
         == IdleAction.NOOP
     )
+
+
+def test_run_sweep_once_noop_when_gate_off() -> None:
+    """Gate auto_resolve OFF → sweep không truy vấn ca, trả 0 (spec §6)."""
+
+    class _Snap:
+        auto_resolve_enabled = False
+        auto_resolve_minutes = 30
+        auto_resolve_grace_minutes = 15
+
+    async def _run() -> int:
+        with patch(
+            "app.services.auto_resolve.gate_service.get_gate_config",
+            new=AsyncMock(return_value=_Snap()),
+        ):
+            from app.services.auto_resolve import run_sweep_once
+
+            return await run_sweep_once(NOW)
+
+    assert asyncio.run(_run()) == 0
