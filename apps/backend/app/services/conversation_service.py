@@ -25,12 +25,15 @@ def _append_message(
     content: str,
     intent: str | None = None,
     confidence: float | None = None,
+    bump_activity: bool = True,
 ) -> Message:
     # Append qua relationship: vừa set FK vừa cập nhật collection trong bộ nhớ (back_populates),
     # nhờ vậy object trả về phản ánh đúng số tin nhắn ngay sau commit.
     msg = Message(sender=sender, content=content, intent=intent, confidence=confidence)
     conversation.messages.append(msg)
-    conversation.last_message_at = datetime.now(timezone.utc)
+    # Tin hệ thống auto-resolve (nhắc/đóng) KHÔNG được reset đồng hồ im-lặng của KHÁCH (bump_activity=False).
+    if bump_activity:
+        conversation.last_message_at = datetime.now(timezone.utc)
     return msg
 
 
@@ -63,6 +66,23 @@ async def add_message(
     if conversation is None:
         return None
     _append_message(conversation, sender=sender, content=content)
+    # Khách nhắn lại → thoát vòng auto-resolve (09c): xoá mốc đã-nhắc.
+    if sender == MessageSender.CUSTOMER:
+        conversation.auto_resolve_reminded_at = None
+    await session.commit()
+    return await get_conversation(session, conversation_id)
+
+
+async def send_auto_message(
+    session: AsyncSession, conversation_id: uuid.UUID, *, content: str
+) -> Conversation | None:
+    """Persist tin hệ thống auto-resolve (sender=ai) KHÔNG bump last_message_at (09c).
+
+    Đồng hồ im-lặng của khách phải giữ nguyên để grace/đóng đo đúng. Broadcast hub do call-site lo."""
+    conversation = await get_conversation(session, conversation_id)
+    if conversation is None:
+        return None
+    _append_message(conversation, sender=MessageSender.AI, content=content, bump_activity=False)
     await session.commit()
     return await get_conversation(session, conversation_id)
 
