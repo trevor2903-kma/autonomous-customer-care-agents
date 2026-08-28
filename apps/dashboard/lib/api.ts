@@ -288,12 +288,14 @@ export interface GateConfig {
   auto_reply_enabled: boolean;
   auto_resolve_enabled: boolean;
   auto_resolve_minutes: number;
+  auto_resolve_grace_minutes: number;
   rules: GateIntentRule[];
 }
 export interface GateConfigUpdate {
   auto_reply_enabled?: boolean;
   auto_resolve_enabled?: boolean;
   auto_resolve_minutes?: number;
+  auto_resolve_grace_minutes?: number;
   rules?: { intent: string; send_directly: boolean }[];
 }
 

@@ -57,6 +57,8 @@ function applyPatch(cfg: GateConfig, patch: GateConfigUpdate): GateConfig {
   if (patch.auto_reply_enabled !== undefined) next.auto_reply_enabled = patch.auto_reply_enabled;
   if (patch.auto_resolve_enabled !== undefined) next.auto_resolve_enabled = patch.auto_resolve_enabled;
   if (patch.auto_resolve_minutes !== undefined) next.auto_resolve_minutes = patch.auto_resolve_minutes;
+  if (patch.auto_resolve_grace_minutes !== undefined)
+    next.auto_resolve_grace_minutes = patch.auto_resolve_grace_minutes;
   if (patch.rules) {
     const m = new Map(patch.rules.map((r) => [r.intent, r.send_directly]));
     next.rules = cfg.rules.map((r) => (m.has(r.intent) ? { ...r, send_directly: m.get(r.intent)! } : r));
@@ -136,6 +138,26 @@ export default function GatePage() {
               checked={cfg.auto_resolve_enabled}
               onChange={(v) => mutation.mutate({ auto_resolve_enabled: v })}
             />
+            <div className="flex items-center justify-between gap-4 rounded-[12px] border border-line bg-white px-[18px] py-4 shadow-soft">
+              <div className="min-w-0">
+                <label htmlFor="auto_resolve_grace_minutes" className="text-[13px] font-medium text-ink">
+                  Phút chờ sau khi nhắc
+                </label>
+                <div className="mt-0.5 text-[12px] leading-[1.5] text-dim">
+                  Thời gian chờ sau khi nhắc trước khi tự đóng (phút).
+                </div>
+              </div>
+              <input
+                id="auto_resolve_grace_minutes"
+                type="number"
+                min={1}
+                value={cfg.auto_resolve_grace_minutes}
+                onChange={(e) =>
+                  mutation.mutate({ auto_resolve_grace_minutes: Number(e.target.value) })
+                }
+                className="w-20 flex-none rounded-[8px] border border-line bg-white px-2 py-1 text-[13px] text-ink"
+              />
+            </div>
           </div>
 
           {/* Bảng per-intent */}
