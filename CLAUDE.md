@@ -38,8 +38,9 @@ an toàn nội dung (không trả lời sai chính sách) (PRD §5, 4 trụ cộ
 Giai đoạn hiện tại: **lõi tự trị + HITL đầy đủ đã chạy live.** Agent 1 (intent), Agent 2 (RAG), Agent 3
 (Decision Engine tất định), Agent 4 (Response grounded) đều thật; lưu hội thoại + bộ nhớ đa lượt (Postgres);
 chat khách `/chat`, dashboard admin (hàng đợi, takeover, duyệt nháp, gate, báo cáo), auth JWT + RBAC, tra đơn
-scoped, chống prompt-injection 4 lớp — tất cả live. Việc còn lại (suspend/resume + durable checkpointer,
-auto-resolve, Redis pub/sub đa-worker, deploy, vòng học) và slice tiếp theo (**14 deploy**) → xem **`ROADMAP.md`**.
+scoped, chống prompt-injection 4 lớp, auto-resolve hội thoại theo thời gian im lặng — tất cả live. Việc còn lại
+(suspend/resume + durable checkpointer, xử lý ngoài giờ/offline, Redis pub/sub đa-worker, deploy, vòng học) và
+slice tiếp theo (**14 deploy**) → xem **`ROADMAP.md`**.
 
 ---
 
@@ -126,6 +127,14 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
   (`/admin/gate-config` + `gate_service.holds_auto_reply`) với ba kết cục gửi thẳng / `PENDING_APPROVAL` /
   `IN_HUMAN_QUEUE`; admin takeover/resolve/approve/reject + chat admin↔khách qua hub in-process (status-gate:
   ca đang có người xử lý thì AI KHÔNG chạy).
+- **Auto-resolve theo im lặng (09c, phần inactivity):** `services/auto_resolve.py` — `classify_idle` THUẦN (NOOP/
+  REMIND/RESOLVE) + `run_sweep_once`/`sweep_loop` (asyncio task trong lifespan, quét Postgres mỗi
+  `sweep_interval_seconds`, KHÔNG polling Redis). CHỈ `REPLIED`/`AWAITING_CUSTOMER`; gate `auto_resolve` OFF →
+  no-op. Hai ngưỡng T1 `auto_resolve_minutes` (→ 1 tin nhắc) + T2 `auto_resolve_grace_minutes` (→ `RESOLVED`);
+  `conversation.auto_resolve_reminded_at` mốc đã nhắc, reset khi khách nhắn (`add_message`). Ghi bằng **guarded
+  UPDATE** (`WHERE status IN sweepable [+ reminded_at guard]`, chỉ hành động khi `rowcount==1`) → KHÔNG đóng nhầm
+  ca vừa bị admin takeover / khách nhắn lại (FR-ASYNC-4). Tin nhắc/đóng = template cố định qua `send_auto_message`
+  (KHÔNG bump `last_message_at`) + `hub.publish` (sole-egress, KHÔNG LLM). **Chưa có:** offline/ngoài giờ.
 - **Auth (11):** JWT HS256 + RBAC; admin routes qua `require_admin`, `/ws/chat` xác thực `?token=` (role customer).
 - **Đơn hàng (16):** `order_service.lookup(order_code, customer_id)` — tra **SCOPED theo khách**; mã người khác
   và mã không tồn tại trả CÙNG một kết quả (không lộ sự tồn tại).
@@ -139,8 +148,9 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
 **KHÔNG (giữ ranh giới — CHƯA tới lượt, xem ROADMAP):**
 - KHÔNG Supervisor / điều phối động — pipeline cố định (PRD §5). KHÔNG blend confidence cho an toàn. (Đây là
   quyết định kiến trúc VĨNH VIỄN, không phải "chưa tới lượt".)
-- suspend/resume + **durable checkpointer** (09b — nay vẫn `MemorySaver` in-memory, `graph.py`); auto-resolve +
-  xử lý ngoài giờ (09c); Redis pub/sub đa-worker (nay hub IN-PROCESS, 1 worker); deploy (14); vòng học (15).
+- suspend/resume + **durable checkpointer** (09b — nay vẫn `MemorySaver` in-memory, `graph.py`); **xử lý ngoài
+  giờ/offline** (09c — auto-resolve theo im lặng ĐÃ XONG, phần offline chưa); Redis pub/sub đa-worker (nay hub
+  IN-PROCESS, 1 worker); deploy (14); vòng học (15).
 - KHÔNG worker queue polling Redis — dùng BackgroundTasks/session ngắn (giữ free-tier).
 
 **Slice tiếp theo:** **14 — Deploy** (backend → Render/Railway, FE → Vercel; hạ tầng cloud, secret theo env,

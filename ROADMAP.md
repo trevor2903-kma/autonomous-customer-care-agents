@@ -103,8 +103,12 @@
 - **09b — Suspend/resume** (§10). Clarification turn (`AWAITING_CUSTOMER`); human-handoff pause via `interrupt` +
   **durable checkpointer** (Redis/Postgres, replacing `MemorySaver`, FR-ASYNC-6). *(This — plus running >1 worker
   — is the real trigger to drop MemorySaver; not "many concurrent chats", which 1 async worker already handles.)*
-- **09c — Auto-resolve + offline handling** (§9/§10). auto-resolve gate + inactivity timer; after-hours → queue +
-  "nhân viên sẽ phản hồi sớm"; never auto-close a waiting case.
+- **09c — Auto-resolve + offline handling** (§9/§10). **Auto-resolve inactivity DONE** — periodic Postgres sweep
+  (asyncio task trong lifespan, KHÔNG polling Redis): `REPLIED`/`AWAITING_CUSTOMER` im lặng ≥ T1
+  (`auto_resolve_minutes`) → 1 tin nhắc → im lặng ≥ T2 (`auto_resolve_grace_minutes`) → `RESOLVED`. Guarded UPDATE
+  re-check status lúc ghi nên takeover/khách-nhắn-lại giữa sweep KHÔNG bị đóng nhầm (FR-ASYNC-4); tin nhắc/đóng =
+  template cố định qua `send_auto_message` (no-bump) + `hub.publish` (sole-egress, KHÔNG LLM); gate `auto_resolve`
+  hai van + ô grace trên UI. **Còn lại:** offline/ngoài giờ (không có Admin) → giữ ca chờ + "nhân viên sẽ phản hồi sớm".
   → **Milestone:** robust, resumable conversation lifecycle.
 
 ---
@@ -196,6 +200,6 @@ multi-customer demo. Decision, filtered through the PRD:
 - [x] **10a conversation list** · **11 auth (JWT + RBAC, customer login)** · **12 observability (audit_log + Báo cáo + Langfuse)**
 - [x] **13 anti-injection (4 lớp, NFR-7)** · **16 order lookup scoped theo customer_id**
 - [ ] **14 deploy ← NEXT** · UI redesign
-- [ ] 09b suspend/resume + durable checkpointer · 09c auto-resolve + offline
+- [ ] 09b suspend/resume + durable checkpointer · 09c offline handling (auto-resolve theo im lặng ✅ done)
 - [ ] 10b system/agent monitoring · 10c analytics + audit viewer (một phần đã có ở tab Báo cáo)
 - [ ] 15 learning loop · 17 others
