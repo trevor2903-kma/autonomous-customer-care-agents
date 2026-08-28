@@ -49,6 +49,10 @@ class Conversation(UUIDMixin, TimestampMixin, Base):
     last_message_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Auto-resolve (09c): mốc đã gửi tin nhắc. NULL = chưa nhắc. Set khi REMIND, reset khi khách nhắn lại.
+    auto_resolve_reminded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     messages: Mapped[list["Message"]] = relationship(
         back_populates="conversation",

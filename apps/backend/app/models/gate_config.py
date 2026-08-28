@@ -22,3 +22,4 @@ class GateConfig(Base):
     auto_reply_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     auto_resolve_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     auto_resolve_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    auto_resolve_grace_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=15)
