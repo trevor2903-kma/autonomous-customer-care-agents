@@ -169,16 +169,20 @@ async def _run_pipeline_safe(
     history: list[dict[str, str]] | None,
     turn_id: uuid.UUID,
     customer_id: uuid.UUID | None = None,
+    prior_status: str | None = None,
 ) -> tuple[str | None, dict[str, Any] | None, str]:
     """Chạy pipeline → (status, final, reply). Lỗi → (None, None, _ERROR_REPLY), KHÔNG rớt WS.
 
-    `customer_id` = danh tính khách từ JWT → Agent 2 tra đơn SCOPED (chỉ đơn của chính khách này)."""
+    `customer_id` = danh tính khách từ JWT → Agent 2 tra đơn SCOPED (chỉ đơn của chính khách này).
+    `prior_status` = status hội thoại TRƯỚC lượt này (09b loop-guard clarify — Decision đọc để biết đã hỏi
+    mã đơn 1 lần chưa)."""
     try:
         final = await run_pipeline(
             input_text=msg,
             history=history,
             turn_id=str(turn_id),
             customer_id=str(customer_id) if customer_id else None,
+            prior_status=prior_status,
         )
         reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
         return final.get("status"), final, reply
@@ -337,7 +341,9 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
             await _publish(
                 st.conv_key, {"type": "message", "from": "customer", "content": msg}, exclude=st.queue
             )
-            status_out, final, reply = await _run_pipeline_safe(msg, history, turn_id, st.customer_id)
+            status_out, final, reply = await _run_pipeline_safe(
+                msg, history, turn_id, st.customer_id, status
+            )
 
             # Gate động P3: auto_reply không "gửi thẳng" → GIỮ nháp (PENDING_APPROVAL), KHÔNG gửi thẳng cho khách.
             if final is not None and await gate_holds(status_out, final.get("intent")):

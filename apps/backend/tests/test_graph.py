@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+import app.agents.graph as graph_mod
 from app.agents.graph import build_graph, run_pipeline
 from app.agents.nodes.response import HANDOFF_NOTICE
 
@@ -126,3 +127,52 @@ async def test_blocking_flag_forces_handoff_once(monkeypatch: pytest.MonkeyPatch
     assert "multi_intent" in final["escalation_reason"]
     # Reducer `add`: multi_intent xuất hiện đúng 1 lần (decision không trả lại cờ đã tích luỹ).
     assert final["uncertainty_flags"].count("multi_intent") == 1
+
+
+async def test_pipeline_clarifies_order_status_without_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """09b: order_status không mã đơn -> Decision clarify + Response hỏi lại -> AWAITING_CUSTOMER.
+
+    Ép intent=order_status, entities rỗng (không mã) bằng cách patch thẳng `graph_mod.intent_node` (tên đã
+    bind trong graph.py) rồi build lại graph — patch `nodes.intent.intent_node` sẽ là no-op vì graph.py giữ
+    reference riêng của nó.
+    """
+
+    async def fake_intent(state):  # type: ignore[no-untyped-def]
+        return {
+            "status": "CLASSIFYING",
+            "intent": "order_status",
+            "entities": {},
+            "intent_confidence": 0.9,
+            "uncertainty_flags": [],
+            "trace": [{"node": "intent", "confidence": 0.9, "branch": "intent"}],
+        }
+
+    monkeypatch.setattr(graph_mod, "intent_node", fake_intent)
+    monkeypatch.setattr(graph_mod, "graph", graph_mod.build_graph())
+
+    final = await graph_mod.run_pipeline(input_text="đơn của mình tới đâu rồi ạ")
+
+    assert final["status"] == "AWAITING_CUSTOMER"
+    assert final["result"]["reply"] == "Dạ anh/chị cho em xin mã đơn hàng để em kiểm tra giúp ạ."
+
+
+async def test_pipeline_prior_awaiting_escalates_when_still_no_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    """09b loop-guard: đã hỏi mã đơn 1 lần (prior_status=AWAITING_CUSTOMER) mà lượt này vẫn không có mã
+    -> KHÔNG hỏi lại lần nữa, chuyển người (IN_HUMAN_QUEUE)."""
+
+    async def fake_intent(state):  # type: ignore[no-untyped-def]
+        return {
+            "status": "CLASSIFYING",
+            "intent": "order_status",
+            "entities": {},
+            "intent_confidence": 0.9,
+            "uncertainty_flags": [],
+            "trace": [{"node": "intent", "confidence": 0.9, "branch": "intent"}],
+        }
+
+    monkeypatch.setattr(graph_mod, "intent_node", fake_intent)
+    monkeypatch.setattr(graph_mod, "graph", graph_mod.build_graph())
+
+    final = await graph_mod.run_pipeline(input_text="vẫn đơn đó", prior_status="AWAITING_CUSTOMER")
+
+    assert final["status"] == "IN_HUMAN_QUEUE"
