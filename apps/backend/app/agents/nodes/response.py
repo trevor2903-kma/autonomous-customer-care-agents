@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,7 @@ from ...core.embeddings import get_openai
 from ...core.logging import get_logger
 from ...core.sanitize import as_data_block
 from ...models.enums import AgentAction, ConversationStatus
+from ...services.business_hours import is_within_support_hours
 from ..state import ConversationState
 from ._history import format_history
 
@@ -47,6 +49,14 @@ FALLBACK_REPLY = (
 # Thông báo khi Agent 3 quyết human_handoff — Response Generator phát (KHÔNG gọi LLM). Node human_handoff
 # đầy đủ (EscalationCard + admin queue) = slice 08b.
 HANDOFF_NOTICE = "Yêu cầu của bạn đã được chuyển tới nhân viên hỗ trợ."
+
+# 09c offline: handoff NGOÀI giờ hỗ trợ — đặt kỳ vọng khách sẽ chờ (nhân viên chưa online). Giữ ca vẫn vào
+# hàng đợi (IN_HUMAN_QUEUE + EscalationCard) như trong giờ; chỉ câu thông báo khác. Format giờ từ config.
+HANDOFF_NOTICE_AFTER_HOURS = (
+    "Yêu cầu của bạn đã được chuyển tới nhân viên hỗ trợ. "
+    f"Hiện đang ngoài giờ làm việc ({settings.support_hours_start}:00–{settings.support_hours_end}:00), "
+    "nhân viên sẽ phản hồi sớm nhất khi quay lại ạ."
+)
 
 # Đơn tra không ra (Agent 2 phát `order_not_found`): câu CỐ ĐỊNH, KHÔNG qua LLM — nội dung nhạy về quyền
 # riêng tư nên phải đúng từng chữ. Luôn nói "trong tài khoản CỦA ANH/CHỊ": mã của người khác và mã không tồn
@@ -260,7 +270,10 @@ async def response_node(state: ConversationState) -> dict[str, Any]:
     """
     action = state.get("action")
     if action == AgentAction.HUMAN_HANDOFF:
-        reply = HANDOFF_NOTICE
+        # 09c offline: trong giờ → notice thường; ngoài giờ → "nhân viên sẽ phản hồi sớm". AI không đổi hành vi
+        # khác (ca vẫn IN_HUMAN_QUEUE + EscalationCard); chỉ câu thông báo tới khách khác.
+        within = is_within_support_hours(datetime.now(timezone.utc))
+        reply = HANDOFF_NOTICE if within else HANDOFF_NOTICE_AFTER_HOURS
         status = ConversationStatus.IN_HUMAN_QUEUE
         branch = "human_handoff"
         flags: list[str] = []

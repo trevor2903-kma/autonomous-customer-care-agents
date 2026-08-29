@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     sweep_interval_seconds: int = 60
     # Trần số ca một vòng sweep nạp (pre-filter theo thời gian + LIMIT) — không nạp mọi ca REPLIED mỗi vòng.
     sweep_batch_limit: int = 500
+    # Giờ hỗ trợ (09c offline): ngoài khung [start, end), handoff báo khách "nhân viên sẽ phản hồi sớm".
+    # AI VẪN auto-reply 24/7 (facts.md); chỉ nhánh human_handoff đổi câu.
+    support_hours_start: int = 9
+    support_hours_end: int = 21
+    support_timezone: str = "Asia/Ho_Chi_Minh"
     context_window_messages: int = 10
     # Intent Classifier (PRD §7.1): 2 ứng viên RAG đầu chênh score < margin -> cờ ambiguous_intent.
     intent_ambiguous_margin: float = 0.05

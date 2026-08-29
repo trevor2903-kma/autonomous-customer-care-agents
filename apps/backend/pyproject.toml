@@ -25,6 +25,7 @@ dependencies = [
     "bcrypt>=4.1,<6",
     "pyjwt>=2.9,<3",
     "langfuse>=3,<4",
+    "tzdata>=2026.3",
 ]
 
 [dependency-groups]

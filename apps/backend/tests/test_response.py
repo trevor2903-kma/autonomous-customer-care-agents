@@ -221,8 +221,10 @@ async def test_response_node_is_single_speaker(monkeypatch: pytest.MonkeyPatch) 
     assert out["uncertainty_flags"] == []
 
 
-async def test_response_node_handoff_emits_notice() -> None:
+async def test_response_node_handoff_emits_notice(monkeypatch: pytest.MonkeyPatch) -> None:
     # SOLE-EGRESS: action=human_handoff -> Response Generator phát HANDOFF_NOTICE, IN_HUMAN_QUEUE, KHÔNG gọi LLM.
+    # Cố định TRONG GIỜ để test tất định (09c offline đổi câu khi ngoài giờ).
+    monkeypatch.setattr(resp, "is_within_support_hours", lambda now: True)
     out = await resp.response_node(
         {"action": "human_handoff", "escalation_reason": "blocking_flags=['no_relevant_knowledge']"}
     )
@@ -230,4 +232,17 @@ async def test_response_node_handoff_emits_notice() -> None:
     assert out["result"]["branch"] == "human_handoff"
     assert out["result"]["reply"] == resp.HANDOFF_NOTICE
     assert out["messages"] == [{"sender": "ai", "content": resp.HANDOFF_NOTICE}]
+    assert out["uncertainty_flags"] == []
+
+
+async def test_response_node_handoff_after_hours(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 09c offline: handoff NGOÀI giờ -> câu "nhân viên sẽ phản hồi sớm" (HANDOFF_NOTICE_AFTER_HOURS), vẫn sole-egress.
+    monkeypatch.setattr(resp, "is_within_support_hours", lambda now: False)
+    out = await resp.response_node(
+        {"action": "human_handoff", "escalation_reason": "blocking_flags=['no_relevant_knowledge']"}
+    )
+    assert out["status"] == "IN_HUMAN_QUEUE"
+    assert out["result"]["branch"] == "human_handoff"
+    assert out["result"]["reply"] == resp.HANDOFF_NOTICE_AFTER_HOURS
+    assert out["messages"] == [{"sender": "ai", "content": resp.HANDOFF_NOTICE_AFTER_HOURS}]
     assert out["uncertainty_flags"] == []
