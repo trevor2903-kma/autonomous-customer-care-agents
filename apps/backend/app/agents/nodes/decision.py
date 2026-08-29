@@ -86,6 +86,7 @@ def decision_node(state: ConversationState) -> dict[str, Any]:
         field = CLARIFY_MISSING_ENTITY.get(intent)
         missing = bool(field) and not str((state.get("entities") or {}).get(field) or "").strip()
         if missing:
+            # Loop-guard giả định MỘT clarify field (MVP order_id): keyed trên prior_status, không nhớ field nào đã hỏi.
             if state.get("prior_status") == ConversationStatus.AWAITING_CUSTOMER:
                 action = AgentAction.HUMAN_HANDOFF
                 handoff = True

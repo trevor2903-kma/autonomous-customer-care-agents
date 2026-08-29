@@ -53,7 +53,7 @@ class ConversationState(TypedDict, total=False):
     # **KHÔNG phải cờ chặn**: "không tìm thấy" tự nó là câu trả lời được (kết quả lookup chính là grounding),
     # phần lớn do khách gõ nhầm mã → escalate ngay là quá vội.
     order_not_found: str | None
-    action: str | None  # auto_reply | human_handoff (Decision Engine, PRD §7.3)
+    action: str | None  # auto_reply | human_handoff | clarify (Decision Engine, PRD §7.3)
     priority: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)
     severity: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)
     draft_reply: str | None

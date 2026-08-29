@@ -271,7 +271,8 @@ async def response_node(state: ConversationState) -> dict[str, Any]:
 
     - `human_handoff` → phát `HANDOFF_NOTICE` (KHÔNG gọi LLM) → status IN_HUMAN_QUEUE.
     - `auto_reply` → `generate_reply` grounded → status REPLIED.
-    Cả hai đều set `result.reply` → WS/khách nhận qua CÙNG một đường (không phải sửa WS).
+    - clarify → phát câu hỏi CỐ ĐỊNH (CLARIFY_QUESTION) → status AWAITING_CUSTOMER (KHÔNG gọi LLM). Field lạ → fallback FALLBACK_REPLY + REPLIED.
+    Các nhánh đều set `result.reply` → WS/khách nhận qua CÙNG một đường (không phải sửa WS).
     """
     action = state.get("action")
     if action == AgentAction.CLARIFY:
