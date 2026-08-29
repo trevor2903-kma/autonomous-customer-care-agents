@@ -212,6 +212,9 @@ refund · exchange · complaint · promotion · other
   cần Admin duyệt nháp** do **gate auto-reply theo category** quyết định (§9). Mục tiêu: ca nhạy cảm nhưng rõ
   ràng vẫn được xử lý nhanh (Admin chỉ duyệt một nháp tốt) thay vì luôn xử lý lại từ đầu.
 - **Tool tự trị (phase sau):** công cụ đánh giá rủi ro; tra trạng thái đơn (order lookup — Phase 2).
+- **clarify (route thứ ba, §10 FR-ASYNC-2):** khi intent gắn-với-đơn (order_status/refund/exchange) THIẾU mã đơn
+  và KHÔNG có cờ chặn → Decision route `clarify` → Response hỏi lại mã + hội thoại `AWAITING_CUSTOMER`. Hỏi TỐI ĐA
+  1 lần: đã hỏi mà lượt sau vẫn thiếu → `human_handoff`. An toàn (BLOCKING_FLAGS) LUÔN ưu tiên trên clarify.
 
 ```json
 // Input: Intent + RAG Context + History + Confidence
@@ -222,7 +225,7 @@ refund · exchange · complaint · promotion · other
 ```
 
 ```text
-action:   auto_reply | human_handoff
+action:   auto_reply | human_handoff | clarify
 priority: low | medium | high
 severity: low | medium | high
 ```

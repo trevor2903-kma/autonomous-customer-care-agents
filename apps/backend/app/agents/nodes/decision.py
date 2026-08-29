@@ -59,6 +59,14 @@ _PRIORITY_SEVERITY: dict[str, tuple[Priority, Severity]] = {
 }
 
 
+# Clarify (09b/FR-ASYNC-2): intent gắn-với-đơn thiếu mã → hỏi lại. Tất cả trỏ CÙNG field `order_id` (một câu hỏi).
+CLARIFY_MISSING_ENTITY: dict[str, str] = {
+    "order_status": "order_id",
+    "refund": "order_id",
+    "exchange": "order_id",
+}
+
+
 def decision_node(state: ConversationState) -> dict[str, Any]:
     accumulated = list(state.get("uncertainty_flags") or [])  # cờ tích luỹ Agent 1+2 (reducer add)
     injected = list((state.get("scratchpad") or {}).get("injected_flags") or [])  # demo (run-demo)
@@ -66,10 +74,26 @@ def decision_node(state: ConversationState) -> dict[str, Any]:
     # Safety gate TẤT ĐỊNH (PRD §5 trụ cột 3): cờ ∈ BLOCKING_FLAGS → human_handoff. KHÔNG blend confidence.
     blocking = sorted((set(accumulated) | set(injected)) & BLOCKING_FLAGS)
     handoff = bool(blocking)
-    action = AgentAction.HUMAN_HANDOFF if handoff else AgentAction.AUTO_REPLY
     escalation_reason = f"blocking_flags={blocking}" if handoff else None
+    action = AgentAction.HUMAN_HANDOFF if handoff else AgentAction.AUTO_REPLY
 
     intent = state.get("intent") or "other"
+
+    # Clarify (09b/FR-ASYNC-2): CHỈ khi safety-gate KHÔNG chặn. Thiếu entity bắt buộc → hỏi lại (tối đa 1 lần:
+    # đã hỏi mà vẫn thiếu → handoff). An toàn LUÔN ưu tiên.
+    clarify_field: str | None = None
+    if not handoff:
+        field = CLARIFY_MISSING_ENTITY.get(intent)
+        missing = bool(field) and not str((state.get("entities") or {}).get(field) or "").strip()
+        if missing:
+            if state.get("prior_status") == ConversationStatus.AWAITING_CUSTOMER:
+                action = AgentAction.HUMAN_HANDOFF
+                handoff = True
+                escalation_reason = "clarify_unresolved"
+            else:
+                action = AgentAction.CLARIFY
+                clarify_field = field
+
     priority, severity = _PRIORITY_SEVERITY.get(intent, (Priority.LOW, Severity.LOW))
 
     # TODO (PRD §9, slice 08a): gate auto-reply theo category nhạy cảm → PENDING_APPROVAL (duyệt nháp).
@@ -81,6 +105,7 @@ def decision_node(state: ConversationState) -> dict[str, Any]:
         "severity": str(severity),
         "require_human_handoff": handoff,
         "escalation_reason": escalation_reason,
+        "clarify_field": clarify_field,
         # Reducer `add`: CHỈ trả cờ MỚI (injected của demo) — cờ tích luỹ đã có sẵn, đừng trả lại (tránh nhân đôi).
         "uncertainty_flags": injected,
         "trace": [
@@ -90,6 +115,7 @@ def decision_node(state: ConversationState) -> dict[str, Any]:
                 "branch": str(action),
                 "detail": {
                     "blocking_flags": blocking,
+                    "clarify_field": clarify_field,
                     "priority": str(priority),
                     "severity": str(severity),
                     # Giữ CẢ HAI confidence (KHÔNG blend) cho audit + Agent Monitoring (PRD §5 trụ cột 1).

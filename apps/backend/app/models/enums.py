@@ -83,6 +83,7 @@ class AgentAction(StrEnum):
     # Decision Engine output (PRD §7.3)
     AUTO_REPLY = "auto_reply"
     HUMAN_HANDOFF = "human_handoff"
+    CLARIFY = "clarify"  # 09b/FR-ASYNC-2: thiếu entity bắt buộc → hỏi lại (AWAITING_CUSTOMER), tối đa 1 lần
 
 
 class Priority(StrEnum):

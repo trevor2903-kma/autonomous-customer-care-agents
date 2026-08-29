@@ -80,9 +80,14 @@ def test_hallucination_risk_not_blocking() -> None:
 
 
 def test_ambiguous_intent_alone_not_blocking() -> None:
-    # ambiguous_intent (nhãn mờ) NHƯNG grounding mạnh (không có cờ grounding) → auto_reply (vd "đổi trả").
+    # ambiguous_intent (nhãn mờ) NHƯNG grounding mạnh → auto_reply. Có order_id để KHÔNG kích clarify (09b).
     assert "ambiguous_intent" not in BLOCKING_FLAGS
-    out = _decide(intent="refund", uncertainty_flags=["ambiguous_intent"], retrieval_confidence=0.65)
+    out = _decide(
+        intent="refund",
+        uncertainty_flags=["ambiguous_intent"],
+        retrieval_confidence=0.65,
+        entities={"order_id": "716449"},
+    )
     assert out["action"] == "auto_reply"
 
 
@@ -103,3 +108,46 @@ def test_unknown_intent_defaults_low_low() -> None:
     out = _decide(intent="unknown", uncertainty_flags=[])
     assert out["priority"] == "low"
     assert out["severity"] == "low"
+
+
+def test_clarify_when_order_status_missing_code() -> None:
+    out = _decide(intent="order_status", uncertainty_flags=[], entities={})
+    assert out["action"] == "clarify"
+    assert out["clarify_field"] == "order_id"
+    assert out["require_human_handoff"] is False
+
+
+def test_clarify_covers_refund_and_exchange() -> None:
+    for intent in ("refund", "exchange"):
+        out = _decide(intent=intent, uncertainty_flags=[], entities={})
+        assert out["action"] == "clarify", intent
+        assert out["clarify_field"] == "order_id", intent
+
+
+def test_no_clarify_when_code_present() -> None:
+    out = _decide(intent="order_status", uncertainty_flags=[], entities={"order_id": "716449"})
+    assert out["action"] == "auto_reply"
+    assert out["clarify_field"] is None
+
+
+def test_clarify_loop_guard_escalates_after_asking_once() -> None:
+    # Đã hỏi (prior=AWAITING_CUSTOMER) mà vẫn thiếu mã → handoff (max 1, FR-ASYNC-2).
+    out = _decide(intent="order_status", uncertainty_flags=[], entities={}, prior_status="AWAITING_CUSTOMER")
+    assert out["action"] == "human_handoff"
+    assert out["require_human_handoff"] is True
+    assert out["escalation_reason"] == "clarify_unresolved"
+    assert out["clarify_field"] is None
+
+
+def test_blocking_flag_wins_over_clarify() -> None:
+    # An toàn ưu tiên: cờ chặn + thiếu mã đồng thời → handoff (KHÔNG clarify).
+    out = _decide(intent="order_status", uncertainty_flags=["human_requested"], entities={})
+    assert out["action"] == "human_handoff"
+    assert out["clarify_field"] is None
+    assert "human_requested" in out["escalation_reason"]
+
+
+def test_non_order_intent_missing_code_no_clarify() -> None:
+    out = _decide(intent="product_price", uncertainty_flags=[], entities={})
+    assert out["action"] == "auto_reply"
+    assert out["clarify_field"] is None

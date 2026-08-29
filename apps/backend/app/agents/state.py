@@ -58,3 +58,8 @@ class ConversationState(TypedDict, total=False):
     severity: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)
     draft_reply: str | None
     awaiting_customer: bool  # PRD §10 FR-ASYNC-2 (clarification)
+
+    # 09b clarification (FR-ASYNC-2): status hội thoại TRƯỚC lượt này (input, chỉ-đọc) cho loop-guard "đã hỏi
+    # 1 lần chưa"; None = ca/lượt mới. `clarify_field` = entity Decision yêu cầu Response hỏi (None nếu không clarify).
+    prior_status: str | None
+    clarify_field: str | None
