@@ -155,3 +155,16 @@ def test_run_sweep_once_noop_when_gate_off() -> None:
             return await run_sweep_once(NOW)
 
     assert asyncio.run(_run()) == 0
+
+
+def test_candidate_stmt_has_prefilter_and_limit() -> None:
+    """Query ứng viên thu hẹp trong SQL: chỉ ca im lặng ≥ T1 HOẶC đã nhắc, có LIMIT (sub-project A)."""
+    from app.services.auto_resolve import _build_candidate_stmt
+
+    stmt = _build_candidate_stmt(now=NOW, t1_minutes=30, limit=250)
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True})).upper()
+
+    assert "LIMIT 250" in sql
+    assert "STATUS IN" in sql  # vẫn chỉ REPLIED/AWAITING_CUSTOMER
+    assert "LAST_MESSAGE_AT <" in sql  # pre-filter T1
+    assert "AUTO_RESOLVE_REMINDED_AT IS NOT NULL" in sql  # ca đã nhắc luôn được xét (để RESOLVE)

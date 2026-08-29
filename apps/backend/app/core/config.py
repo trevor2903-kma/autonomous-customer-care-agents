@@ -48,6 +48,8 @@ class Settings(BaseSettings):
     history_window: int = 8
     auto_resolve_minutes: int = 30
     sweep_interval_seconds: int = 60
+    # Trần số ca một vòng sweep nạp (pre-filter theo thời gian + LIMIT) — không nạp mọi ca REPLIED mỗi vòng.
+    sweep_batch_limit: int = 500
     context_window_messages: int = 10
     # Intent Classifier (PRD §7.1): 2 ứng viên RAG đầu chênh score < margin -> cờ ambiguous_intent.
     intent_ambiguous_margin: float = 0.05

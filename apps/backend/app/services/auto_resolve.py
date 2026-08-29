@@ -10,7 +10,8 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
+from sqlalchemy.sql import Select
 
 from ..api.ws.hub import hub
 from ..core.config import settings
@@ -78,8 +79,27 @@ async def _broadcast_ai(conv_id, content: str) -> None:
         log.warning("auto-resolve broadcast failed (bỏ qua): %s", exc)
 
 
+def _build_candidate_stmt(*, now: datetime, t1_minutes: int, limit: int) -> Select:
+    """Ứng viên sweep: CHỈ ca có thể cần hành động — im lặng ≥ T1 (chưa nhắc) HOẶC đã nhắc (để RESOLVE),
+    giới hạn `limit` (sub-project A). Thu hẹp trong SQL để KHÔNG nạp mọi ca REPLIED/AWAITING_CUSTOMER mỗi vòng;
+    `classify_idle` vẫn là trọng tài cuối trên từng row nên logic remind/resolve không đổi."""
+    t1_cutoff = now - timedelta(minutes=t1_minutes)
+    return (
+        select(Conversation)
+        .where(
+            Conversation.status.in_(tuple(_SWEEPABLE)),
+            or_(
+                Conversation.last_message_at < t1_cutoff,
+                Conversation.auto_resolve_reminded_at.is_not(None),
+            ),
+        )
+        .order_by(Conversation.last_message_at.asc())  # ca im lặng lâu nhất trước
+        .limit(limit)
+    )
+
+
 async def run_sweep_once(now: datetime) -> int:
-    """Một vòng quét. Gate OFF → 0. Lọc thô status phía-AI, rồi classify_idle từng ca."""
+    """Một vòng quét. Gate OFF → 0. Lọc ứng viên (im lặng ≥ T1 hoặc đã nhắc, LIMIT), rồi classify_idle từng ca."""
     try:
         snap = await gate_service.get_gate_config()
     except Exception as exc:  # noqa: BLE001 — không đọc được gate → an toàn: không đóng gì.
@@ -93,8 +113,10 @@ async def run_sweep_once(now: datetime) -> int:
         rows = list(
             (
                 await s.execute(
-                    select(Conversation).where(
-                        Conversation.status.in_(tuple(_SWEEPABLE))
+                    _build_candidate_stmt(
+                        now=now,
+                        t1_minutes=snap.auto_resolve_minutes,
+                        limit=settings.sweep_batch_limit,
                     )
                 )
             )
