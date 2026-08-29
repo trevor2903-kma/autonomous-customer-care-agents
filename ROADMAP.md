@@ -100,15 +100,19 @@
   (history_window) loaded from Postgres into the Agent 1 + Agent 4 prompts. Still open: the stable
   per-conversation `thread_id` (today it's generated per turn) — that only matters once there's a durable
   checkpointer, so it ships with 09b.
-- **09b — Suspend/resume** (§10). Clarification turn (`AWAITING_CUSTOMER`); human-handoff pause via `interrupt` +
-  **durable checkpointer** (Redis/Postgres, replacing `MemorySaver`, FR-ASYNC-6). *(This — plus running >1 worker
-  — is the real trigger to drop MemorySaver; not "many concurrent chats", which 1 async worker already handles.)*
+- **09b — Suspend/resume** (§10). **Lượt clarification (`AWAITING_CUSTOMER`) DONE** (hướng A, DB+status): Decision route
+  thứ ba `clarify` (order_status/refund/exchange thiếu `order_id` → hỏi mã; tối đa 1 lần rồi handoff; safety-gate luôn
+  ưu tiên trên clarify), Response phát câu hỏi CỐ ĐỊNH (no LLM) + `AWAITING_CUSTOMER`, resume = lượt kế với DB history.
+  Giữ `MemorySaver` + `thread_id` mỗi lượt. **Còn lại:** durable checkpointer + `interrupt()` + stable thread_id
+  (Redis/Postgres, FR-ASYNC-6) — chỉ cần khi dừng-GIỮA-graph hoặc chạy >1 worker; DB+status-gate đã che nhu cầu hiện tại.
 - **09c — Auto-resolve + offline handling** (§9/§10). **Auto-resolve inactivity DONE** — periodic Postgres sweep
   (asyncio task trong lifespan, KHÔNG polling Redis): `REPLIED`/`AWAITING_CUSTOMER` im lặng ≥ T1
   (`auto_resolve_minutes`) → 1 tin nhắc → im lặng ≥ T2 (`auto_resolve_grace_minutes`) → `RESOLVED`. Guarded UPDATE
   re-check status lúc ghi nên takeover/khách-nhắn-lại giữa sweep KHÔNG bị đóng nhầm (FR-ASYNC-4); tin nhắc/đóng =
   template cố định qua `send_auto_message` (no-bump) + `hub.publish` (sole-egress, KHÔNG LLM); gate `auto_resolve`
-  hai van + ô grace trên UI. **Còn lại:** offline/ngoài giờ (không có Admin) → giữ ca chờ + "nhân viên sẽ phản hồi sớm".
+  hai van + ô grace trên UI; sweep có pre-filter thời gian + `LIMIT` (`sweep_batch_limit`). **Offline theo giờ hỗ trợ
+  DONE:** handoff NGOÀI khung `support_hours_*` (Asia/Ho_Chi_Minh) → câu "nhân viên sẽ phản hồi sớm" thay notice thường;
+  AI vẫn auto-reply 24/7. **Còn lại (tùy chọn):** phát hiện admin-presence thật (nay chỉ theo giờ).
   → **Milestone:** robust, resumable conversation lifecycle.
 
 ---
@@ -200,6 +204,6 @@ multi-customer demo. Decision, filtered through the PRD:
 - [x] **10a conversation list** · **11 auth (JWT + RBAC, customer login)** · **12 observability (audit_log + Báo cáo + Langfuse)**
 - [x] **13 anti-injection (4 lớp, NFR-7)** · **16 order lookup scoped theo customer_id**
 - [ ] **14 deploy ← NEXT** · UI redesign
-- [ ] 09b suspend/resume + durable checkpointer · 09c offline handling (auto-resolve theo im lặng ✅ done)
+- [ ] 09b durable checkpointer + interrupt (clarification turn ✅ done) · 09c admin-presence (business-hours offline + auto-resolve ✅ done)
 - [ ] 10b system/agent monitoring · 10c analytics + audit viewer (một phần đã có ở tab Báo cáo)
 - [ ] 15 learning loop · 17 others
