@@ -58,6 +58,11 @@ HANDOFF_NOTICE_AFTER_HOURS = (
     "nhân viên sẽ phản hồi sớm nhất khi quay lại ạ."
 )
 
+# 09b clarification: câu hỏi CỐ ĐỊNH theo field thiếu (sole-egress, KHÔNG LLM). MVP chỉ order_id.
+CLARIFY_QUESTION: dict[str, str] = {
+    "order_id": "Dạ anh/chị cho em xin mã đơn hàng để em kiểm tra giúp ạ.",
+}
+
 # Đơn tra không ra (Agent 2 phát `order_not_found`): câu CỐ ĐỊNH, KHÔNG qua LLM — nội dung nhạy về quyền
 # riêng tư nên phải đúng từng chữ. Luôn nói "trong tài khoản CỦA ANH/CHỊ": mã của người khác và mã không tồn
 # tại nhận CÙNG một câu, nên không lộ cả sự tồn tại của đơn người khác.
@@ -269,14 +274,27 @@ async def response_node(state: ConversationState) -> dict[str, Any]:
     Cả hai đều set `result.reply` → WS/khách nhận qua CÙNG một đường (không phải sửa WS).
     """
     action = state.get("action")
-    if action == AgentAction.HUMAN_HANDOFF:
+    if action == AgentAction.CLARIFY:
+        # 09b: hỏi lại tất định + AWAITING_CUSTOMER. Nếu field lạ (map lệch, không nên xảy ra) → degrade an toàn.
+        question = CLARIFY_QUESTION.get(state.get("clarify_field") or "")
+        if question is not None:
+            reply = question
+            status = ConversationStatus.AWAITING_CUSTOMER
+            branch = "clarify"
+            flags: list[str] = []
+        else:
+            reply = FALLBACK_REPLY
+            status = ConversationStatus.REPLIED
+            branch = "response"
+            flags = ["hallucination_risk"]
+    elif action == AgentAction.HUMAN_HANDOFF:
         # 09c offline: trong giờ → notice thường; ngoài giờ → "nhân viên sẽ phản hồi sớm". AI không đổi hành vi
         # khác (ca vẫn IN_HUMAN_QUEUE + EscalationCard); chỉ câu thông báo tới khách khác.
         within = is_within_support_hours(datetime.now(timezone.utc))
         reply = HANDOFF_NOTICE if within else HANDOFF_NOTICE_AFTER_HOURS
         status = ConversationStatus.IN_HUMAN_QUEUE
         branch = "human_handoff"
-        flags: list[str] = []
+        flags = []
     else:
         result = await generate_reply(
             query=state.get("input", ""),

@@ -246,3 +246,17 @@ async def test_response_node_handoff_after_hours(monkeypatch: pytest.MonkeyPatch
     assert out["result"]["reply"] == resp.HANDOFF_NOTICE_AFTER_HOURS
     assert out["messages"] == [{"sender": "ai", "content": resp.HANDOFF_NOTICE_AFTER_HOURS}]
     assert out["uncertainty_flags"] == []
+
+
+async def test_response_node_clarify_asks_for_order_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 09b: action=clarify + clarify_field=order_id -> câu hỏi mã đơn + AWAITING_CUSTOMER, KHÔNG gọi LLM.
+    async def boom(*a, **k):  # generate_reply KHÔNG được gọi ở nhánh clarify
+        raise AssertionError("generate_reply must not be called for clarify")
+
+    monkeypatch.setattr(resp, "generate_reply", boom)
+    out = await resp.response_node({"action": "clarify", "clarify_field": "order_id"})
+    assert out["status"] == "AWAITING_CUSTOMER"
+    assert out["result"]["branch"] == "clarify"
+    assert out["result"]["reply"] == resp.CLARIFY_QUESTION["order_id"]
+    assert out["messages"] == [{"sender": "ai", "content": resp.CLARIFY_QUESTION["order_id"]}]
+    assert out["uncertainty_flags"] == []
