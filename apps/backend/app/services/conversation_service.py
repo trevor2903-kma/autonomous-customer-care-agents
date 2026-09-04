@@ -88,13 +88,23 @@ async def send_auto_message(
 
 
 async def set_status(
-    session: AsyncSession, conversation_id: uuid.UUID, status: str
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    status: str,
+    *,
+    current_intent: str | None = None,
 ) -> Conversation | None:
-    """Cập nhật `conversation.status` (theo final state của pipeline). Session NGẮN (Neon free)."""
+    """Cập nhật `conversation.status` (theo final state của pipeline). Session NGẮN (Neon free).
+
+    `current_intent` (tuỳ chọn): ghi kèm intent của lượt — dùng khi vào `AWAITING_CUSTOMER` để lượt resume
+    khôi phục ĐÚNG intent gốc lúc khách chỉ gõ mã đơn trơ (follow-up 09b).
+    """
     conversation = await get_conversation(session, conversation_id)
     if conversation is None:
         return None
     conversation.status = status
+    if current_intent is not None:
+        conversation.current_intent = current_intent
     await session.commit()
     return conversation
 
@@ -103,6 +113,15 @@ async def get_status(session: AsyncSession, conversation_id: uuid.UUID) -> str |
     """`conversation.status` — nhẹ (KHÔNG load messages) cho status-gate WS (08c). Session NGẮN."""
     conv = await session.get(Conversation, conversation_id)
     return conv.status if conv else None
+
+
+async def get_status_and_intent(
+    session: AsyncSession, conversation_id: uuid.UUID
+) -> tuple[str | None, str | None]:
+    """`(status, current_intent)` — nhẹ (KHÔNG load messages). WS cần CẢ HAI cho lượt resume clarify:
+    status cho status-gate + loop-guard, intent gốc để khôi phục khi khách gõ mã đơn trơ."""
+    conv = await session.get(Conversation, conversation_id)
+    return (conv.status, conv.current_intent) if conv else (None, None)
 
 
 async def assign_admin(

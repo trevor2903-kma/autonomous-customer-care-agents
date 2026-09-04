@@ -28,9 +28,20 @@ from ...models.enums import INTENT_CATEGORY, ConversationStatus, Intent
 from ..state import ConversationState
 from ._entities import extract_entities_rule
 from ._history import format_history
+from .decision import CLARIFY_MISSING_ENTITY
 from .taxonomy import render_taxonomy
 
 log = get_logger("agent.intent")
+
+# ── Resume lượt clarify bằng mã đơn TRƠ (follow-up 09b) ──────────────────────
+# Intent mà Agent 3 có thể hỏi MÃ ĐƠN — lấy TỪ map của Agent 3 (nguồn chân lý duy nhất, tránh trôi lệch),
+# chỉ giữ intent hỏi `order_id` (field khác sẽ cần luật trích khác).
+CLARIFY_RESUME_INTENTS = frozenset(
+    name for name, field in CLARIFY_MISSING_ENTITY.items() if field == "order_id"
+)
+# Mã đơn TRƠ = CẢ tin nhắn chỉ là con số (cho phép '#' và một dấu câu cuối). `_ORDER_ID_RE` thường neo TỪ KHOÁ
+# để không nhận nhầm giá/số lượng; ở lượt resume thì số trơ CHÍNH LÀ câu trả lời, nên mới nới — và CHỈ ở đó.
+_BARE_ORDER_CODE_RE = re.compile(r"^\s*#?\s*(\d{3,})\s*[.!,]?\s*$")
 
 _VALID_INTENTS = {i.value for i in Intent}
 _AGENT1_FLAGS = {"ambiguous_intent", "multi_intent"}  # cờ hợp lệ Agent 1 (ngoài out_of_domain)
@@ -51,6 +62,37 @@ _HUMAN_REQUEST_RE = re.compile(
 def wants_human(text: str) -> bool:
     """Khách có XIN GẶP NGƯỜI rõ ràng không (luật tất định, chạy MỌI nhánh kể cả khi không có LLM)."""
     return bool(_HUMAN_REQUEST_RE.search(text or ""))
+
+
+def resume_order_code(text: str, prior_status: str | None, prior_intent: str | None) -> str | None:
+    """Mã đơn khách trả lời cho câu hỏi clarify — trả mã, hoặc None nếu KHÔNG phải ngữ cảnh đó.
+
+    Điều kiện (cả ba): đang CHỜ khách (`AWAITING_CUSTOMER`), intent gốc là intent được hỏi `order_id`, và tin
+    nhắn là số TRƠ. Ngoài ngữ cảnh này trả None → số trơ ở tin thường VẪN không thành order_id (giữ nguyên
+    phòng false-positive kiểu "giá 250000").
+    """
+    if prior_status != ConversationStatus.AWAITING_CUSTOMER:
+        return None
+    if prior_intent not in CLARIFY_RESUME_INTENTS:
+        return None
+    m = _BARE_ORDER_CODE_RE.match(text or "")
+    return m.group(1) if m else None
+
+
+def _resume_clarify(intent: str, code: str, rule: dict[str, str]) -> dict[str, Any]:
+    """Khôi phục lượt clarify: intent GỐC + `order_id`, TẤT ĐỊNH (không LLM, không cờ, confidence 1.0).
+
+    Giữ đúng intent gốc là điều kiện ĐÚNG-nghiệp-vụ: khách hỏi hoàn đơn thì lượt này vẫn là `refund`
+    (đi tiếp luồng nhạy cảm/duyệt nháp), KHÔNG bị hạ thành tra trạng thái.
+    """
+    category = INTENT_CATEGORY.get(Intent(intent))
+    return {
+        "intent": intent,
+        "category": category.value if category else None,
+        "entities": {**rule, "order_id": code},
+        "confidence": 1.0,
+        "uncertainty_flags": [],
+    }
 
 
 def _degrade(rule: dict[str, str], flags: list[str]) -> dict[str, Any]:
@@ -161,15 +203,29 @@ async def _classify_llm(
 
 
 async def classify_intent(
-    text: str, history: list[dict[str, Any]] | None = None
+    text: str,
+    history: list[dict[str, Any]] | None = None,
+    *,
+    prior_status: str | None = None,
+    prior_intent: str | None = None,
 ) -> dict[str, Any]:
     """Phân loại intent + trích entities từ message (taxonomy prompt, KHÔNG retrieval). `history` (đầu vào
     chỉ-đọc) giúp hiểu ngữ cảnh đa lượt. Trả {intent, category, entities, confidence, uncertainty_flags}.
-    Degrade an toàn khi offline."""
+    Degrade an toàn khi offline.
+
+    `prior_status`/`prior_intent` (trạng thái + intent của lượt TRƯỚC): khi đang chờ khách đưa mã đơn mà khách
+    gõ SỐ TRƠ, khôi phục TẤT ĐỊNH intent gốc + `order_id` và BỎ QUA LLM — vì LLM hay xếp một con số trơ thành
+    `other` → cờ `out_of_domain` → escalate oan dù khách vừa trả lời đúng.
+    """
     rule = extract_entities_rule(text)  # tính sớm — dùng cho MỌI nhánh (order_id không mất)
     # Cờ LUẬT, gắn ở MỌI nhánh (kể cả degrade): khách xin gặp người thì phải tới được người, kể cả khi LLM
     # chết hoặc nhãn intent trôi.
     rule_flags = ["human_requested"] if wants_human(text) else []
+    # Short-circuit resume clarify (trước cả nhánh degrade): số trơ KHÔNG thể là lời xin gặp người
+    # (`_HUMAN_REQUEST_RE` cần chữ), nên không nuốt mất tín hiệu nào.
+    code = resume_order_code(text, prior_status, prior_intent)
+    if code is not None:
+        return _resume_clarify(str(prior_intent), code, rule)
     if not settings.llm_api_key or not settings.enable_llm:
         return _degrade(rule, ["llm_unavailable", *rule_flags])
     try:
@@ -184,7 +240,12 @@ async def classify_intent(
 async def intent_node(state: ConversationState) -> dict[str, Any]:
     """Node graph: classify_intent rồi ghi state + trace. Ghi `intent_confidence` (Agent 1) — KHÔNG ghi
     `rag_contexts` (của Agent 2) hay `confidence` chung (Decision tính min)."""
-    result = await classify_intent(state.get("input", ""), history=state.get("history"))
+    result = await classify_intent(
+        state.get("input", ""),
+        history=state.get("history"),
+        prior_status=state.get("prior_status"),
+        prior_intent=state.get("prior_intent"),
+    )
     return {
         "status": ConversationStatus.CLASSIFYING,
         "intent": result["intent"],

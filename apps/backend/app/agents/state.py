@@ -63,3 +63,6 @@ class ConversationState(TypedDict, total=False):
     # 1 lần chưa"; None = ca/lượt mới. `clarify_field` = entity Decision yêu cầu Response hỏi (None nếu không clarify).
     prior_status: str | None
     clarify_field: str | None
+    # Intent của lượt TRƯỚC (persist khi clarify): để lượt resume khôi phục ĐÚNG intent gốc khi khách chỉ gõ
+    # mã đơn TRƠ — "hoàn đơn" phải vẫn là `refund`, không bị hạ thành tra trạng thái.
+    prior_intent: str | None

@@ -108,12 +108,16 @@ async def _publish(
         log.warning("publish to hub failed (bỏ qua): %s", exc)
 
 
-async def _persist_status(conv_id: uuid.UUID | None, status: str | None) -> None:
+async def _persist_status(
+    conv_id: uuid.UUID | None, status: str | None, current_intent: str | None = None
+) -> None:
+    """Ghi status (+ intent lượt khi có). `current_intent` chỉ truyền ở lượt clarify (AWAITING_CUSTOMER) để
+    lượt sau khôi phục đúng intent gốc khi khách gõ mã đơn trơ (follow-up 09b)."""
     if conv_id is None or not status:
         return
     try:
         async with AsyncSessionLocal() as s:
-            await conversation_service.set_status(s, conv_id, status)
+            await conversation_service.set_status(s, conv_id, status, current_intent=current_intent)
     except Exception as exc:  # noqa: BLE001
         log.warning("set status failed (bỏ qua): %s", exc)
 
@@ -152,16 +156,17 @@ async def _load_history(conv_id: uuid.UUID | None) -> list[dict[str, str]]:
         return []
 
 
-async def _load_status(conv_id: uuid.UUID | None) -> str | None:
-    """conversation.status cho status-gate (nhẹ). Guarded: DB lỗi → None (coi như AI-active, an toàn UX)."""
+async def _load_prior(conv_id: uuid.UUID | None) -> tuple[str | None, str | None]:
+    """`(status, current_intent)` TRƯỚC lượt này (nhẹ) — status cho status-gate + loop-guard, intent gốc để
+    resume clarify. Guarded: DB lỗi → (None, None) (coi như AI-active, an toàn UX)."""
     if conv_id is None:
-        return None
+        return (None, None)
     try:
         async with AsyncSessionLocal() as s:
-            return await conversation_service.get_status(s, conv_id)
+            return await conversation_service.get_status_and_intent(s, conv_id)
     except Exception as exc:  # noqa: BLE001
-        log.warning("load status failed (bỏ qua): %s", exc)
-        return None
+        log.warning("load prior status/intent failed (bỏ qua): %s", exc)
+        return (None, None)
 
 
 async def _run_pipeline_safe(
@@ -170,12 +175,14 @@ async def _run_pipeline_safe(
     turn_id: uuid.UUID,
     customer_id: uuid.UUID | None = None,
     prior_status: str | None = None,
+    prior_intent: str | None = None,
 ) -> tuple[str | None, dict[str, Any] | None, str]:
     """Chạy pipeline → (status, final, reply). Lỗi → (None, None, _ERROR_REPLY), KHÔNG rớt WS.
 
     `customer_id` = danh tính khách từ JWT → Agent 2 tra đơn SCOPED (chỉ đơn của chính khách này).
     `prior_status` = status hội thoại TRƯỚC lượt này (09b loop-guard clarify — Decision đọc để biết đã hỏi
-    mã đơn 1 lần chưa)."""
+    mã đơn 1 lần chưa). `prior_intent` = intent lượt trước → Agent 1 khôi phục đúng intent gốc khi khách
+    trả lời câu hỏi clarify bằng mã đơn TRƠ."""
     try:
         final = await run_pipeline(
             input_text=msg,
@@ -183,6 +190,7 @@ async def _run_pipeline_safe(
             turn_id=str(turn_id),
             customer_id=str(customer_id) if customer_id else None,
             prior_status=prior_status,
+            prior_intent=prior_intent,
         )
         reply = (final.get("result") or {}).get("reply") or _ERROR_REPLY
         return final.get("status"), final, reply
@@ -312,13 +320,13 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
                 # TẠO LƯỜI: ca chỉ sinh khi khách THỰC SỰ nhắn. Mở /chat rồi thoát KHÔNG để lại ca rỗng
                 # `ACTIVE_AI` làm loãng hàng đợi admin.
                 await _open_new_case(st)
-                status = ConversationStatus.ACTIVE_AI
+                status, prior_intent = ConversationStatus.ACTIVE_AI, None
             else:
-                status = await _load_status(st.conv_id)
+                status, prior_intent = await _load_prior(st.conv_id)
                 if status in _CLOSED_STATUSES:
                     # Ca đã đóng (admin resolve giữa các lượt) → mở ca mới, agent chạy lại từ đầu (AI-first).
                     await _open_new_case(st)
-                    status = ConversationStatus.ACTIVE_AI
+                    status, prior_intent = ConversationStatus.ACTIVE_AI, None
             if not should_run_ai(status):
                 # Đang có người xử lý → KHÔNG chạy AI: lưu tin khách + đẩy lên admin qua hub.
                 await _persist_message(st.conv_id, MessageSender.CUSTOMER, msg)
@@ -342,7 +350,7 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
                 st.conv_key, {"type": "message", "from": "customer", "content": msg}, exclude=st.queue
             )
             status_out, final, reply = await _run_pipeline_safe(
-                msg, history, turn_id, st.customer_id, status
+                msg, history, turn_id, st.customer_id, status, prior_intent
             )
 
             # Gate động P3: auto_reply không "gửi thẳng" → GIỮ nháp (PENDING_APPROVAL), KHÔNG gửi thẳng cho khách.
@@ -367,7 +375,17 @@ async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
             )
             await _audit_turn(st, turn_id, msg, final, reply, _outcome_of(status_out, final), total_ms)
             await _persist_message(st.conv_id, MessageSender.AI, reply)
-            await _persist_status(st.conv_id, status_out)
+            # Lượt clarify (AWAITING_CUSTOMER): ghi KÈM intent gốc → lượt sau khách gõ mã đơn trơ vẫn resume
+            # đúng intent (refund vẫn refund). Các status khác không đụng `current_intent`.
+            await _persist_status(
+                st.conv_id,
+                status_out,
+                current_intent=(
+                    (final or {}).get("intent")
+                    if status_out == ConversationStatus.AWAITING_CUSTOMER
+                    else None
+                ),
+            )
             # Handoff → EscalationCard vào hàng đợi admin (08b). Chỉ khi pipeline chạy xong (final có).
             if status_out == ConversationStatus.IN_HUMAN_QUEUE and final is not None:
                 await _persist_escalation_card(st.conv_id, final, msg)

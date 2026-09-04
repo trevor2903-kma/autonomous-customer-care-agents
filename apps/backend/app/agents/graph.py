@@ -104,6 +104,7 @@ def _initial_state(
     history: list[dict[str, Any]] | None,
     customer_id: str | None,
     prior_status: str | None,
+    prior_intent: str | None,
 ) -> ConversationState:
     return {
         "conversation_id": conversation_id,
@@ -131,6 +132,7 @@ def _initial_state(
         "draft_reply": None,
         "awaiting_customer": False,
         "prior_status": prior_status,
+        "prior_intent": prior_intent,
         "clarify_field": None,
     }
 
@@ -144,6 +146,7 @@ async def run_pipeline(
     turn_id: str | None = None,
     customer_id: str | None = None,
     prior_status: str | None = None,
+    prior_intent: str | None = None,
 ) -> dict[str, Any]:
     """Chạy pipeline 1 lượt, trả final state. force_handoff=True -> demo nhánh human_handoff.
 
@@ -165,6 +168,7 @@ async def run_pipeline(
         history=history,
         customer_id=customer_id,
         prior_status=prior_status,
+        prior_intent=prior_intent,
     )
     # Span GỐC cho Langfuse (obs P3): các lời gọi LLM/embedding bên trong lượt nằm lồng vào đây, nên
     # xem được tổng độ trễ + chi phí của MỘT lượt. No-op nếu chưa cấu hình Langfuse.

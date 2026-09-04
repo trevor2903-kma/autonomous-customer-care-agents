@@ -19,7 +19,8 @@ def _offline_agents(monkeypatch: pytest.MonkeyPatch) -> None:
     """Giữ pipeline test offline: Agent 1 (classify_intent) + Agent 2 (retrieve_knowledge) + Agent 4
     (generate_reply) đều gọi network -> thay bằng stub tất định."""
 
-    async def fake_classify(text: str, history=None) -> dict:  # type: ignore[no-untyped-def]
+    async def fake_classify(text: str, history=None, **_kw) -> dict:  # type: ignore[no-untyped-def]
+        # **_kw nuốt prior_status/prior_intent (ngữ cảnh resume clarify) — stub trả intent CỐ ĐỊNH.
         return {
             "intent": "product_information",
             "category": "pre_sale",
@@ -43,6 +44,10 @@ def _offline_agents(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)
     monkeypatch.setattr("app.agents.nodes.knowledge.retrieve_knowledge", fake_retrieve)
     monkeypatch.setattr("app.agents.nodes.response.generate_reply", fake_generate)
+    # Nhánh handoff phát câu THEO GIỜ HỖ TRỢ (09c): không ghim thì pipeline test đỏ khi chạy ngoài 9–21
+    # (đã đo: 22:04 VN → nhận HANDOFF_NOTICE_AFTER_HOURS). Ghim TRONG GIỜ để test ĐỊNH TUYẾN tất định;
+    # biến thể ngoài giờ có test riêng ở test_response.py.
+    monkeypatch.setattr("app.agents.nodes.response.is_within_support_hours", lambda now: True)
 
 
 def test_graph_compiles() -> None:
@@ -82,7 +87,8 @@ async def test_golden_complaint_auto_reply_high_priority(monkeypatch: pytest.Mon
     """Golden e2e (mocked agents): complaint sạch cờ + có tri thức → auto_reply grounded, priority=high/high.
     Xác nhận Agent 3 THẬT (không còn pass_through trong trace)."""
 
-    async def fake_classify(text: str, history=None) -> dict:  # type: ignore[no-untyped-def]
+    async def fake_classify(text: str, history=None, **_kw) -> dict:  # type: ignore[no-untyped-def]
+        # **_kw nuốt prior_status/prior_intent (ngữ cảnh resume clarify) — stub trả intent CỐ ĐỊNH.
         return {
             "intent": "complaint",
             "category": "after_sale",
@@ -109,7 +115,8 @@ async def test_blocking_flag_forces_handoff_once(monkeypatch: pytest.MonkeyPatch
     """Agent 3 TẤT ĐỊNH: cờ THẬT ∈ BLOCKING_FLAGS (Agent 1/2) → human_handoff (route trên CỜ, không blend
     confidence). Cờ vẫn tích luỹ đúng 1 lần (reducer `add`, decision không trả lại cờ đã tích luỹ)."""
 
-    async def fake_classify(text: str, history=None) -> dict:  # type: ignore[no-untyped-def]
+    async def fake_classify(text: str, history=None, **_kw) -> dict:  # type: ignore[no-untyped-def]
+        # **_kw nuốt prior_status/prior_intent (ngữ cảnh resume clarify) — stub trả intent CỐ ĐỊNH.
         return {
             "intent": "other",
             "category": "general",

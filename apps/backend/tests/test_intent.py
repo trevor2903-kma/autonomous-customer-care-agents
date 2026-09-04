@@ -76,3 +76,68 @@ async def test_classify_output_is_clean_no_retrieval(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(intent_mod.settings, "llm_api_key", "")
     r = await intent_mod.classify_intent("áo này giá bao nhiêu shop")
     assert "rag_contexts" not in r
+
+
+# ── Resume clarify bằng mã đơn TRƠ (follow-up 09b) ────────────────────────────
+# Regex order_id neo TỪ KHOÁ (chống false-positive "giá 250000"), nên "716449" trơ KHÔNG bắt được.
+# Trong ngữ cảnh resume (vừa hỏi mã, AWAITING_CUSTOMER) thì số trơ CHÍNH LÀ câu trả lời → luật riêng.
+
+
+def test_resume_order_code_bare_number_in_awaiting_context() -> None:
+    assert intent_mod.resume_order_code("716449", "AWAITING_CUSTOMER", "order_status") == "716449"
+    assert intent_mod.resume_order_code("  #716449 ", "AWAITING_CUSTOMER", "refund") == "716449"
+    assert intent_mod.resume_order_code("716449.", "AWAITING_CUSTOMER", "exchange") == "716449"
+
+
+def test_resume_order_code_requires_awaiting_context() -> None:
+    # NGOÀI ngữ cảnh resume: số trơ ở tin thường KHÔNG được coi là order_id (giữ chống false-positive).
+    assert intent_mod.resume_order_code("716449", "REPLIED", "order_status") is None
+    assert intent_mod.resume_order_code("716449", None, "order_status") is None
+
+
+def test_resume_order_code_requires_clarifiable_prior_intent() -> None:
+    assert intent_mod.resume_order_code("716449", "AWAITING_CUSTOMER", "product_price") is None
+    assert intent_mod.resume_order_code("716449", "AWAITING_CUSTOMER", None) is None
+
+
+def test_resume_order_code_rejects_non_bare_message() -> None:
+    # Có chữ → đi đường LLM⊕regex cũ; số quá ngắn → không phải mã đơn.
+    assert intent_mod.resume_order_code("đơn 716449 sao rồi", "AWAITING_CUSTOMER", "order_status") is None
+    assert intent_mod.resume_order_code("mình muốn hoàn đơn", "AWAITING_CUSTOMER", "refund") is None
+    assert intent_mod.resume_order_code("12", "AWAITING_CUSTOMER", "order_status") is None
+
+
+async def test_classify_short_circuits_resume_clarify(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Mã trơ + AWAITING + prior_intent=refund → KHÔI PHỤC refund + order_id, KHÔNG gọi LLM (tất định).
+    monkeypatch.setattr(intent_mod.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(intent_mod.settings, "enable_llm", True)
+
+    def _spy() -> object:
+        raise AssertionError("KHÔNG được gọi LLM cho mã đơn trơ ở lượt resume")
+
+    monkeypatch.setattr(intent_mod, "get_openai", _spy)
+    r = await intent_mod.classify_intent(
+        "716449", prior_status="AWAITING_CUSTOMER", prior_intent="refund"
+    )
+    assert r["intent"] == "refund"  # giữ ĐÚNG intent gốc (không biến thành order_status)
+    assert r["entities"]["order_id"] == "716449"
+    assert r["uncertainty_flags"] == []  # KHÔNG out_of_domain, KHÔNG llm_unavailable
+    assert r["confidence"] == 1.0
+    assert r["category"] == "after_sale"
+
+
+async def test_intent_node_reads_prior_context_from_state(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Wiring state → classify: node đọc prior_status/prior_intent để short-circuit resume.
+    monkeypatch.setattr(intent_mod.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(intent_mod.settings, "enable_llm", True)
+
+    def _spy() -> object:
+        raise AssertionError("KHÔNG được gọi LLM cho mã đơn trơ ở lượt resume")
+
+    monkeypatch.setattr(intent_mod, "get_openai", _spy)
+    out = await intent_mod.intent_node(
+        {"input": "716449", "prior_status": "AWAITING_CUSTOMER", "prior_intent": "order_status"}
+    )
+    assert out["intent"] == "order_status"
+    assert out["entities"]["order_id"] == "716449"
+    assert out["intent_confidence"] == 1.0
