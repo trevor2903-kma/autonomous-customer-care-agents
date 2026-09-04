@@ -142,6 +142,11 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
   CỐ ĐỊNH (`CLARIFY_QUESTION`, no LLM) + `AWAITING_CUSTOMER`. Loop-guard qua `state.prior_status` (WS truyền status
   TRƯỚC lượt): đã hỏi 1 lần vẫn thiếu → `human_handoff` (FR-ASYNC-2). Resume = lượt kế với DB history (KHÔNG
   checkpointer). Safety-gate LUÔN ưu tiên clarify; refund/exchange sau khi có mã vẫn qua gate/duyệt nháp.
+  **Resume mã TRƠ:** khách đáp chỉ bằng con số → `intent.resume_order_code` + short-circuit TẤT ĐỊNH khôi phục
+  intent GỐC (lấy từ `conversation.current_intent`, persist ở lượt clarify qua `set_status(current_intent=)`)
+  + `order_id`, **KHÔNG gọi LLM** — vì LLM hay xếp số trơ thành `other` → `out_of_domain` → escalate oan.
+  Chỉ nới trong ngữ cảnh resume (regex `order_id` thường vẫn neo TỪ KHOÁ, chống nhầm "giá 250000").
+  `intent.py` import `CLARIFY_MISSING_ENTITY` từ `decision.py` để tập intent clarify có MỘT nguồn chân lý.
 - **Ngoài giờ (09c offline, business-hours):** `services/business_hours.is_within_support_hours` (thuần,
   `support_hours_start/end` + `support_timezone` Asia/Ho_Chi_Minh, dep `tzdata`). `response_node` nhánh handoff NGOÀI
   giờ → `HANDOFF_NOTICE_AFTER_HOURS` ("nhân viên sẽ phản hồi sớm") thay `HANDOFF_NOTICE`; ca vẫn `IN_HUMAN_QUEUE` +
