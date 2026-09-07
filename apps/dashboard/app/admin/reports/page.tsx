@@ -13,6 +13,7 @@ import {
   getReportTurns,
 } from "@/lib/api";
 import { TurnDetailView } from "@/components/reports/TurnDetailView";
+import { Pagination } from "@/components/ui/Pagination";
 import { FLAG_LABEL, OUTCOME_LABEL, OUTCOME_TONE, fmtMs, fmtTime, formatIntent } from "@/components/reports/labels";
 
 // Tab "Báo cáo hoạt động" (slice obs P4). NGUỒN: audit_log qua /api/admin/reports/* — Langfuse chỉ là
@@ -178,6 +179,31 @@ export default function ReportsPage() {
   const [range, setRange] = useState<ReportRange>("7d");
   const [result, setResult] = useState<ReportResult>("all");
   const [selected, setSelected] = useState<string | null>(null);
+  const [page, setPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(10);
+
+  const handleRangeChange = (newRange: ReportRange) => {
+    setRange(newRange);
+    setPage(1);
+    setSelected(null);
+  };
+
+  const handleResultChange = (newResult: ReportResult) => {
+    setResult(newResult);
+    setPage(1);
+    setSelected(null);
+  };
+
+  const handlePageSizeChange = (newPageSize: number) => {
+    setPageSize(newPageSize);
+    setPage(1);
+    setSelected(null);
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+    setSelected(null);
+  };
 
   const summary = useQuery<ReportSummary, Error>({
     queryKey: ["report-summary", range],
@@ -188,8 +214,8 @@ export default function ReportsPage() {
     queryFn: () => getReportByIntent(range),
   });
   const turns = useQuery<TurnList, Error>({
-    queryKey: ["report-turns", range, result],
-    queryFn: () => getReportTurns(range, result),
+    queryKey: ["report-turns", range, result, pageSize, page],
+    queryFn: () => getReportTurns(range, result, pageSize, page),
   });
 
   const err = summary.error ?? byIntent.error ?? turns.error;
@@ -204,7 +230,7 @@ export default function ReportsPage() {
       </header>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Segmented options={RANGES} value={range} onChange={setRange} />
+        <Segmented options={RANGES} value={range} onChange={handleRangeChange} />
         {summary.data?.langfuse_url && (
           <a
             href={summary.data.langfuse_url}
@@ -247,8 +273,23 @@ export default function ReportsPage() {
       <section className="mt-7">
         <div className="mb-2.5 flex flex-wrap items-center gap-3">
           <h2 className="text-[14px] font-semibold text-ink">Lượt xử lý gần đây</h2>
-          <Segmented options={RESULTS} value={result} onChange={setResult} />
-          {turns.data && <span className="text-[12.5px] text-faint">{turns.data.total} lượt</span>}
+          <Segmented options={RESULTS} value={result} onChange={handleResultChange} />
+          {turns.data && (
+            <span className="text-[12.5px] text-faint">
+              {turns.data.total > 0 ? (
+                <>
+                  Hiển thị <span className="font-semibold text-ink">{(page - 1) * pageSize + 1}</span>
+                  {" – "}
+                  <span className="font-semibold text-ink">
+                    {Math.min(page * pageSize, turns.data.total)}
+                  </span>{" "}
+                  trong <span className="font-semibold text-ink">{turns.data.total}</span> lượt
+                </>
+              ) : (
+                "0 lượt"
+              )}
+            </span>
+          )}
         </div>
 
         <div className="overflow-x-auto rounded-[13px] border border-line bg-white shadow-soft">
@@ -274,50 +315,71 @@ export default function ReportsPage() {
                 const tone = OUTCOME_TONE[t.outcome] ?? OUTCOME_TONE.error;
                 const active = selected === t.turn_id;
                 return (
-                  <button
-                    key={t.turn_id}
-                    onClick={() => setSelected(active ? null : t.turn_id)}
-                    className={`flex w-full items-center gap-3 px-[18px] py-3 text-left transition-colors ${
-                      active ? "bg-cream" : "hover:bg-cream/50"
-                    }`}
-                  >
-                    <span className="w-[95px] flex-none text-[11.5px] text-dim">
-                      {t.short_id}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">
-                      {t.customer_text || "—"}
-                    </span>
-                    <span className="w-[120px] flex-none text-right truncate">
-                      {t.intent ? (
-                        <span className="text-[12px] text-faint" title={t.intent}>
-                          {formatIntent(t.intent)}
-                        </span>
-                      ) : (
-                        <span className="text-[11.5px] text-faint">—</span>
-                      )}
-                    </span>
-                    <span className="w-[90px] flex-none text-center">
-                      <span
-                        className={`inline-block rounded-[5px] border px-1.5 py-0.5 text-[10.5px] font-medium ${tone.border} ${tone.bg} ${tone.text}`}
-                      >
-                        {OUTCOME_LABEL[t.outcome] ?? t.outcome}
+                  <div key={t.turn_id} className="transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => setSelected(active ? null : t.turn_id)}
+                      className={`flex w-full items-center gap-3 px-[18px] py-3 text-left transition-colors ${
+                        active ? "bg-cream/70" : "hover:bg-cream/50"
+                      }`}
+                      aria-expanded={active}
+                    >
+                      <span className="w-[95px] flex-none text-[11.5px] text-dim">
+                        {t.short_id}
                       </span>
-                    </span>
-                    <span className="w-[65px] flex-none text-right text-[12px] text-muted">
-                      {fmtMs(t.duration_ms)}
-                    </span>
-                    <span className="w-[110px] flex-none text-right text-[11.5px] text-faint">
-                      {fmtTime(t.created_at)}
-                    </span>
-                  </button>
+                      <span className="min-w-0 flex-1 truncate text-[13.5px] text-ink">
+                        {t.customer_text || "—"}
+                      </span>
+                      <span className="w-[120px] flex-none truncate text-right">
+                        {t.intent ? (
+                          <span className="text-[12px] text-faint" title={t.intent}>
+                            {formatIntent(t.intent)}
+                          </span>
+                        ) : (
+                          <span className="text-[11.5px] text-faint">—</span>
+                        )}
+                      </span>
+                      <span className="w-[90px] flex-none text-center">
+                        <span
+                          className={`inline-block rounded-[5px] border px-1.5 py-0.5 text-[10.5px] font-medium ${tone.border} ${tone.bg} ${tone.text}`}
+                        >
+                          {OUTCOME_LABEL[t.outcome] ?? t.outcome}
+                        </span>
+                      </span>
+                      <span className="w-[65px] flex-none text-right text-[12px] text-muted">
+                        {fmtMs(t.duration_ms)}
+                      </span>
+                      <span className="w-[110px] flex-none text-right text-[11.5px] text-faint">
+                        {fmtTime(t.created_at)}
+                      </span>
+                    </button>
+
+                    {/* Chi tiết lượt hiển thị inline ngay dưới dòng của lượt */}
+                    {active && (
+                      <div className="border-t border-line-soft bg-page/80 px-4 py-3 sm:px-6">
+                        <TurnDetailView turnId={t.turn_id} inline />
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
+
+            {/* Phân trang danh sách lượt */}
+            {turns.data && (
+              <Pagination
+                page={page}
+                totalPages={turns.data.total_pages || Math.max(1, Math.ceil(turns.data.total / pageSize))}
+                totalItems={turns.data.total}
+                pageSize={pageSize}
+                pageSizeOptions={[5, 10, 15, 20]}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+              />
+            )}
           </div>
         </div>
       </section>
-
-      {selected && <TurnDetailView turnId={selected} />}
     </div>
   );
 }

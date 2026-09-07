@@ -69,11 +69,23 @@ async def by_intent(range: str = _RANGE) -> list[IntentRowOut]:
 async def turns(
     range: str = _RANGE,
     result: str = _RESULT,
-    limit: int = Query(default=25, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    page: int | None = Query(default=None, ge=1, description="Số thứ tự trang (1-based)"),
 ) -> TurnListOut:
+    if page is not None:
+        offset = (page - 1) * limit
     total, views = await report_service.fetch_turn_page(range, result=result, limit=limit, offset=offset)
-    return TurnListOut(total=total, limit=limit, offset=offset, items=[_item(v) for v in views])
+    current_page = page if page is not None else ((offset // limit) + 1 if limit > 0 else 1)
+    total_pages = max(1, (total + limit - 1) // limit) if total > 0 else 1
+    return TurnListOut(
+        total=total,
+        limit=limit,
+        offset=offset,
+        page=current_page,
+        total_pages=total_pages,
+        items=[_item(v) for v in views],
+    )
 
 
 @router.get("/turns/{turn_id}", response_model=TurnDetailOut)

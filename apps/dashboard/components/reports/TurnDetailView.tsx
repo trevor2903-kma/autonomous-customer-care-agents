@@ -137,21 +137,29 @@ function auditResult(step: TurnStep): string {
   }
 }
 
-export function TurnDetailView({ turnId }: { turnId: string }) {
+export function TurnDetailView({
+  turnId,
+  onClose,
+  inline = false,
+}: {
+  turnId: string;
+  onClose?: () => void;
+  inline?: boolean;
+}) {
   const { data, isLoading, isError, error } = useQuery<TurnDetail, Error>({
     queryKey: ["report-turn", turnId],
     queryFn: () => getTurnDetail(turnId),
   });
 
-  if (isLoading) return <p className="mt-6 text-[13px] text-dim">Đang tải chi tiết lượt…</p>;
-  if (isError) return <p className="mt-6 text-[13px] text-terracotta">Lỗi: {error.message}</p>;
+  if (isLoading) return <p className={inline ? "py-4 text-[13px] text-dim" : "mt-6 text-[13px] text-dim"}>Đang tải chi tiết lượt…</p>;
+  if (isError) return <p className={inline ? "py-4 text-[13px] text-terracotta" : "mt-6 text-[13px] text-terracotta"}>Lỗi: {error.message}</p>;
   if (!data) return null;
 
   const tone = OUTCOME_TONE[data.outcome] ?? OUTCOME_TONE.error;
   const pipelineSteps = data.steps.filter((s) => PIPELINE_NODES.includes(s.node));
 
   return (
-    <section className="mt-7">
+    <section className={inline ? "rounded-[12px] border border-line bg-panel p-4 shadow-sm" : "mt-7"}>
       {/* Đầu lượt */}
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-[14px] font-semibold text-ink">Chi tiết lượt xử lý</h2>

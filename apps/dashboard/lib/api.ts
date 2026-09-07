@@ -347,6 +347,8 @@ export interface TurnList {
   total: number;
   limit: number;
   offset: number;
+  page: number;
+  total_pages: number;
   items: TurnListItem[];
 }
 export interface TurnStep {
@@ -399,8 +401,11 @@ export async function getReportTurns(
   range: ReportRange,
   result: ReportResult,
   limit = 20,
+  page = 1,
 ): Promise<TurnList> {
-  const res = await req(`/api/admin/reports/turns?range=${range}&result=${result}&limit=${limit}`);
+  const res = await req(
+    `/api/admin/reports/turns?range=${range}&result=${result}&limit=${limit}&page=${page}`
+  );
   if (!res.ok) await fail(res, `turns ${res.status}`);
   return res.json();
 }

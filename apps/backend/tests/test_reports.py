@@ -166,3 +166,15 @@ def test_range_start_semantics() -> None:
     # Nửa đêm THEO GIỜ SHOP (UTC+7) -> quy về UTC là 17:00 hôm trước, không phải 00:00 UTC.
     local = today + timedelta(hours=rs.settings.reports_tz_offset_hours)
     assert (local.hour, local.minute, local.second) == (0, 0, 0)
+
+
+# ── Phân trang ──────────────────────────────────────────────────────────────
+def test_turn_list_out_pagination_defaults() -> None:
+    from app.schemas.report import TurnListOut
+    out = TurnListOut(total=37, limit=10, offset=10, page=2, total_pages=4, items=[])
+    assert out.page == 2
+    assert out.total_pages == 4
+    assert out.total == 37
+    assert out.limit == 10
+    assert out.offset == 10
+
