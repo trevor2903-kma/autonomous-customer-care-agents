@@ -1,14 +1,10 @@
 import type {
   AdminConversation,
-  AnalyzeResult,
-  Conversation,
   ConversationListItem,
   Escalation,
-  HealthStatus,
   MessageSender,
   RagInfo,
   RagUploadResult,
-  RunDemoResult,
 } from "shared-types";
 
 export function getApiBase(): string {
@@ -38,10 +34,6 @@ export function getWsUrl(): string {
   }
   return `${getWsBase()}/ws/chat`;
 }
-
-export const API_BASE = "http://localhost:8000";
-export const WS_URL = "ws://localhost:8000/ws/chat";
-export const WS_BASE = "ws://localhost:8000";
 
 // ── Auth token (slice 11 P4) — lưu localStorage, gắn Bearer cho mọi request ──
 const TOKEN_KEY = "tys_token";
@@ -135,25 +127,6 @@ export async function getMe(): Promise<AuthUser> {
   return res.json();
 }
 
-export async function getHealth(): Promise<HealthStatus> {
-  const res = await req("/api/health");
-  if (!res.ok) throw new Error(`health ${res.status}`);
-  return res.json();
-}
-
-export async function runDemo(force?: "handoff"): Promise<RunDemoResult> {
-  const qs = force ? `?force=${force}` : "";
-  const res = await req(`/api/agents/run-demo${qs}`, { method: "POST" });
-  if (!res.ok) throw new Error(`run-demo ${res.status}`);
-  return res.json();
-}
-
-export async function listConversations(): Promise<Conversation[]> {
-  const res = await req("/api/conversations");
-  if (!res.ok) throw new Error(`conversations ${res.status}`);
-  return res.json();
-}
-
 // ── RAG management (PRD §17 Module 1) ────────────────────────────────────────
 export async function uploadKnowledgeDoc(file: File): Promise<RagUploadResult> {
   const form = new FormData();
@@ -167,12 +140,6 @@ export async function uploadKnowledgeDoc(file: File): Promise<RagUploadResult> {
 export async function getRagInfo(): Promise<RagInfo> {
   const res = await req("/api/rag/info");
   if (!res.ok) throw new Error(`rag info ${res.status}`);
-  return res.json();
-}
-
-export async function resetRag(): Promise<RagInfo> {
-  const res = await req("/api/rag/reset", { method: "POST" });
-  if (!res.ok) throw new Error(`rag reset ${res.status}`);
   return res.json();
 }
 
@@ -210,17 +177,6 @@ export async function reindexRag(): Promise<ReindexResult> {
 export async function deleteRagDocument(id: string): Promise<KnowledgeDocument> {
   const res = await req(`/api/rag/documents/${id}`, { method: "DELETE" });
   if (!res.ok) await fail(res, `rag delete ${res.status}`);
-  return res.json();
-}
-
-// Agent 1 + Agent 2 · Knowledge Agent (PRD §7.2) — tách vai: intent/entities + truy hồi rag_contexts.
-export async function analyzeMessage(message: string): Promise<AnalyzeResult> {
-  const res = await req("/api/agents/analyze", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
-  if (!res.ok) throw new Error(`analyze ${res.status}`);
   return res.json();
 }
 

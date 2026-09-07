@@ -29,42 +29,7 @@ export interface Message {
   created_at: string;
 }
 
-export interface Conversation {
-  id: string;
-  customer_identifier?: string | null;
-  status: ConversationStatus | string;
-  current_intent?: string | null;
-  entities?: Record<string, unknown>;
-  confidence?: number | null;
-  uncertainty_flags?: string[];
-  escalation_reason?: string | null;
-  created_at: string;
-  updated_at: string;
-  last_message_at?: string | null;
-  messages?: Message[];
-}
-
-// Một bước trong agent-trace (PRD §17 Module 3 — Agent Monitoring).
-export interface AgentTraceStep {
-  node: string;
-  confidence?: number | null;
-  branch?: string | null;
-  detail?: Record<string, unknown>;
-}
-
-export interface RunDemoResult {
-  thread_id: string;
-  branch: string; // response | human_handoff
-  status: string;
-  action?: string | null;
-  confidence?: number | null;
-  require_human_handoff: boolean;
-  escalation_reason?: string | null;
-  reply?: string | null;
-  trace: AgentTraceStep[];
-}
-
-// RAG management (PRD §17 Module 1) + Intent Classifier metadata (PRD §7.1).
+// RAG management (PRD §17 Module 1).
 export interface RagUploadResult {
   source: string;
   chunks: number;
@@ -77,29 +42,9 @@ export interface RagInfo {
   sources: string[];
 }
 
-// Một đoạn tri thức Agent 2 truy hồi được. `type`/`title` từ frontmatter KB (chunk repo); doc upload
-// ad-hoc không có frontmatter nên hai trường này vắng.
-export interface RagContext {
-  text?: string;
-  source: string;
-  type?: string | null; // faq | case | reference | promotion | upload
-  title?: string | null;
-  score: number;
-}
-
-// Agent 1 (intent/entities) + Agent 2 · Knowledge Agent (retrieval) — PRD §7.2 (khớp AnalyzeResult backend).
-export interface AnalyzeResult {
-  intent: string; // Agent 1
-  category: string | null; // Agent 1
-  entities: Record<string, unknown>; // Agent 1
-  intent_confidence: number; // Agent 1
-  retrieval_confidence: number; // Agent 2
-  uncertainty_flags: string[]; // gộp cờ Agent 1 + Agent 2
-  rag_contexts: RagContext[]; // Agent 2
-}
-
-// `IntentClassification` + `PipelineResult` đã GỠ cùng hai panel dev (slice obs P4) — việc quan sát
-// pipeline nay là của tab Báo cáo, dựng từ `audit_log` (xem type ở apps/dashboard/lib/api.ts).
+// Hai panel dev (slice obs P4) rồi `Conversation`/`RunDemoResult`/`AnalyzeResult` (dọn code chết) đã GỠ:
+// việc quan sát pipeline nay là của tab Báo cáo, dựng từ `audit_log` (type ở apps/dashboard/lib/api.ts).
+// Route backend `/api/agents/analyze` + `/api/health` vẫn còn — chỉ chưa có client TS nào dùng.
 
 // HITL admin (08b, PRD §11/§17) — EscalationCard + hàng đợi + hội thoại cho màn admin.
 export interface EscalationCard {
@@ -146,20 +91,4 @@ export interface AdminConversation {
   created_at: string;
   last_message_at?: string | null;
   messages: Message[];
-}
-
-export interface ServiceProbe {
-  ok: boolean;
-  detail: unknown;
-}
-
-export interface HealthStatus {
-  status: string; // ok | degraded
-  api: string;
-  enable_llm: boolean;
-  services: {
-    database: ServiceProbe;
-    redis: ServiceProbe;
-    qdrant: ServiceProbe;
-  };
 }
