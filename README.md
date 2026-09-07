@@ -11,8 +11,7 @@ có chủ đích: ưu tiên dự đoán được + kiểm toán + an toàn nội
 
 Đây là **khung chạy được** — node agent là **stub**, UI là **placeholder**. KHÔNG có logic nghiệp vụ thật
 (không LLM, không RAG thật, không gate, không định tuyến human_handoff thật). Chỗ kiến trúc cho 4 trụ cột
-(PRD §5) và xử lý bất đồng bộ/chuyển tiếp (PRD §10) đã được chừa sẵn bằng trường state + `policy.should_handoff`
-+ TODO trỏ PRD.
+(PRD §5) và xử lý bất đồng bộ/chuyển tiếp (PRD §10) đã được chừa sẵn bằng trường state + TODO trỏ PRD.
 
 ## Kiến trúc & Stack
 

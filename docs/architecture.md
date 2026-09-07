@@ -15,15 +15,19 @@
 ## 2. Pipeline (PRD §7–§8)
 
 ```
-intent (Intent Classifier) → knowledge (Knowledge Agent/RAG) → decision (Decision Engine)
-   └─ should_handoff? ─┬─ response (Response Generator)  → REPLIED        # nhánh tự động
-                       └─ human_handoff (EscalationCard) → IN_HUMAN_QUEUE  # chuyển người
+intent (Intent Classifier) → knowledge (Knowledge Agent/RAG) → decision (Decision Engine) → response
+   └─ response branch theo state["action"] ─┬─ auto_reply    → REPLIED           # nhánh tự động
+                                            ├─ clarify       → AWAITING_CUSTOMER # hỏi lại 1 lần (09b)
+                                            └─ human_handoff → IN_HUMAN_QUEUE    # chuyển người
 ```
+
+> **SOLE-EGRESS:** không có node `human_handoff` riêng — Response Generator phát cả ba loại tin.
+> Side-effect của handoff (EscalationCard + hàng đợi admin) do `services/escalation_service.py` lo NGOÀI graph.
 
 - **Decision Engine** = node ra quyết định (auto_reply | human_handoff). Quy tắc an toàn bất biến: có
   `uncertainty_flag` bất kỳ hoặc `confidence < ngưỡng` → human_handoff (độc lập gate §9).
 - **Response Generator** = **điểm phát ngôn DUY NHẤT** tới khách (PRD §7.4). Không gửi tin cho khách rải rác ở node khác.
-- Code: [`apps/backend/app/agents/`](../apps/backend/app/agents/) — `state.py`, `nodes/`, `policy.py`, `graph.py`.
+- Code: [`apps/backend/app/agents/`](../apps/backend/app/agents/) — `state.py`, `nodes/`, `graph.py`.
 
 ## 3. Trạng thái hội thoại (PRD §15)
 
@@ -37,7 +41,7 @@ PENDING_APPROVAL · IN_HUMAN_QUEUE · HUMAN_HANDLING · RESOLVED · CLOSED`.
 | --- | --- | --- |
 | Backend (FastAPI + LangGraph) | API + WebSocket + pipeline | [`apps/backend`](../apps/backend) |
 | Web / PWA (Next.js) | Admin dashboard `/` + cổng chat khách `/chat`; **cài được lên điện thoại** (Add to Home Screen) — một codebase web duy nhất, không codebase mobile riêng | [`apps/dashboard`](../apps/dashboard) |
-| shared-types | type dùng chung (ConversationStatus, Conversation, AgentTraceStep, HealthStatus) | [`packages/shared-types`](../packages/shared-types) |
+| shared-types | type dùng chung (ConversationStatus, Message, Escalation, AdminConversation) | [`packages/shared-types`](../packages/shared-types) |
 | Neon (Postgres) | hội thoại/tin nhắn/audit | `app/models`, `alembic/` |
 | Upstash (Redis) | session ngắn hạn + **pub/sub** realtime (pub/sub: TODO) | `app/core/redis_client.py` |
 | Qdrant Cloud | vector DB cho RAG (embed/truy hồi: phase sau) | `app/core/qdrant_client.py` |
@@ -45,7 +49,7 @@ PENDING_APPROVAL · IN_HUMAN_QUEUE · HUMAN_HANDLING · RESOLVED · CLOSED`.
 ## 5. Xử lý bất đồng bộ & realtime (PRD §10)
 
 - Đường nhanh mỗi tin nhắn (P95 ≤ 5s) — FastAPI **BackgroundTasks** (KHÔNG worker polling Redis).
-  Code: [`app/tasks/background.py`](../apps/backend/app/tasks/background.py) — ghi `audit_log` mỗi bước (FR-PIPE-4).
+  Code: [`app/api/ws/chat.py`](../apps/backend/app/api/ws/chat.py) — ghi `audit_log` mỗi bước, gom theo `turn_id` (FR-PIPE-4).
 - Realtime: **WebSocket + Redis pub/sub** (event-driven, KHÔNG polling). Scaffold: WebSocket **echo**; pub/sub là TODO.
 - human_handoff = tạm dừng AI cho hội thoại (LangGraph `interrupt` + checkpointer) — **TODO** (scaffold dùng `MemorySaver`).
 
