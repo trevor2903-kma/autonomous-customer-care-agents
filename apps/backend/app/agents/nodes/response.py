@@ -313,7 +313,6 @@ async def response_node(state: ConversationState) -> dict[str, Any]:
 
     return {
         "status": status,
-        "draft_reply": reply,
         "messages": [{"sender": "ai", "content": reply}],
         "result": {
             "branch": branch,

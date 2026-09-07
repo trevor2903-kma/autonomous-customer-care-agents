@@ -36,8 +36,6 @@ class Settings(BaseSettings):
     backend_cors_origins: str = "http://localhost:3000"
 
     # ── Ngưỡng cấu hình được (PRD §18 NFR-10) ─────────────────────────────────
-    # TODO: tinh chỉnh thực nghiệm ở Chương 4 (ngưỡng theo từng intent — PRD §23).
-    confidence_threshold: float = 0.6
     # Ngưỡng COSINE của Agent 2 (retrieval) — thang KHÁC intent_confidence (LLM tự khai), đừng gộp chung.
     # 0.40 = ĐO trên KB thật (32 câu trả-lời-được / 25 câu không) — `scripts/measure_threshold.py`,
     # phương pháp + số liệu ở `docs/retrieval-threshold.md`. Hai phân bố CHỒNG NHAU nên ngưỡng này chỉnh
@@ -46,7 +44,7 @@ class Settings(BaseSettings):
     retrieval_threshold: float = 0.40
     # Bộ nhớ đa lượt (PRD §12, NFR-10): số tin gần nhất nạp từ DB vào prompt (Agent 1 + Agent 4).
     history_window: int = 8
-    auto_resolve_minutes: int = 30
+    # Nhịp quét auto-resolve (09c). Hai NGƯỠNG T1/T2 nằm ở bảng `gate_config` (Admin chỉnh runtime), KHÔNG ở đây.
     sweep_interval_seconds: int = 60
     # Trần số ca một vòng sweep nạp (pre-filter theo thời gian + LIMIT) — không nạp mọi ca REPLIED mỗi vòng.
     sweep_batch_limit: int = 500
@@ -55,9 +53,6 @@ class Settings(BaseSettings):
     support_hours_start: int = 9
     support_hours_end: int = 21
     support_timezone: str = "Asia/Ho_Chi_Minh"
-    context_window_messages: int = 10
-    # Intent Classifier (PRD §7.1): 2 ứng viên RAG đầu chênh score < margin -> cờ ambiguous_intent.
-    intent_ambiguous_margin: float = 0.05
 
     # ── Báo cáo / observability (slice obs) ───────────────────────────────────
     # Ngưỡng độ trễ NFR-1 (ms): tab Báo cáo tính "% lượt ≤ ngưỡng".
@@ -65,12 +60,6 @@ class Settings(BaseSettings):
     # Lệch giờ để quy "hôm nay" (VN = UTC+7). Dùng offset thay tên vùng: zoneinfo trên Windows cần
     # thêm gói `tzdata`, không đáng cho một mốc nửa đêm.
     reports_tz_offset_hours: int = 7
-
-    # ── Gate duyệt nháp (08a, PRD §9) ─────────────────────────────────────────
-    # Intent NHẠY CẢM (csv): auto_reply vẫn PHẢI admin duyệt trước khi gửi → PENDING_APPROVAL (giữ nháp Agent 4).
-    # human_handoff LUÔN escalate (bất biến FR-GATE-2) — gate chỉ đổi DELIVERY của ca auto_reply.
-    sensitive_intents: str = "refund,complaint,exchange"
-    auto_reply_review: bool = True  # tắt (env=false) -> auto_reply gửi thẳng kể cả intent nhạy cảm
 
     # ── Chống prompt-injection (slice 13, NFR-7 — Lớp A) ──────────────────────
     # Cap độ dài tin nhắn khách tại biên WS: tin dài bị CẮT BỚT (không rớt kết nối). Đủ rộng cho
@@ -89,8 +78,6 @@ class Settings(BaseSettings):
 
     # ── Redis (Upstash) ───────────────────────────────────────────────────────
     redis_url: str
-    upstash_redis_rest_url: str | None = None
-    upstash_redis_rest_token: str | None = None
 
     # ── Qdrant (Vector DB / RAG) ──────────────────────────────────────────────
     qdrant_url: str
@@ -102,8 +89,7 @@ class Settings(BaseSettings):
     langfuse_secret_key: str | None = None
     langfuse_base_url: str | None = None
 
-    # ── LLM provider (cấu hình được — CHƯA bật ở scaffold) ────────────────────
-    llm_provider: str = "openai"
+    # ── LLM (OpenAI SDK — `core/embeddings.get_openai`) ───────────────────────
     llm_api_key: str | None = None
     llm_model: str | None = None
     embedding_model: str = "text-embedding-3-small"
@@ -111,11 +97,6 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.backend_cors_origins.split(",") if o.strip()]
-
-    @property
-    def sensitive_intent_set(self) -> set[str]:
-        """Tập intent nhạy cảm (từ csv `sensitive_intents`) — auto_reply cần duyệt nháp (08a)."""
-        return {i.strip() for i in self.sensitive_intents.split(",") if i.strip()}
 
     @property
     def cors_origin_regex(self) -> str | None:

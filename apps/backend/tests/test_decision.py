@@ -66,12 +66,6 @@ def test_no_blend_confidence_low_intent_conf_still_auto_reply() -> None:
     assert out["action"] == "auto_reply"
 
 
-def test_injected_flag_forces_handoff_and_emits_new_flag() -> None:
-    out = _decide(intent="other", uncertainty_flags=[], scratchpad={"injected_flags": ["out_of_domain"]})
-    assert out["action"] == "human_handoff"
-    assert out["uncertainty_flags"] == ["out_of_domain"]  # emit CỜ MỚI (demo), không trả lại cờ tích luỹ
-
-
 def test_hallucination_risk_not_blocking() -> None:
     # hallucination_risk KHÔNG ∈ BLOCKING_FLAGS (Agent 4 phát SAU) → KHÔNG tự route handoff ở decision.
     assert "hallucination_risk" not in BLOCKING_FLAGS

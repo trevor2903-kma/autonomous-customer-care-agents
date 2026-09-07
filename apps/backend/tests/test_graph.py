@@ -56,7 +56,7 @@ def test_graph_compiles() -> None:
 
 
 async def test_auto_reply_branch() -> None:
-    final = await run_pipeline(input_text="demo", force_handoff=False)
+    final = await run_pipeline(input_text="demo")
 
     assert final["result"]["branch"] == "response"
     assert final["action"] == "auto_reply"
@@ -69,15 +69,27 @@ async def test_auto_reply_branch() -> None:
     assert any(m["sender"] == "ai" for m in final["messages"])
 
 
-async def test_human_handoff_branch() -> None:
-    final = await run_pipeline(input_text="demo", force_handoff=True)
+async def test_human_handoff_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Nhánh chuyển người: cờ chặn THẬT từ Agent 1 → decision handoff → Response phát HANDOFF_NOTICE."""
+
+    async def fake_classify(text: str, history=None, **_kw) -> dict:  # type: ignore[no-untyped-def]
+        return {
+            "intent": "other",
+            "category": "general",
+            "entities": {},
+            "confidence": 0.4,
+            "uncertainty_flags": ["out_of_domain"],  # ∈ BLOCKING_FLAGS
+        }
+
+    monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)
+    final = await run_pipeline(input_text="demo")
 
     assert final["result"]["branch"] == "human_handoff"
     assert final["action"] == "human_handoff"
     assert final["require_human_handoff"] is True
     assert final["status"] == "IN_HUMAN_QUEUE"
     assert final["escalation_reason"]  # có lý do chuyển tiếp
-    # SOLE-EGRESS: Response Generator phát thông báo handoff (KHÔNG qua human_handoff node — để dành 08b).
+    # SOLE-EGRESS: Response Generator là node phát thông báo handoff (không có node human_handoff riêng).
     assert final["result"]["reply"] == HANDOFF_NOTICE
     assert [t["node"] for t in final["trace"]] == ["intent", "knowledge", "decision", "response"]
     assert any(m["sender"] == "ai" for m in final["messages"])
@@ -126,7 +138,7 @@ async def test_blocking_flag_forces_handoff_once(monkeypatch: pytest.MonkeyPatch
         }
 
     monkeypatch.setattr("app.agents.nodes.intent.classify_intent", fake_classify)
-    final = await run_pipeline(input_text="demo", force_handoff=False)
+    final = await run_pipeline(input_text="demo")
 
     # Deterministic: multi_intent ∈ BLOCKING_FLAGS -> handoff.
     assert final["require_human_handoff"] is True

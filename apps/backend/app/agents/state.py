@@ -2,9 +2,7 @@
 
 Chừa sẵn chỗ kiến trúc cho 4 trụ cột (PRD §5) và xử lý bất đồng bộ/chuyển tiếp (PRD §10):
 - An toàn/bất định: confidence, uncertainty_flags, escalation_reason, require_human_handoff.
-- Trường CSKH (PRD §7): intent, entities, rag_contexts, action, draft_reply, awaiting_customer.
-
-Scaffold: node chỉ set giá trị stub; KHÔNG logic thật.
+- Trường CSKH (PRD §7): intent, entities, rag_contexts, action, priority, severity.
 """
 
 from __future__ import annotations
@@ -26,12 +24,10 @@ class ConversationState(TypedDict, total=False):
     # ĐẦU VÀO chỉ-đọc (KHÔNG reducer): lịch sử hội thoại các lượt TRƯỚC (từ DB) để hiểu ngữ cảnh đa lượt —
     # KHÁC `messages` (output lượt này). Lịch sử KHÔNG thay `rag_contexts` (phanh chống bịa còn nguyên). PRD §12.
     history: list[dict[str, Any]]
-    scratchpad: dict[str, Any]
     messages: Annotated[list[dict[str, Any]], add]  # append-only (tin nhắn hội thoại)
     trace: Annotated[list[dict[str, Any]], add]  # append-only (agent-trace: node/confidence/branch)
     status: str
     result: dict[str, Any] | None
-    error: str | None
 
     # ── Chừa chỗ an toàn/bất định (PRD §5 trụ cột 3, §7.3) ────────────────────
     confidence: float
@@ -56,8 +52,6 @@ class ConversationState(TypedDict, total=False):
     action: str | None  # auto_reply | human_handoff | clarify (Decision Engine, PRD §7.3)
     priority: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)
     severity: str | None  # low | medium | high (Decision Engine — theo intent, PRD §7.3)
-    draft_reply: str | None
-    awaiting_customer: bool  # PRD §10 FR-ASYNC-2 (clarification)
 
     # 09b clarification (FR-ASYNC-2): status hội thoại TRƯỚC lượt này (input, chỉ-đọc) cho loop-guard "đã hỏi
     # 1 lần chưa"; None = ca/lượt mới. `clarify_field` = entity Decision yêu cầu Response hỏi (None nếu không clarify).

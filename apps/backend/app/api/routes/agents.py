@@ -1,30 +1,22 @@
-"""Routes agent — công cụ DEV chạy pipeline single-shot (KHÔNG persist):
+"""Route agent — công cụ DEV chạy Agent 1 + Agent 2 single-shot (KHÔNG persist):
 
-- /analyze : Agent 1 + Agent 2 (tách vai RAG).  - /run-demo: minh hoạ pipeline cố định + 2 nhánh.
+- /analyze : Agent 1 (intent/entities) + Agent 2 (retrieval) — cho thấy TÁCH VAI đúng PRD §7.1/§7.2.
 
-`/classify` và `/pipeline` đã GỠ (slice obs P4): chúng chỉ phục vụ hai panel dev trên màn Quản lý tri
+`/classify` và `/pipeline` đã GỠ (slice obs P4) — chúng chỉ phục vụ hai panel dev trên màn Quản lý tri
 thức, mà việc quan sát pipeline nay là của **tab Báo cáo** — đọc lượt THẬT của khách từ `audit_log`
-thay vì chạy lại một câu test không lưu vết.
+thay vì chạy lại một câu test không lưu vết. `/run-demo` GỠ cùng lý do (client duy nhất là panel dev đã bỏ).
 
 Cổng chat khách THẬT (persist + bộ nhớ đa lượt) = WebSocket /ws/chat. Response Generator vẫn là điểm phát ngôn
-DUY NHẤT tới khách (PRD §7.4) — các route này chỉ trả METADATA / 1 câu test.
+DUY NHẤT tới khách (PRD §7.4) — route này chỉ trả METADATA.
 """
 
 from __future__ import annotations
 
-from uuid import uuid4
+from fastapi import APIRouter
 
-from fastapi import APIRouter, Query
-
-from ...agents.graph import run_pipeline
 from ...agents.nodes.intent import classify_intent
 from ...agents.nodes.knowledge import retrieve_knowledge
-from ...schemas.agent import (
-    AgentTraceStep,
-    AnalyzeResult,
-    ClassifyRequest,
-    RunDemoResult,
-)
+from ...schemas.agent import AnalyzeResult, ClassifyRequest
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -43,31 +35,4 @@ async def analyze(req: ClassifyRequest) -> AnalyzeResult:
         retrieval_confidence=know["retrieval_confidence"],
         uncertainty_flags=intent["uncertainty_flags"] + know["uncertainty_flags"],
         rag_contexts=know["rag_contexts"],
-    )
-
-
-@router.post("/run-demo", response_model=RunDemoResult)
-async def run_demo(
-    force: str | None = Query(
-        default=None,
-        description="ép nhánh: 'handoff' -> demo human_handoff; mặc định -> nhánh auto_reply (response)",
-    ),
-) -> RunDemoResult:
-    thread_id = str(uuid4())
-    final = await run_pipeline(
-        input_text="demo: khách hỏi chính sách đổi trả",
-        force_handoff=(force == "handoff"),
-        conversation_id=thread_id,
-    )
-    result = final.get("result") or {}
-    return RunDemoResult(
-        thread_id=final.get("conversation_id") or thread_id,
-        branch=result.get("branch", "unknown"),
-        status=str(final.get("status", "")),
-        action=final.get("action"),
-        confidence=final.get("confidence"),
-        require_human_handoff=bool(final.get("require_human_handoff")),
-        escalation_reason=final.get("escalation_reason"),
-        reply=result.get("reply") or result.get("notice"),
-        trace=[AgentTraceStep(**step) for step in final.get("trace", [])],
     )

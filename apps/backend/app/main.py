@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .agents.nodes.response import load_facts
-from .api.routes import admin, agents, auth, conversations, health, me, rag, reports
+from .api.routes import admin, agents, auth, health, me, rag, reports
 from .api.ws import admin as admin_ws
 from .api.ws import chat
 from .core import tracing
@@ -68,7 +68,6 @@ app.add_middleware(
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(me.router, prefix="/api")
-app.include_router(conversations.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(rag.router, prefix="/api")
 # reports TRƯỚC admin: cả hai cùng gốc /api/admin — router cụ thể hơn (/admin/reports/*) phải đăng ký

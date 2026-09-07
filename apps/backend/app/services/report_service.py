@@ -27,8 +27,6 @@ from ..core.database import AsyncSessionLocal
 from ..models.audit_log import AuditLog
 from ..models.enums import AuditNode, TurnOutcome
 
-# Khoảng thời gian hợp lệ cho tham số `range`.
-RANGES = ("today", "7d", "all")
 # Bộ lọc kết quả ở danh sách lượt (khớp nhãn UI).
 RESULT_FILTERS: dict[str, str | None] = {
     "all": None,

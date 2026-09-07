@@ -7,13 +7,6 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from ..models.enums import MessageSender
-
-
-class MessageCreate(BaseModel):
-    content: str
-    sender: MessageSender = MessageSender.CUSTOMER
-
 
 class MessageOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)

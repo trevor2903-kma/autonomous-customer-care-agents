@@ -37,24 +37,6 @@ def _append_message(
     return msg
 
 
-async def create_conversation(
-    session: AsyncSession,
-    *,
-    customer_identifier: str | None = None,
-    first_message: str | None = None,
-) -> Conversation:
-    conversation = Conversation(
-        customer_identifier=customer_identifier,
-        status=ConversationStatus.NEW,
-    )
-    session.add(conversation)
-    if first_message:
-        _append_message(conversation, sender=MessageSender.CUSTOMER, content=first_message)
-    await session.commit()
-    # Đọc lại (populate_existing) để trả về trạng thái chuẩn từ DB sau commit.
-    return await get_conversation(session, conversation.id)
-
-
 async def add_message(
     session: AsyncSession,
     conversation_id: uuid.UUID,

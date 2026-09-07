@@ -69,10 +69,9 @@ CLARIFY_MISSING_ENTITY: dict[str, str] = {
 
 def decision_node(state: ConversationState) -> dict[str, Any]:
     accumulated = list(state.get("uncertainty_flags") or [])  # cờ tích luỹ Agent 1+2 (reducer add)
-    injected = list((state.get("scratchpad") or {}).get("injected_flags") or [])  # demo (run-demo)
 
     # Safety gate TẤT ĐỊNH (PRD §5 trụ cột 3): cờ ∈ BLOCKING_FLAGS → human_handoff. KHÔNG blend confidence.
-    blocking = sorted((set(accumulated) | set(injected)) & BLOCKING_FLAGS)
+    blocking = sorted(set(accumulated) & BLOCKING_FLAGS)
     handoff = bool(blocking)
     escalation_reason = f"blocking_flags={blocking}" if handoff else None
     action = AgentAction.HUMAN_HANDOFF if handoff else AgentAction.AUTO_REPLY
@@ -107,8 +106,6 @@ def decision_node(state: ConversationState) -> dict[str, Any]:
         "require_human_handoff": handoff,
         "escalation_reason": escalation_reason,
         "clarify_field": clarify_field,
-        # Reducer `add`: CHỈ trả cờ MỚI (injected của demo) — cờ tích luỹ đã có sẵn, đừng trả lại (tránh nhân đôi).
-        "uncertainty_flags": injected,
         "trace": [
             {
                 "node": "decision",

@@ -214,7 +214,6 @@ async def test_response_node_is_single_speaker(monkeypatch: pytest.MonkeyPatch) 
     )
     assert out["status"] == "REPLIED"
     assert out["messages"] == [{"sender": "ai", "content": "Dạ shop cho đổi trả trong 7 ngày ạ."}]
-    assert out["draft_reply"] == "Dạ shop cho đổi trả trong 7 ngày ạ."
     assert out["result"]["branch"] == "response"
     assert out["result"]["action"] == "auto_reply"
     assert out["result"]["reply"] == "Dạ shop cho đổi trả trong 7 ngày ạ."

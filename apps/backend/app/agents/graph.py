@@ -24,8 +24,6 @@ from .nodes.knowledge import knowledge_node
 from .nodes.response import response_node
 from .state import ConversationState
 
-# Node `human_handoff` (EscalationCard + admin queue + suspend/resume) và `policy.should_handoff` = slice 08b —
-# GIỮ file, CHƯA cắm vào graph. Slice này SOLE-EGRESS: Response Generator phát cả câu trả lời lẫn thông báo handoff.
 
 def _stamp(out: dict[str, Any], started: float) -> dict[str, Any]:
     """Gắn `duration_ms` + `flags` (cờ MỚI của node) vào trace step mà node vừa trả về."""
@@ -80,8 +78,8 @@ def build_graph():
     g.add_edge("intent_classifier", "knowledge")
     g.add_edge("knowledge", "decision")
     # SOLE-EGRESS: Response Generator (điểm phát ngôn DUY NHẤT) branch theo state["action"] — phát câu trả lời
-    # grounded (auto_reply) HOẶC thông báo chuyển người (human_handoff). Node human_handoff (side-effect:
-    # EscalationCard + admin queue) = slice 08b: khi đó thêm conditional should_handoff -> human_handoff.
+    # grounded (auto_reply), thông báo chuyển người (human_handoff), hay câu hỏi clarify. Side-effect của
+    # handoff (EscalationCard + hàng đợi admin) do `escalation_service` lo NGOÀI graph, không thêm node.
     g.add_edge("decision", "response")
     g.add_edge("response", END)
 
@@ -100,7 +98,6 @@ def _initial_state(
     input_text: str,
     conversation_id: str,
     turn_id: str,
-    force_handoff: bool,
     history: list[dict[str, Any]] | None,
     customer_id: str | None,
     prior_status: str | None,
@@ -112,13 +109,10 @@ def _initial_state(
         "turn_id": turn_id,
         "input": input_text,
         "history": history or [],  # đầu vào chỉ-đọc (lịch sử đa lượt từ DB)
-        # Demo: tiêm cờ CHẶN (∈ BLOCKING_FLAGS) để ép nhánh human_handoff (Decision đọc scratchpad).
-        "scratchpad": {"injected_flags": ["out_of_domain"]} if force_handoff else {},
         "messages": [],
         "trace": [],
         "status": ConversationStatus.NEW,
         "result": None,
-        "error": None,
         "confidence": 1.0,
         "uncertainty_flags": [],
         "escalation_reason": None,
@@ -129,8 +123,6 @@ def _initial_state(
         "order_context": None,
         "order_not_found": None,
         "action": None,
-        "draft_reply": None,
-        "awaiting_customer": False,
         "prior_status": prior_status,
         "prior_intent": prior_intent,
         "clarify_field": None,
@@ -140,7 +132,6 @@ def _initial_state(
 async def run_pipeline(
     *,
     input_text: str,
-    force_handoff: bool = False,
     conversation_id: str | None = None,
     history: list[dict[str, Any]] | None = None,
     turn_id: str | None = None,
@@ -148,23 +139,22 @@ async def run_pipeline(
     prior_status: str | None = None,
     prior_intent: str | None = None,
 ) -> dict[str, Any]:
-    """Chạy pipeline 1 lượt, trả final state. force_handoff=True -> demo nhánh human_handoff.
+    """Chạy pipeline 1 lượt, trả final state.
 
     `customer_id` (danh tính khách đã đăng nhập) do CALLER truyền — Agent 2 dùng nó để tra đơn SCOPED.
-    Không truyền (route dev/demo, khách chưa đăng nhập) → không tra được đơn nào (an toàn, KHÔNG lộ đơn).
+    Không truyền (route dev, khách chưa đăng nhập) → không tra được đơn nào (an toàn, KHÔNG lộ đơn).
 
     `thread_id` sinh MỚI mỗi lượt (MemorySaver in-memory tích luỹ reduce-channel nếu tái dùng) → bộ nhớ đa lượt
     KHÔNG từ checkpointer mà từ `history` (nạp từ DB, đầu vào chỉ-đọc). Durable checkpointer = slice 09b.
 
     `turn_id` (observability P1) do CALLER truyền vào để lượt vẫn ghi được audit khi pipeline NÉM LỖI —
-    tự sinh ở đây thì lỗi là mất luôn khoá gom. Không truyền → sinh tại chỗ (route dev/demo).
+    tự sinh ở đây thì lỗi là mất luôn khoá gom. Không truyền → sinh tại chỗ (route dev).
     """
     thread_id = str(uuid4())
     state_in = _initial_state(
         input_text=input_text,
         conversation_id=conversation_id or thread_id,
         turn_id=turn_id or str(uuid4()),
-        force_handoff=force_handoff,
         history=history,
         customer_id=customer_id,
         prior_status=prior_status,
