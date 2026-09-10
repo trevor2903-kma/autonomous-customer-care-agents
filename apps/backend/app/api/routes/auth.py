@@ -19,8 +19,10 @@ Chống lạm dụng (audit v2, SEC-XC.2):
 from __future__ import annotations
 
 import secrets
+import uuid
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
@@ -28,13 +30,62 @@ from starlette.concurrency import run_in_threadpool
 from ...core.config import settings
 from ...core.database import get_session
 from ...core.rate_limit import SlidingWindowLimiter
-from ...core.security import create_access_token, hash_password, verify_password
+from ...core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_refresh_token,
+    hash_password,
+    verify_password,
+)
 from ...models import User
 from ...models.enums import UserRole
-from ...schemas.auth import LoginRequest, RegisterRequest, TokenOut, UserOut
+from ...schemas.auth import LoginRequest, RefreshRequest, RegisterRequest, TokenOut, UserOut
 from ..deps import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+ACCESS_TOKEN_COOKIE = "access_token"
+REFRESH_TOKEN_COOKIE = "refresh_token"
+
+
+def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
+    """Ghi access_token và refresh_token vào httpOnly cookies."""
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE,
+        value=access_token,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+        domain=settings.cookie_domain,
+        max_age=settings.jwt_access_expire_minutes * 60,
+        path="/",
+    )
+    response.set_cookie(
+        key=REFRESH_TOKEN_COOKIE,
+        value=refresh_token,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+        domain=settings.cookie_domain,
+        max_age=settings.jwt_refresh_expire_days * 86400,
+        path="/",
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    """Xoá access_token và refresh_token cookies."""
+    response.delete_cookie(
+        key=ACCESS_TOKEN_COOKIE,
+        path="/",
+        domain=settings.cookie_domain,
+        samesite=settings.cookie_samesite,
+    )
+    response.delete_cookie(
+        key=REFRESH_TOKEN_COOKIE,
+        path="/",
+        domain=settings.cookie_domain,
+        samesite=settings.cookie_samesite,
+    )
 
 # Hash giả cho nhánh email không tồn tại: tốn đúng một lần bcrypt như email có thật. Mật khẩu ngẫu nhiên theo
 # tiến trình — không ai khớp được, và nhánh đó luôn trả 401 bất kể kết quả.
@@ -67,9 +118,14 @@ def _check_rate(limiter: SlidingWindowLimiter, key: str) -> None:
         )
 
 
-def _token_response(user: User) -> TokenOut:
+def _token_response(user: User, response: Response | None = None) -> TokenOut:
+    access_token = create_access_token(user_id=str(user.id), role=user.role)
+    refresh_token = create_refresh_token(user_id=str(user.id))
+    if response is not None:
+        _set_auth_cookies(response, access_token, refresh_token)
     return TokenOut(
-        access_token=create_access_token(user_id=str(user.id), role=user.role),
+        access_token=access_token,
+        refresh_token=refresh_token,
         user_id=user.id,
         role=user.role,
         display_name=user.display_name,
@@ -78,9 +134,12 @@ def _token_response(user: User) -> TokenOut:
 
 @router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
 async def register(
-    payload: RegisterRequest, request: Request, session: AsyncSession = Depends(get_session)
+    payload: RegisterRequest,
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
 ) -> TokenOut:
-    """Tạo tài khoản KHÁCH + auto-login (trả JWT ngay). Email trùng → 409. Quá nhiều lần theo IP → 429."""
+    """Tạo tài khoản KHÁCH + auto-login (trả JWT & ghi httpOnly cookie). Email trùng → 409. Quá nhiều lần theo IP → 429."""
     _check_rate(_register_ip_limiter, _client_ip(request))
     email = _normalize_email(payload.email)
     if "@" not in email:
@@ -97,14 +156,17 @@ async def register(
     session.add(user)
     await session.commit()
     await session.refresh(user)
-    return _token_response(user)
+    return _token_response(user, response)
 
 
 @router.post("/login", response_model=TokenOut)
 async def login(
-    payload: LoginRequest, request: Request, session: AsyncSession = Depends(get_session)
+    payload: LoginRequest,
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
 ) -> TokenOut:
-    """Đăng nhập (admin hoặc khách) → JWT + role + display_name. Quá nhiều lần (theo IP / theo email) → 429."""
+    """Đăng nhập (admin hoặc khách) → JWT + role + display_name + ghi httpOnly cookies. Quá nhiều lần → 429."""
     email = _normalize_email(payload.email)
     _check_rate(_login_ip_limiter, _client_ip(request))
     _check_rate(_login_email_limiter, email)
@@ -115,9 +177,48 @@ async def login(
     )
     if user is None or not password_ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "email hoặc mật khẩu không đúng")
-    return _token_response(user)
+    return _token_response(user, response)
+
+
+@router.post("/refresh", response_model=TokenOut)
+async def refresh(
+    request: Request,
+    response: Response,
+    payload: RefreshRequest | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> TokenOut:
+    """Làm mới access token (và refresh token) qua cookie refresh_token (hoặc body)."""
+    token = request.cookies.get(REFRESH_TOKEN_COOKIE)
+    if not token and payload and payload.refresh_token:
+        token = payload.refresh_token
+    if not token:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "refresh token không tồn tại")
+
+    decoded = decode_refresh_token(token)
+    sub = (decoded or {}).get("sub")
+    if not sub:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "refresh token không hợp lệ hoặc đã hết hạn")
+
+    try:
+        user_id = uuid.UUID(str(sub))
+    except (ValueError, TypeError):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "refresh token không hợp lệ")
+
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "người dùng không tồn tại")
+
+    return _token_response(user, response)
+
+
+@router.post("/logout")
+async def logout(response: Response) -> dict[str, Any]:
+    """Đăng xuất — xoá các httpOnly cookie access_token và refresh_token."""
+    _clear_auth_cookies(response)
+    return {"ok": True, "message": "logged out"}
 
 
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)) -> UserOut:
     return user
+

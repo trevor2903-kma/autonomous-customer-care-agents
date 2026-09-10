@@ -30,10 +30,18 @@ class TokenOut(BaseModel):
     """Kết quả đăng nhập/đăng ký — JWT + danh tính tối thiểu cho FE điều hướng."""
 
     access_token: str
+    refresh_token: str | None = None
     token_type: str = "bearer"
     user_id: uuid.UUID
     role: str
     display_name: str | None = None
+
+
+class RefreshRequest(BaseModel):
+    """Tuỳ chọn truyền refresh_token qua body nếu không dùng cookie (API client, curl)."""
+
+    refresh_token: str | None = None
+
 
 
 class UserOut(BaseModel):

@@ -40,21 +40,51 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(*, user_id: str, role: str) -> str:
-    """Phát JWT đăng nhập (sub=user_id, role, exp theo `jwt_expire_minutes`)."""
+def create_access_token(*, user_id: str, role: str, expire_minutes: int | None = None) -> str:
+    """Phát JWT đăng nhập (sub=user_id, role, type=access, exp theo `jwt_access_expire_minutes`)."""
     now = datetime.now(timezone.utc)
+    exp_minutes = expire_minutes if expire_minutes is not None else settings.jwt_access_expire_minutes
     payload = {
         "sub": str(user_id),
         "role": role,
+        "type": "access",
         "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=settings.jwt_expire_minutes)).timestamp()),
+        "exp": int((now + timedelta(minutes=exp_minutes)).timestamp()),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=JWT_ALGORITHM)
+
+
+def create_refresh_token(*, user_id: str, expire_days: int | None = None) -> str:
+    """Phát JWT refresh token (sub=user_id, type=refresh, exp theo `jwt_refresh_expire_days`)."""
+    now = datetime.now(timezone.utc)
+    exp_days = expire_days if expire_days is not None else settings.jwt_refresh_expire_days
+    payload = {
+        "sub": str(user_id),
+        "type": "refresh",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(days=exp_days)).timestamp()),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=JWT_ALGORITHM)
 
 
 def decode_access_token(token: str) -> dict[str, Any] | None:
-    """Giải mã + xác thực JWT. Token sai/hết hạn → None (không raise)."""
+    """Giải mã + xác thực access token. Token sai/hết hạn hoặc sai type → None (không raise)."""
     try:
-        return jwt.decode(token, settings.jwt_secret, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[JWT_ALGORITHM])
+        if payload.get("type", "access") != "access":
+            return None
+        return payload
     except jwt.PyJWTError:
         return None
+
+
+def decode_refresh_token(token: str) -> dict[str, Any] | None:
+    """Giải mã + xác thực refresh token. Token sai/hết hạn hoặc sai type → None (không raise)."""
+    try:
+        payload = jwt.decode(token, settings.jwt_secret, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "refresh":
+            return None
+        return payload
+    except jwt.PyJWTError:
+        return None
+

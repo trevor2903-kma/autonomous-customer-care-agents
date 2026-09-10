@@ -8,7 +8,6 @@ import {
   adminWsUrl,
   approveDraft,
   getAdminConversation,
-  getToken,
   rejectDraft,
   resolveConversation,
   takeoverConversation,
@@ -71,10 +70,9 @@ function initials(s?: string | null): string {
 const NOT_ASSIGNED_NOTICE =
   "Tin chưa được gửi: bạn không còn giữ ca này (chưa tiếp quản, ca đã đổi trạng thái hoặc nhân viên khác đã nhận).";
 
-// URL socket ca kèm token HIỆN TẠI — dựng lại ở MỖI lần nối (`resolveUrl`, FE-01.2; xem app/chat/page.tsx).
+// URL socket ca: trình duyệt tự động gửi kèm cookie access_token khi handshake.
 function currentAdminWsUrl(conversationId: string): string | null {
-  const token = getToken();
-  return token ? adminWsUrl(conversationId, token) : null;
+  return adminWsUrl(conversationId);
 }
 
 function Bubble({

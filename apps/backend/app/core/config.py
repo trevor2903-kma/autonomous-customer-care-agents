@@ -75,10 +75,15 @@ class Settings(BaseSettings):
     # Tin nhắn khách qua /ws/chat (theo customer_id, cộng dồn mọi tab) — mỗi tin là 2 lời gọi LLM + 1 embedding.
     chat_rate_per_customer: int = 20
 
-    # ── Auth (slice 11 — JWT + RBAC) ──────────────────────────────────────────
+    # ── Auth (slice 11 — JWT + RBAC + httpOnly cookies) ──────────────────────
     # Secret ký JWT (HS256) — BẮT BUỘC, đọc env JWT_SECRET (KHÔNG hardcode secret).
     jwt_secret: str
-    jwt_expire_minutes: int = 10080  # hạn token đăng nhập (phút) — mặc định 7 ngày
+    jwt_expire_minutes: int = 10080  # tương thích cũ — mặc định 7 ngày
+    jwt_access_expire_minutes: int = 30  # access token hết hạn sau 30 phút
+    jwt_refresh_expire_days: int = 7  # refresh token hết hạn sau 7 ngày
+    cookie_secure: bool = False  # dev: False (HTTP), prod: True (HTTPS)
+    cookie_samesite: str = "lax"  # "lax", "strict", hoặc "none"
+    cookie_domain: str | None = None
 
     # ── Postgres (Neon) ───────────────────────────────────────────────────────
     # SSL bật qua connect_args={"ssl": ...} (CLAUDE.md). URL KHÔNG mang '?sslmode='.

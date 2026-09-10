@@ -52,6 +52,11 @@ class _FakeSession:
     async def refresh(self, user: User) -> None:
         user.id = user.id or uuid.uuid4()
 
+    async def get(self, model: type, ident: Any) -> User | None:
+        if ident == EXISTING.id:
+            return EXISTING
+        return None
+
 
 @pytest.fixture(autouse=True)
 def _fresh_limiters():
@@ -219,3 +224,68 @@ async def test_register_rejects_oversized_email(client: httpx.AsyncClient) -> No
     body = {"email": _email_of_length(EMAIL_MAX_LENGTH + 1), "password": "123456"}
     assert (await client.post("/api/auth/register", json=body)).status_code == 422
     assert auth_routes._register_ip_limiter._hits == {}
+
+
+# ── httpOnly Cookies & Refresh Token ─────────────────────────────────────────
+async def test_login_sets_httponly_cookies(client: httpx.AsyncClient) -> None:
+    r = await _login(client, EXISTING.email, PASSWORD)
+    assert r.status_code == 200
+    # Cả access_token và refresh_token đều có trong cookies
+    cookies = r.cookies
+    assert "access_token" in cookies
+    assert "refresh_token" in cookies
+    # Kiểm tra cờ httponly trong Set-Cookie headers
+    set_cookies = r.headers.get_list("set-cookie")
+    assert any("access_token=" in c and "httponly" in c.lower() for c in set_cookies)
+    assert any("refresh_token=" in c and "httponly" in c.lower() for c in set_cookies)
+
+
+async def test_register_sets_httponly_cookies(client: httpx.AsyncClient) -> None:
+    r = await client.post("/api/auth/register", json={"email": "new_user@shop.vn", "password": "password123"})
+    assert r.status_code == 201
+    assert "access_token" in r.cookies
+    assert "refresh_token" in r.cookies
+    set_cookies = r.headers.get_list("set-cookie")
+    assert any("access_token=" in c and "httponly" in c.lower() for c in set_cookies)
+
+
+async def test_refresh_with_valid_cookie_succeeds(client: httpx.AsyncClient) -> None:
+    # Đăng nhập để lấy cookie refresh_token
+    login_res = await _login(client, EXISTING.email, PASSWORD)
+    assert login_res.status_code == 200
+    refresh_token = login_res.cookies["refresh_token"]
+
+    # Gọi /refresh với cookie refresh_token
+    r = await client.post("/api/auth/refresh", headers={"Cookie": f"refresh_token={refresh_token}"})
+    assert r.status_code == 200
+    assert "access_token" in r.cookies
+    data = r.json()
+    assert data["role"] == "customer"
+    assert data["user_id"] == str(EXISTING.id)
+
+
+async def test_refresh_without_cookie_fails_401(client: httpx.AsyncClient) -> None:
+    r = await client.post("/api/auth/refresh")
+    assert r.status_code == 401
+
+
+async def test_logout_clears_cookies(client: httpx.AsyncClient) -> None:
+    r = await client.post("/api/auth/logout")
+    assert r.status_code == 200
+    assert r.json() == {"ok": True, "message": "logged out"}
+    set_cookies = r.headers.get_list("set-cookie")
+    # Kiểm tra cookie bị xoá (Max-Age=0 hoặc expires trong quá khứ)
+    assert any("access_token=" in c and ("max-age=0" in c.lower() or "expires=" in c.lower()) for c in set_cookies)
+    assert any("refresh_token=" in c and ("max-age=0" in c.lower() or "expires=" in c.lower()) for c in set_cookies)
+
+
+async def test_me_route_with_cookie_access_token(client: httpx.AsyncClient) -> None:
+    login_res = await _login(client, EXISTING.email, PASSWORD)
+    assert login_res.status_code == 200
+    access_token = login_res.cookies["access_token"]
+
+    # Gọi /me bằng cookie access_token (không gắn Bearer header)
+    r = await client.get("/api/auth/me", headers={"Cookie": f"access_token={access_token}"})
+    assert r.status_code == 200
+    assert r.json()["email"] == EXISTING.email
+

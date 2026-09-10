@@ -14,12 +14,14 @@ from app.models.enums import UserRole
 
 
 class _FakeWebSocket:
-    def __init__(self, token: str | None) -> None:
+    def __init__(self, token: str | None = None, cookies: dict[str, str] | None = None) -> None:
         self.query_params = {"token": token} if token is not None else {}
+        self.cookies = cookies or {}
         self.closed_with: int | None = None
 
     async def close(self, code: int = 1000) -> None:
         self.closed_with = code
+
 
 
 class _FakeSession:
@@ -118,3 +120,14 @@ async def test_non_uuid_sub_is_rejected_without_db(monkeypatch: pytest.MonkeyPat
     assert await ws_auth.authenticate_websocket(ws, UserRole.ADMIN) is None
     assert ws.closed_with == ws_auth.WS_AUTH_CLOSE_CODE
     assert opened == []
+
+
+async def test_websocket_authenticated_via_cookie(monkeypatch: pytest.MonkeyPatch) -> None:
+    customer = _user(UserRole.CUSTOMER)
+    _use_db(monkeypatch, customer)
+    token = create_access_token(user_id=str(customer.id), role=UserRole.CUSTOMER)
+    ws = _FakeWebSocket(token=None, cookies={"access_token": token})
+    payload = await ws_auth.authenticate_websocket(ws, UserRole.CUSTOMER)
+    assert payload is not None and payload["sub"] == str(customer.id)
+    assert ws.closed_with is None
+

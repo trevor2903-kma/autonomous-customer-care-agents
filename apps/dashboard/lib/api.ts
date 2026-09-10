@@ -35,32 +35,77 @@ export function getWsUrl(): string {
   return `${getWsBase()}/ws/chat`;
 }
 
-// ── Auth token (slice 11 P4) — lưu localStorage, gắn Bearer cho mọi request ──
-const TOKEN_KEY = "tys_token";
+// ── Auth & Cookies (httpOnly cookie thay thế localStorage) ──
+let refreshPromise: Promise<boolean> | null = null;
 
+export async function refreshToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        cache: "no-store",
+      });
+      return res.ok;
+    } catch {
+      return false;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+  return refreshPromise;
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await fetch(`${getApiBase()}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+    });
+  } catch {
+    // bỏ qua lỗi mạng khi logout
+  }
+}
+
+/** @deprecated Không còn lưu token ở localStorage; token được lưu ở httpOnly cookie */
 export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(TOKEN_KEY);
+  return null;
 }
-export function setToken(token: string): void {
-  if (typeof window !== "undefined") window.localStorage.setItem(TOKEN_KEY, token);
-}
-export function clearToken(): void {
-  if (typeof window !== "undefined") window.localStorage.removeItem(TOKEN_KEY);
-}
+/** @deprecated Không còn lưu token ở localStorage */
+export function setToken(_token: string): void {}
+/** @deprecated Không còn lưu token ở localStorage */
+export function clearToken(): void {}
 
-function authHeaders(): Record<string, string> {
-  const token = getToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-// Wrapper fetch: prepend API_BASE + gắn Bearer + no-store. Giữ header init (Content-Type) đè lên.
+// Wrapper fetch: prepend API_BASE + credentials: "include" + no-store + transparent 401 refresh
 async function req(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${getApiBase()}${path}`, {
+  let res = await fetch(`${getApiBase()}${path}`, {
     cache: "no-store",
+    credentials: "include",
     ...init,
-    headers: { ...authHeaders(), ...(init.headers ?? {}) },
+    headers: { ...(init.headers ?? {}) },
   });
+
+  const isAuthRoute =
+    path.startsWith("/api/auth/login") ||
+    path.startsWith("/api/auth/register") ||
+    path.startsWith("/api/auth/refresh") ||
+    path.startsWith("/api/auth/logout");
+
+  if (res.status === 401 && !isAuthRoute) {
+    const ok = await refreshToken();
+    if (ok) {
+      res = await fetch(`${getApiBase()}${path}`, {
+        cache: "no-store",
+        credentials: "include",
+        ...init,
+        headers: { ...(init.headers ?? {}) },
+      });
+    }
+  }
+
+  return res;
 }
 
 async function fail(res: Response, fallback: string): Promise<never> {
@@ -74,16 +119,18 @@ async function fail(res: Response, fallback: string): Promise<never> {
   throw new Error(detail);
 }
 
-// ── WS URL kèm token (browser không set được header WS → query-param) ─────────
-export function chatWsUrl(token: string): string {
-  return `${getWsUrl()}?token=${encodeURIComponent(token)}`;
+// ── WS URL (trình duyệt tự động gửi cookie access_token khi handshake; token query-param là fallback) ──
+export function chatWsUrl(token?: string): string {
+  return token ? `${getWsUrl()}?token=${encodeURIComponent(token)}` : getWsUrl();
 }
-export function adminWsUrl(conversationId: string, token: string): string {
-  return `${getWsBase()}/ws/admin/${conversationId}?token=${encodeURIComponent(token)}`;
+export function adminWsUrl(conversationId: string, token?: string): string {
+  const base = `${getWsBase()}/ws/admin/${conversationId}`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 // Inbox admin (FE-01.5): sự kiện tin mới / đổi status của MỌI ca → làm tươi danh sách + badge thay polling.
-export function adminInboxWsUrl(token: string): string {
-  return `${getWsBase()}/ws/admin-inbox?token=${encodeURIComponent(token)}`;
+export function adminInboxWsUrl(token?: string): string {
+  const base = `${getWsBase()}/ws/admin-inbox`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 // ── Auth (slice 11) ──────────────────────────────────────────────────────────

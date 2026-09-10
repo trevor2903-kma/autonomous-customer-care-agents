@@ -4,21 +4,19 @@ import { createContext, useCallback, useContext, useEffect, useState } from "rea
 import { useQueryClient } from "@tanstack/react-query";
 import {
   type AuthUser,
-  clearToken,
   getMe,
-  getToken,
   login as apiLogin,
+  logout as apiLogout,
   register as apiRegister,
-  setToken,
 } from "@/lib/api";
 
-// AuthContext (slice 11 P4) — JWT lưu localStorage; user nạp/validate qua /api/auth/me.
+// AuthContext (httpOnly cookies) — user nạp/validate qua /api/auth/me và refresh token.
 type AuthState = {
   user: AuthUser | null;
-  loading: boolean; // true khi đang validate token lúc tải trang
+  loading: boolean; // true khi đang validate cookie lúc tải trang
   login: (email: string, password: string) => Promise<AuthUser>;
   register: (email: string, password: string, displayName?: string) => Promise<AuthUser>;
-  logout: () => void;
+  logout: () => void | Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -28,19 +26,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const queryClient = useQueryClient();
 
-  // Tải trang: nếu có token → validate + nạp user; token hỏng/hết hạn → xoá.
+  // Tải trang: gọi /api/auth/me với cookie (tự động thử refresh nếu 401)
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!getToken()) {
-        setLoading(false);
-        return;
-      }
       try {
         const me = await getMe();
         if (!cancelled) setUser(me);
       } catch {
-        clearToken();
         queryClient.clear();
         if (!cancelled) setUser(null);
       } finally {
@@ -54,8 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     queryClient.clear();
-    const res = await apiLogin(email, password);
-    setToken(res.access_token);
+    await apiLogin(email, password);
     const me = await getMe();
     setUser(me);
     return me;
@@ -63,15 +55,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = useCallback(async (email: string, password: string, displayName?: string) => {
     queryClient.clear();
-    const res = await apiRegister(email, password, displayName);
-    setToken(res.access_token);
+    await apiRegister(email, password, displayName);
     const me = await getMe();
     setUser(me);
     return me;
   }, [queryClient]);
 
-  const logout = useCallback(() => {
-    clearToken();
+  const logout = useCallback(async () => {
+    await apiLogout();
     queryClient.clear();
     setUser(null);
   }, [queryClient]);

@@ -43,7 +43,8 @@ async def _db_role(sub: Any) -> str | None:
 
 async def authenticate_websocket(websocket: WebSocket, required_role: str) -> dict[str, Any] | None:
     """Trả payload JWT nếu hợp lệ & role TRONG DB đúng; ngược lại đóng WS (4401) + trả None. Gọi SAU accept()."""
-    token = websocket.query_params.get("token")
+    cookies = getattr(websocket, "cookies", None) or {}
+    token = cookies.get("access_token") or websocket.query_params.get("token")
     payload = decode_access_token(token) if token else None
     role: str | None = None
     if payload is not None:

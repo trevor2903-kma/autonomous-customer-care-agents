@@ -14,7 +14,8 @@ import {
   custTurnAfter,
 } from "@/components/chat/custStatus";
 import { RequireAuth } from "@/components/auth/RequireAuth";
-import { type CustomerThread, chatWsUrl, getMyThread, getToken } from "@/lib/api";
+import { type CustomerThread, chatWsUrl, getMyThread } from "@/lib/api";
+
 import { useAuth } from "@/lib/auth";
 import {
   absorbOwnById,
@@ -48,11 +49,9 @@ const timeOf = (iso: string) =>
 // Server từ chối vì gửi quá nhanh (`error/rate_limited`) — thông báo TẠM phía khách, không lưu DB.
 const RATE_LIMIT_NOTICE = "Bạn đang gửi hơi nhanh — vui lòng đợi giây lát rồi bấm “Gửi lại”.";
 
-// URL socket kèm token HIỆN TẠI trong localStorage — dựng lại ở MỖI lần nối (`resolveUrl`, FE-01.2): sau 4401 mà phiên
-// vẫn còn (đăng nhập lại ở tab khác) lần thử lại dùng token mới.
+// URL socket: trình duyệt tự động gửi kèm cookie access_token khi handshake.
 function currentChatWsUrl(): string | null {
-  const token = getToken();
-  return token ? chatWsUrl(token) : null;
+  return chatWsUrl();
 }
 
 function ChatInner() {
