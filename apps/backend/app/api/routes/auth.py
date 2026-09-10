@@ -2,15 +2,32 @@
 
 Response Generator vẫn là egress DUY NHẤT của luồng tự động — auth KHÔNG phát tin cho khách.
 Đăng ký chỉ tạo khách (role=customer); admin tạo qua scripts/seed_admin.py.
+
+Chống lạm dụng (audit v2, SEC-XC.2):
+- bcrypt (~250ms CPU mỗi lần) chạy trong threadpool — gọi thẳng trong route async là chặn event loop của worker
+  DUY NHẤT (mọi /ws/chat đứng hình theo).
+- Email không tồn tại vẫn verify MỘT lần với hash giả → thời gian phản hồi không lộ email nào có tài khoản.
+- Giới hạn tần suất in-process (`core/rate_limit`): login theo IP + theo email, register theo IP → 429 + Retry-After.
+- Email có trần độ dài ở schema (`EMAIL_MAX_LENGTH`): email là KHOÁ của bộ đếm theo email → email cỡ MB bị 422
+  trước khi vào route, không găm được vào RAM của bộ đếm.
+- Đánh đổi CÓ CHỦ ĐÍCH của bộ đếm theo email: đếm MỌI lần thử (cả đúng mật khẩu) và chặn TRƯỚC khi verify → ai
+  biết email (vd admin) gõ sai `login_rate_per_email` lần/cửa sổ là chủ tài khoản bị 429 tới hết cửa sổ, kể cả từ
+  IP khác. Không bỏ được mà vẫn chặn dò mật khẩu phân tán lên MỘT tài khoản (chưa có CAPTCHA/2FA); khoá theo
+  (email, IP) thì mất tác dụng đó. Bị lợi dụng thật → `login_rate_per_email=0` tắt qua env.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import secrets
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
+from ...core.config import settings
 from ...core.database import get_session
+from ...core.rate_limit import SlidingWindowLimiter
 from ...core.security import create_access_token, hash_password, verify_password
 from ...models import User
 from ...models.enums import UserRole
@@ -19,9 +36,35 @@ from ..deps import get_current_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Hash giả cho nhánh email không tồn tại: tốn đúng một lần bcrypt như email có thật. Mật khẩu ngẫu nhiên theo
+# tiến trình — không ai khớp được, và nhánh đó luôn trả 401 bất kể kết quả.
+_DUMMY_HASH = hash_password(secrets.token_urlsafe(16))
+
+# Bộ đếm cửa sổ trượt (settings; 0 = tắt). In-process như hub — 1 worker. Test gọi `.reset()`.
+_login_ip_limiter = SlidingWindowLimiter(settings.login_rate_per_ip, settings.rate_limit_window_seconds)
+_login_email_limiter = SlidingWindowLimiter(settings.login_rate_per_email, settings.rate_limit_window_seconds)
+_register_ip_limiter = SlidingWindowLimiter(settings.register_rate_per_ip, settings.rate_limit_window_seconds)
+
 
 def _normalize_email(email: str) -> str:
     return email.strip().lower()
+
+
+def _client_ip(request: Request) -> str:
+    # Sau reverse proxy (deploy — slice 14) phải chạy uvicorn `--proxy-headers` (+ `--forwarded-allow-ips`),
+    # nếu không mọi request mang IP của proxy → cả thiên hạ dùng CHUNG một bộ đếm.
+    return request.client.host if request.client else "unknown"
+
+
+def _check_rate(limiter: SlidingWindowLimiter, key: str) -> None:
+    """Vượt trần → 429 + `Retry-After` (lần bị chặn KHÔNG được ghi vào bộ đếm)."""
+    if not limiter.hit(key):
+        retry_after = limiter.retry_after(key)
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"Bạn thử quá nhiều lần, vui lòng thử lại sau {retry_after} giây.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
 
 def _token_response(user: User) -> TokenOut:
@@ -34,8 +77,11 @@ def _token_response(user: User) -> TokenOut:
 
 
 @router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
-async def register(payload: RegisterRequest, session: AsyncSession = Depends(get_session)) -> TokenOut:
-    """Tạo tài khoản KHÁCH + auto-login (trả JWT ngay). Email trùng → 409."""
+async def register(
+    payload: RegisterRequest, request: Request, session: AsyncSession = Depends(get_session)
+) -> TokenOut:
+    """Tạo tài khoản KHÁCH + auto-login (trả JWT ngay). Email trùng → 409. Quá nhiều lần theo IP → 429."""
+    _check_rate(_register_ip_limiter, _client_ip(request))
     email = _normalize_email(payload.email)
     if "@" not in email:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "email không hợp lệ")
@@ -44,7 +90,7 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
         raise HTTPException(status.HTTP_409_CONFLICT, "email đã tồn tại")
     user = User(
         email=email,
-        password_hash=hash_password(payload.password),
+        password_hash=await run_in_threadpool(hash_password, payload.password),  # bcrypt ngoài event loop
         role=UserRole.CUSTOMER,
         display_name=(payload.display_name or "").strip() or None,
     )
@@ -55,11 +101,19 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
 
 
 @router.post("/login", response_model=TokenOut)
-async def login(payload: LoginRequest, session: AsyncSession = Depends(get_session)) -> TokenOut:
-    """Đăng nhập (admin hoặc khách) → JWT + role + display_name."""
+async def login(
+    payload: LoginRequest, request: Request, session: AsyncSession = Depends(get_session)
+) -> TokenOut:
+    """Đăng nhập (admin hoặc khách) → JWT + role + display_name. Quá nhiều lần (theo IP / theo email) → 429."""
     email = _normalize_email(payload.email)
+    _check_rate(_login_ip_limiter, _client_ip(request))
+    _check_rate(_login_email_limiter, email)
     user = (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    if user is None or not verify_password(payload.password, user.password_hash):
+    # Email không tồn tại vẫn chạy MỘT lần bcrypt (hash giả) → thời gian phản hồi không lộ email nào có thật.
+    password_ok = await run_in_threadpool(
+        verify_password, payload.password, user.password_hash if user is not None else _DUMMY_HASH
+    )
+    if user is None or not password_ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "email hoặc mật khẩu không đúng")
     return _token_response(user)
 

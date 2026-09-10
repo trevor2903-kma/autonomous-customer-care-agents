@@ -21,7 +21,14 @@ def _get_client() -> AsyncOpenAI:
     if _client is None:
         # api_key có thể None -> OpenAI SDK báo lỗi rõ khi gọi. Caller (intent_node) phải degrade an toàn
         # TRƯỚC khi tới đây khi thiếu key (giữ `make test` chạy offline — plan §5).
-        _client = AsyncOpenAI(api_key=settings.llm_api_key)
+        # Timeout + retry từ env (audit v2, PERF-01.1): mặc định SDK là 600s × 3 lần — một lời gọi treo giữ lượt
+        # của khách tới nửa giờ. Client DÙNG CHUNG cho Agent 1 + embeddings (Agent 2) + Agent 4; hết giờ → exception
+        # → node tự degrade như sẵn có (cờ chặn / FALLBACK).
+        _client = AsyncOpenAI(
+            api_key=settings.llm_api_key,
+            timeout=settings.llm_timeout_seconds,
+            max_retries=settings.llm_max_retries,
+        )
     return _client
 
 

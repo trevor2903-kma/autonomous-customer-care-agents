@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+
+from ..core.config import settings
 
 
 class ClassifyRequest(BaseModel):
-    # Câu test cho /analyze (Agent 1 + Agent 2).
-    message: str
+    # Câu test cho /analyze (Agent 1 + Agent 2). Chặn như biên WS (SEC-XC.1): tối đa `max_message_chars`
+    # (không nhồi cả megabyte vào prompt); rỗng / chỉ khoảng trắng → 422.
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    message: str = Field(min_length=1, max_length=settings.max_message_chars)
 
 
 class AnalyzeResult(BaseModel):

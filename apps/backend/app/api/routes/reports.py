@@ -49,7 +49,7 @@ def _item(view) -> TurnListItemOut:
 
 @router.get("/summary", response_model=SummaryOut)
 async def summary(range: str = _RANGE) -> SummaryOut:
-    """KPI tổng: %auto/%duyệt/%chuyển người/%fallback · độ trễ avg/p50/p95 · %≤NFR-1 · lý do escalate."""
+    """KPI tổng: %auto/%duyệt/%chuyển người/%fallback · độ trễ avg/p50/p95/p99 · %≤NFR-1 · lý do escalate."""
     turns = await report_service.fetch_turns(range)
     return SummaryOut(
         range=range,
