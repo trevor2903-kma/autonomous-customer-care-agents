@@ -81,6 +81,10 @@ export function chatWsUrl(token: string): string {
 export function adminWsUrl(conversationId: string, token: string): string {
   return `${getWsBase()}/ws/admin/${conversationId}?token=${encodeURIComponent(token)}`;
 }
+// Inbox admin (FE-01.5): sự kiện tin mới / đổi status của MỌI ca → làm tươi danh sách + badge thay polling.
+export function adminInboxWsUrl(token: string): string {
+  return `${getWsBase()}/ws/admin-inbox?token=${encodeURIComponent(token)}`;
+}
 
 // ── Auth (slice 11) ──────────────────────────────────────────────────────────
 export interface AuthUser {
