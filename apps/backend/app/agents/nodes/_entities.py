@@ -27,6 +27,9 @@ _AMOUNT_BEFORE_RE = re.compile(r"(?<!\w)(?:giá|trên|từ|dưới|tối\s*thi�
 _AMOUNT_AFTER_RE = re.compile(
     r"(?:k|tr|đ)\b|\s*(?:đồng|vnđ|vnd|nghìn|ngàn|triệu)\b|[.,]\d{3}", re.IGNORECASE
 )
+# Mã đơn TRƠ = CẢ tin nhắn chỉ là con số (cho phép '#' và một dấu câu cuối). `_ORDER_ID_RE` neo TỪ KHOÁ để không
+# nhận nhầm giá/số lượng; số trơ chỉ là mã ở ngữ cảnh VỪA HỎI MÃ — xem `intent.resume_order_code`.
+_BARE_ORDER_CODE_RE = re.compile(r"^\s*#?\s*(\d{3,})\s*[.!,]?\s*$")
 # size: neo theo từ khoá "size".
 _SIZE_RE = re.compile(r"\bsize\s*([SMLX]{1,3}|\d{2,3})\b", re.IGNORECASE)
 # height/weight: neo theo đơn vị. Height hỗ trợ "1m60"/"1.6m"/"160cm".
@@ -48,6 +51,12 @@ def appears_only_as_amount(text: str, code: str | None) -> bool:
         return False
     spans = [m.span() for m in re.finditer(rf"(?<!\d){re.escape(code)}(?!\d)", text)]
     return bool(spans) and all(_is_amount_at(text, start, end) for start, end in spans)
+
+
+def bare_order_code(text: str) -> str | None:
+    """Mã nếu CẢ tin nhắn chỉ là một con số ≥3 chữ số ("716449", "#716449."), ngược lại None."""
+    m = _BARE_ORDER_CODE_RE.match(text or "")
+    return m.group(1) if m else None
 
 
 def extract_entities_rule(text: str) -> dict[str, str]:

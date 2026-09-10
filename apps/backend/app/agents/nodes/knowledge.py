@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from typing import Any
 
@@ -26,7 +27,8 @@ from ...core.logging import get_logger
 from ...models.enums import ConversationStatus
 from ...services import order_service, rag_service
 from ..state import ConversationState
-from ._entities import extract_entities_rule
+from ._entities import bare_order_code, extract_entities_rule
+from .intent import resume_order_code
 
 log = get_logger("agent.knowledge")
 
@@ -41,6 +43,12 @@ NO_RETRIEVAL_INTENTS: frozenset[str] = frozenset({"greeting"})
 # báo lại như order_status, thay vì soạn nháp hoàn/đổi cho một đơn chưa ai kiểm tra. complaint KHÔNG bị hỏi mã
 # (không thuộc CLARIFY_MISSING_ENTITY — khiếu nại có thể không về đơn nào), chỉ tra khi khách tự đưa mã.
 ORDER_INTENTS: frozenset[str] = frozenset({"order_status", "shipping", "refund", "exchange", "complaint"})
+
+# Cờ GROUNDING của retrieval — đơn tra được (`order_context`) LÀ grounding, nên khi có đơn các cờ này KHÔNG chặn
+# (AGENT-02.1). `order_unresolved` và mọi cờ khác giữ nguyên.
+_RETRIEVAL_GROUNDING_FLAGS: frozenset[str] = frozenset(
+    {"no_relevant_knowledge", "low_retrieval_score", "search_error"}
+)
 
 
 def _degrade(flags: list[str]) -> dict[str, Any]:
@@ -182,18 +190,52 @@ async def resolve_order(
     return {"order_context": None, "order_not_found": order_code, "uncertainty_flags": []}
 
 
+def _original_question(history: list[dict[str, Any]] | None) -> str | None:
+    """Câu hỏi GỐC của khách trước lượt resume = tin khách gần nhất trong `history` KHÔNG phải mã trơ (bỏ qua
+    các lần đáp mã trước đó, vd mã gõ nhầm ở lượt trước)."""
+    for m in reversed(history or []):
+        content = str(m.get("content") or "").strip()
+        if m.get("sender") == "customer" and content and bare_order_code(content) is None:
+            return content
+    return None
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
+
+
 async def knowledge_node(state: ConversationState) -> dict[str, Any]:
     """Node graph: retrieve_knowledge trên input (ưu tiên intent của Agent 1) rồi ghi state + trace.
     Ghi `rag_contexts` (VAI Agent 2) + `retrieval_confidence`; `uncertainty_flags` tích luỹ (reducer add).
 
     Kèm TRA ĐƠN scoped (`resolve_order`) cho intent gắn-với-đơn: RAG (chính sách) và dữ liệu đơn bổ trợ
-    nhau, nên chạy CẢ HAI rồi gộp cờ — không cái nào thay được cái nào."""
+    nhau, nên chạy CẢ HAI rồi gộp cờ — không cái nào thay được cái nào. Đơn TRA ĐƯỢC thì cờ grounding của
+    retrieval không chặn: dữ liệu đơn chính là grounding (phanh Agent 4 cũng coi `order_context` là nguồn).
+
+    Lượt RESUME (khách đáp câu hỏi mã đơn bằng SỐ TRƠ — Agent 1 đã khôi phục intent gốc + mã): truy hồi bằng
+    CÂU HỎI GỐC, không bằng con số — cosine của "865277" với KB luôn thấp (đo live 0.253) nên lượt khách vừa
+    trả lời ĐÚNG từng bị escalate oan với `low_retrieval_score` (AGENT-02.1)."""
     intent = state.get("intent")
-    result = await retrieve_knowledge(state.get("input", ""), intent=intent)
+    text = state.get("input", "")
+    resumed = resume_order_code(text, state.get("prior_status"), state.get("prior_intent")) is not None
+    query = (_original_question(state.get("history")) or text) if resumed else text
+
+    # Số đo DƯỚI cấp node (PERF-01.2): duration_ms của node gộp embed + Qdrant + tra đơn làm một con số.
+    started = time.perf_counter()
+    result = await retrieve_knowledge(query, intent=intent)
+    retrieval_ms = _elapsed_ms(started)
+    started = time.perf_counter()
     order = await resolve_order(
         intent, state.get("entities"), state.get("customer_id"), state.get("history")
     )
-    flags = result["uncertainty_flags"] + order["uncertainty_flags"]
+    order_ms = _elapsed_ms(started)
+
+    retrieval_flags = result["uncertainty_flags"]
+    waived: list[str] = []
+    if order["order_context"]:
+        waived = [f for f in retrieval_flags if f in _RETRIEVAL_GROUNDING_FLAGS]
+        retrieval_flags = [f for f in retrieval_flags if f not in _RETRIEVAL_GROUNDING_FLAGS]
+    flags = retrieval_flags + order["uncertainty_flags"]
     return {
         "status": ConversationStatus.RETRIEVING,
         "rag_contexts": result["rag_contexts"],
@@ -214,6 +256,11 @@ async def knowledge_node(state: ConversationState) -> dict[str, Any]:
                     # Tra đơn có chạy không / có ra đơn không — để audit truy được vì sao lượt bị escalate.
                     "order_found": bool(order["order_context"]),
                     "order_not_found": order["order_not_found"],
+                    # Resume truy hồi bằng câu hỏi gốc; cờ grounding được MIỄN vì đã có đơn — audit vẫn thấy
+                    # retrieval yếu (không chặn), thay vì cờ biến mất không dấu vết.
+                    "resumed": resumed,
+                    "waived_flags": waived,
+                    "timings": {"retrieval_ms": retrieval_ms, "order_ms": order_ms},
                 },
             }
         ],

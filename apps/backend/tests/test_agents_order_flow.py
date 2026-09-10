@@ -79,6 +79,7 @@ class _CapturingLLM:
 def _offline(monkeypatch: pytest.MonkeyPatch) -> _CapturingLLM:
     # `settings` là object DÙNG CHUNG → retrieve_knowledge + generate_reply đều không degrade vì thiếu key.
     monkeypatch.setattr(kn.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(kn.settings, "retrieval_threshold", 0.40)  # ngưỡng đo thật, không phụ thuộc .env máy
     monkeypatch.setattr(resp, "is_within_support_hours", lambda now: True)  # handoff notice tất định
     llm = _CapturingLLM()
     monkeypatch.setattr(resp, "get_openai", lambda: llm)
@@ -114,3 +115,34 @@ async def test_refund_other_customers_code_gets_fixed_not_found(
     assert final["order_context"] is None
     assert final["result"]["reply"] == resp.ORDER_NOT_FOUND_TEMPLATE.format(code="794798")
     assert _offline.calls == []  # câu cố định, KHÔNG qua LLM
+
+
+# ── AGENT-02.1: lượt resume mã TRƠ được trả lời, không bị escalate oan ────────
+@pytest.mark.parametrize(
+    ("prior_intent", "question"),
+    [("order_status", "đơn của mình tới đâu rồi ạ"), ("refund", "mình muốn hoàn tiền đơn hàng")],
+)
+async def test_bare_code_resume_turn_is_answered_not_escalated(
+    monkeypatch: pytest.MonkeyPatch, _offline: _CapturingLLM, prior_intent: str, question: str
+) -> None:
+    # Tái hiện live: bot hỏi mã → khách đáp "865277" → đơn TRA ĐƯỢC nhưng cosine của con số là 0.253 < 0.40
+    # → trước đây human_handoff với blocking_flags=['low_retrieval_score'].
+    queries = _search_returns(monkeypatch, 0.253)
+    _scoped_db(monkeypatch, {"865277": _CUSTOMER})
+    history = [
+        {"sender": "customer", "content": question},
+        {"sender": "ai", "content": resp.CLARIFY_QUESTION["order_id"]},
+    ]
+
+    final = await graph_mod.run_pipeline(
+        input_text="865277", history=history, customer_id=_CUSTOMER,
+        prior_status="AWAITING_CUSTOMER", prior_intent=prior_intent,
+    )
+
+    assert final["intent"] == prior_intent  # Agent 1 khôi phục intent gốc (tất định, không LLM)
+    assert queries == [question]  # truy hồi bằng CÂU HỎI GỐC, không bằng con số
+    decision = next(t for t in final["trace"] if t["node"] == "decision")
+    assert decision["detail"]["blocking_flags"] == []
+    assert final["action"] == "auto_reply"
+    assert final["status"] == "REPLIED"
+    assert "Mã đơn: 865277" in _offline.calls[0][1]["content"]  # dữ liệu đơn tới được Agent 4

@@ -305,3 +305,114 @@ async def test_knowledge_node_shipping_amount_question_answers_policy(monkeypatc
     assert out["order_not_found"] is None
     assert out["order_context"] is None
     assert out["uncertainty_flags"] == []
+
+
+# ── Lượt resume mã trơ + miễn cờ grounding khi đã có đơn (AGENT-02.1) + số đo con (PERF-01.2) ───────────
+_RESUME_HISTORY = [
+    {"sender": "customer", "content": "đơn của mình tới đâu rồi ạ"},
+    {"sender": "ai", "content": "Dạ anh/chị cho em xin mã đơn hàng để em kiểm tra giúp ạ."},
+]
+
+
+def _search(monkeypatch: pytest.MonkeyPatch, score: float | None) -> list[str]:
+    """Qdrant giả: `score=None` → ném lỗi (hạ tầng). Trả list query đã truy hồi."""
+    queries: list[str] = []
+
+    async def search(query: str, top_k: int = 4, intent: str | None = None) -> list[dict]:
+        queries.append(query)
+        if score is None:
+            raise RuntimeError("qdrant down")
+        return [{"text": "chính sách", "source": "kb.md", "score": score}]
+
+    monkeypatch.setattr(kn.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(kn.settings, "retrieval_threshold", 0.40)
+    monkeypatch.setattr(kn.rag_service, "search", search)
+    return queries
+
+
+def _order_state(text: str, code: str, **extra: object) -> dict:
+    return {"input": text, "intent": "order_status", "entities": {"order_id": code},
+            "customer_id": _CUSTOMER, **extra}
+
+
+def test_original_question_skips_bare_codes() -> None:
+    history = [
+        *_RESUME_HISTORY,
+        {"sender": "customer", "content": "716448"},  # lần đáp mã trước (gõ nhầm) — không phải câu hỏi gốc
+        {"sender": "ai", "content": "Dạ em không tìm thấy đơn 716448 trong tài khoản của anh/chị ạ."},
+    ]
+    assert kn._original_question(history) == "đơn của mình tới đâu rồi ạ"
+    assert kn._original_question([]) is None
+
+
+async def test_resume_turn_retrieves_with_original_question(monkeypatch: pytest.MonkeyPatch) -> None:
+    queries = _search(monkeypatch, 0.8)
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({"716449": _CUSTOMER}))
+    out = await kn.knowledge_node(
+        _order_state("716449", "716449", history=_RESUME_HISTORY,
+                     prior_status="AWAITING_CUSTOMER", prior_intent="order_status")
+    )
+    assert queries == ["đơn của mình tới đâu rồi ạ"]  # KHÔNG truy hồi bằng con số
+    assert out["trace"][0]["detail"]["resumed"] is True
+
+
+async def test_resume_turn_without_history_falls_back_to_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    queries = _search(monkeypatch, 0.8)
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({"716449": _CUSTOMER}))
+    await kn.knowledge_node(
+        _order_state("716449", "716449", history=[], prior_status="AWAITING_CUSTOMER", prior_intent="order_status")
+    )
+    assert queries == ["716449"]
+
+
+async def test_non_resume_turn_retrieves_with_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    queries = _search(monkeypatch, 0.8)
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({"716449": _CUSTOMER}))
+    out = await kn.knowledge_node(
+        _order_state("đơn 716449 tới đâu", "716449", history=_RESUME_HISTORY,
+                     prior_status="REPLIED", prior_intent="order_status")
+    )
+    assert queries == ["đơn 716449 tới đâu"]
+    assert out["trace"][0]["detail"]["resumed"] is False
+
+
+@pytest.mark.parametrize(("score", "waived"), [(0.2, "low_retrieval_score"), (None, "search_error")])
+async def test_found_order_waives_retrieval_grounding_flags(
+    monkeypatch: pytest.MonkeyPatch, score: float | None, waived: str
+) -> None:
+    _search(monkeypatch, score)
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({"716449": _CUSTOMER}))
+    out = await kn.knowledge_node(_order_state("đơn 716449 tới đâu", "716449"))
+    assert out["order_context"]["Mã đơn"] == "716449"
+    assert out["uncertainty_flags"] == []  # dữ liệu đơn LÀ grounding → không chặn
+    assert out["trace"][0]["detail"]["waived_flags"] == [waived]  # nhưng audit vẫn thấy
+
+
+async def test_grounding_flags_still_block_without_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Miễn cờ CHỈ khi đơn tra ĐƯỢC: không thấy đơn → cờ grounding giữ nguyên.
+    _search(monkeypatch, 0.2)
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({}))
+    out = await kn.knowledge_node(_order_state("đơn 716449 tới đâu", "716449"))
+    assert out["order_not_found"] == "716449"
+    assert out["uncertainty_flags"] == ["low_retrieval_score"]
+    assert out["trace"][0]["detail"]["waived_flags"] == []
+
+
+async def test_order_lookup_error_keeps_every_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    _search(monkeypatch, 0.2)
+
+    async def boom(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(kn.order_service, "lookup", boom)
+    out = await kn.knowledge_node(_order_state("đơn 716449 tới đâu", "716449"))
+    assert out["uncertainty_flags"] == ["low_retrieval_score", "order_unresolved"]
+
+
+async def test_knowledge_node_records_sub_timings(monkeypatch: pytest.MonkeyPatch) -> None:
+    _search(monkeypatch, 0.8)
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({"716449": _CUSTOMER}))
+    out = await kn.knowledge_node(_order_state("đơn 716449 tới đâu", "716449"))
+    timings = out["trace"][0]["detail"]["timings"]
+    assert set(timings) == {"retrieval_ms", "order_ms"}
+    assert all(isinstance(v, int) and v >= 0 for v in timings.values())
