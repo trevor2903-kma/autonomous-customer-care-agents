@@ -14,6 +14,7 @@ from app.agents import graph as graph_mod
 from app.agents.nodes import intent as intent_mod
 from app.agents.nodes import knowledge as kn
 from app.agents.nodes import response as resp
+from app.services.escalation_service import build_escalation_card
 
 _CUSTOMER = "11111111-1111-1111-1111-111111111111"
 _OTHER = "22222222-2222-2222-2222-222222222222"
@@ -146,3 +147,84 @@ async def test_bare_code_resume_turn_is_answered_not_escalated(
     assert final["action"] == "auto_reply"
     assert final["status"] == "REPLIED"
     assert "Mã đơn: 865277" in _offline.calls[0][1]["content"]  # dữ liệu đơn tới được Agent 4
+
+
+# ── AGENT-02.3: "không tìm thấy" chờ khách → mã trơ resume; mã sai lần hai → chuyển người ──
+async def _turn(text: str, history: list[dict[str, str]], prior: dict[str, Any] | None) -> dict[str, Any]:
+    """Một lượt như WS chạy: `history` = các lượt TRƯỚC; prior_status/prior_intent = status lượt trước + intent
+    đã lưu (WS chỉ lưu `current_intent` khi vào AWAITING_CUSTOMER). Xong thì nối lượt này vào `history`."""
+    prior = prior or {}
+    awaiting = prior.get("status") == "AWAITING_CUSTOMER"
+    final = await graph_mod.run_pipeline(
+        input_text=text, history=list(history), customer_id=_CUSTOMER,
+        prior_status=prior.get("status"), prior_intent=prior.get("intent") if awaiting else None,
+    )
+    history += [{"sender": "customer", "content": text}, {"sender": "ai", "content": final["result"]["reply"]}]
+    return final
+
+
+async def _not_found_first_turn(monkeypatch: pytest.MonkeyPatch, history: list[dict[str, str]]) -> dict[str, Any]:
+    real_classify = intent_mod.classify_intent
+    _classify_as(monkeypatch, "order_status", {"order_id": "716448"})
+    _search_returns(monkeypatch, 0.8)
+    _scoped_db(monkeypatch, {"716449": _CUSTOMER})
+    t1 = await _turn("đơn 716448 tới đâu rồi", history, None)
+    assert t1["result"]["reply"] == resp.ORDER_NOT_FOUND_TEMPLATE.format(code="716448")
+    assert t1["status"] == "AWAITING_CUSTOMER"  # trước đây REPLIED → mã trơ lượt sau không resume được
+    monkeypatch.setattr(intent_mod, "classify_intent", real_classify)  # lượt sau: Agent 1 thật (short-circuit)
+    return t1
+
+
+async def test_not_found_then_bare_code_resumes_and_answers(monkeypatch: pytest.MonkeyPatch) -> None:
+    history: list[dict[str, str]] = []
+    t1 = await _not_found_first_turn(monkeypatch, history)
+    t2 = await _turn("716449", history, t1)
+    assert t2["intent"] == "order_status" and t2["entities"]["order_id"] == "716449"
+    assert t2["action"] == "auto_reply" and t2["status"] == "REPLIED"
+    assert t2["order_context"]["Mã đơn"] == "716449"
+
+
+async def test_not_found_then_second_wrong_bare_code_escalates(monkeypatch: pytest.MonkeyPatch) -> None:
+    history: list[dict[str, str]] = []
+    t1 = await _not_found_first_turn(monkeypatch, history)
+    t2 = await _turn("716447", history, t1)
+    assert t2["intent"] == "order_status"  # resume tất định vẫn giữ intent gốc
+    assert t2["status"] == "IN_HUMAN_QUEUE"
+    assert "order_unresolved" in t2["escalation_reason"]
+    assert t2["result"]["reply"] == resp.HANDOFF_NOTICE
+
+
+async def test_clarify_then_two_wrong_bare_codes_escalates(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Hỏi mã (clarify) → mã trơ sai → "không tìm thấy" (chờ tiếp) → mã trơ sai lần hai → chuyển người, KHÔNG lặp.
+    real_classify = intent_mod.classify_intent
+    _classify_as(monkeypatch, "order_status", {})
+    _search_returns(monkeypatch, 0.8)
+    _scoped_db(monkeypatch, {"716449": _CUSTOMER})
+    history: list[dict[str, str]] = []
+    t1 = await _turn("đơn của mình tới đâu rồi ạ", history, None)
+    assert t1["result"]["branch"] == "clarify" and t1["status"] == "AWAITING_CUSTOMER"
+
+    monkeypatch.setattr(intent_mod, "classify_intent", real_classify)
+    t2 = await _turn("716448", history, t1)
+    assert t2["result"]["reply"] == resp.ORDER_NOT_FOUND_TEMPLATE.format(code="716448")
+    assert t2["status"] == "AWAITING_CUSTOMER"
+    t3 = await _turn("716447", history, t2)
+    assert t3["status"] == "IN_HUMAN_QUEUE"
+    assert "order_unresolved" in t3["escalation_reason"]
+
+
+# ── AGENT-03.1: lượt Agent 4 phải fallback → chuyển người, card mang đúng lý do ──
+async def test_fallback_turn_is_handed_to_a_human_with_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    _classify_as(monkeypatch, "product_price", {})
+    _search_returns(monkeypatch, 0.8)
+    monkeypatch.setattr(resp, "get_openai", lambda: _CapturingLLM(reply="   "))  # LLM trả rỗng → phanh fallback
+    question = "áo thun basic giá bao nhiêu"
+
+    final = await graph_mod.run_pipeline(input_text=question, customer_id=_CUSTOMER)
+
+    assert final["action"] == "auto_reply"  # Agent 3 cho trả lời…
+    assert final["status"] == "IN_HUMAN_QUEUE"  # …nhưng Agent 4 không có câu grounded → chuyển người
+    assert final["result"]["reply"] == resp.HANDOFF_NOTICE
+    assert final["require_human_handoff"] is True
+    assert final["escalation_reason"] == "blocking_flags=['hallucination_risk']"
+    assert build_escalation_card(final, question)["escalation_reason"] == "blocking_flags=['hallucination_risk']"

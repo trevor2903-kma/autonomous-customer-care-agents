@@ -25,7 +25,8 @@ from ..state import ConversationState
 #     là câu trả lời grounded (`order_not_found` → Agent 4 báo để khách kiểm tra lại mã).
 #   - `human_requested`: khách XIN GẶP NGƯỜI rõ ràng (luật trên lời khách, Agent 1) → chuyển thẳng, đừng bắt
 #     khách nói đi nói lại với bot.
-#   - `hallucination_risk` KHÔNG thuộc: Agent 4 phát SAU decision (phanh dự phòng cuối, không định tuyến ở đây).
+#   - `hallucination_risk` KHÔNG thuộc: Agent 4 phát SAU decision (phanh dự phòng cuối, không định tuyến ở đây)
+#     — chính Agent 4 (sole-egress) chuyển người khi phát cờ này (FR-PIPE-5).
 BLOCKING_FLAGS: frozenset[str] = frozenset(
     {
         "multi_intent",

@@ -106,14 +106,18 @@ async def _failed_lookups_before(
     """Đếm số mã đơn KHÁC NHAU khách đã đưa TRONG CÙNG CA mà tra không ra (dựa trên `history`).
 
     Suy lại từ LỜI KHÁCH + sự thật DB, KHÔNG dò chữ trong câu trả lời của bot (đúng cái bug handoff cũ):
-    lấy `order_id` bằng chính regex của Agent 1 rồi tra lại scoped. `history` chỉ chứa các lượt TRƯỚC
-    (WS nạp history trước khi lưu tin hiện tại) nên không đếm nhầm lượt đang xử lý.
+    lấy `order_id` bằng chính regex của Agent 1 — và cả mã TRƠ (câu khách đáp lượt hỏi mã) — rồi tra lại
+    scoped. `history` chỉ chứa các lượt TRƯỚC (WS nạp history trước khi lưu tin hiện tại) nên không đếm nhầm
+    lượt đang xử lý.
     """
     codes = {
         code
         for m in history or []
         if m.get("sender") == "customer"
-        for code in [extract_entities_rule(str(m.get("content") or "")).get("order_id")]
+        for content in [str(m.get("content") or "")]
+        # Mã TRƠ cũng tính: không thì "không tìm thấy" → AWAITING_CUSTOMER → mã trơ sai → "không tìm thấy"… lặp
+        # mãi, không bao giờ tới order_unresolved (AGENT-02.3).
+        for code in [extract_entities_rule(content).get("order_id") or bare_order_code(content)]
         if code
     }
     if not codes:
