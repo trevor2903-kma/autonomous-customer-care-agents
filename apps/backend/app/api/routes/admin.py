@@ -1,16 +1,22 @@
-"""Routes admin (HITL 08b) — hàng đợi escalation + xem hội thoại cho màn admin.
+"""Routes admin (HITL 08b/08c/08a) — hàng đợi escalation, xem hội thoại, hành động HITL cho màn admin.
 
-Admin identity tối giản (demo) — auth/RBAC thật = slice 11. Chỉ ĐỌC ở phase này; takeover/approve = 08c/08a.
+Mọi hành động đổi trạng thái (takeover/resolve/approve/reject) theo BẢNG CHUYỂN `transition_conflict` (contract
+§5, PRD §15) rồi ghi bằng CAS `conversation_service.transition_status` trên chính status vừa đọc (audit v2, FE-03 /
+GRAPH-02): chuyển không hợp lệ, ca do admin KHÁC giữ, hoặc status đổi dưới chân → 409 (FE tải lại ca). Mỗi hành
+động ghi đúng MỘT dòng `audit_log` (node "admin") CÙNG transaction với hành động (DATA-01.1); realtime (hub) chỉ
+phát SAU commit.
 """
 
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...core.database import get_session
+from ...core.logging import get_logger
 from ...models import User
 from ...models.enums import ConversationStatus, MessageSender
 from ...schemas.admin import (
@@ -20,15 +26,100 @@ from ...schemas.admin import (
     EscalationOut,
 )
 from ...schemas.gate import GateConfigOut, GateConfigUpdate, GateIntentRuleSchema
-from ...services import conversation_service, escalation_service, gate_service
+from ...services import audit_service, conversation_service, escalation_service, gate_service
 from ..deps import require_admin
 from ..ws.hub import hub
 
 # Mọi route /api/admin/* yêu cầu admin đã đăng nhập (slice 11): thiếu token → 401, sai role → 403.
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+log = get_logger("admin")
 
 # Hàng đợi = ca đang chờ người: escalate (IN_HUMAN_QUEUE) + chờ duyệt nháp (PENDING_APPROVAL, slice 08a).
 _QUEUE_STATUSES = [ConversationStatus.IN_HUMAN_QUEUE, ConversationStatus.PENDING_APPROVAL]
+
+# Ca "còn mở" — takeover/resolve chỉ đi từ đây (contract §5).
+_OPEN_STATUSES = frozenset(ConversationStatus) - {ConversationStatus.RESOLVED, ConversationStatus.CLOSED}
+
+# Lý do 409 (ngắn, tiếng Việt — FE hiện thẳng rồi tải lại ca).
+CONFLICT_NOT_PENDING = "Nháp không còn chờ duyệt — ca đã được xử lý hoặc đã đổi trạng thái."
+CONFLICT_HELD = "Ca đang do nhân viên khác xử lý."
+CONFLICT_CLOSED = "Ca đã đóng."
+CONFLICT_CHANGED = "Trạng thái ca vừa thay đổi — hãy tải lại."
+
+
+def transition_conflict(
+    action: str, status: str | None, holder: uuid.UUID | None, admin_id: uuid.UUID
+) -> str | None:
+    """Bảng chuyển trạng thái của hành động admin. None = hợp lệ; ngược lại = lý do 409. Hàm THUẦN.
+
+    - approve: PENDING_APPROVAL → REPLIED · reject: PENDING_APPROVAL → IN_HUMAN_QUEUE.
+    - takeover: ca còn mở → HUMAN_HANDLING · resolve: ca còn mở → RESOLVED — TRỪ ca HUMAN_HANDLING do admin KHÁC
+      giữ (chính admin đó tiếp quản lại = thành công, idempotent).
+    """
+    if action in ("approve", "reject"):
+        return None if status == ConversationStatus.PENDING_APPROVAL else CONFLICT_NOT_PENDING
+    if status not in _OPEN_STATUSES:
+        return CONFLICT_CLOSED
+    if status == ConversationStatus.HUMAN_HANDLING and holder is not None and holder != admin_id:
+        return CONFLICT_HELD
+    return None
+
+
+async def _state_or_404(
+    session: AsyncSession, conversation_id: uuid.UUID
+) -> tuple[str, uuid.UUID | None]:
+    state = await conversation_service.get_status_and_admin(session, conversation_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    return state
+
+
+async def _transition(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    admin_id: uuid.UUID,
+    *,
+    action: str,
+    to: str,
+    state: tuple[str, uuid.UUID | None],
+    assign: bool = False,
+    audit_extra: dict[str, Any] | None = None,
+) -> None:
+    """Bảng chuyển + CAS trên status VỪA ĐỌC + dòng audit, trong transaction của caller (caller commit).
+
+    Không hợp lệ / thua CAS (status đổi giữa lúc đọc và ghi) → 409; ca biến mất giữa chừng → 404. Detail audit chỉ
+    có id + status (+ cờ) — KHÔNG chép nội dung tin/nháp.
+    """
+    from_status, holder = state
+    conflict = transition_conflict(action, from_status, holder, admin_id)
+    if conflict is None:
+        ok = await conversation_service.transition_status(
+            session,
+            conversation_id,
+            to=to,
+            allowed_from=(from_status,),
+            assigned_admin_id=admin_id if assign else None,
+            not_held_by_other_than=admin_id,
+        )
+        if ok:
+            await audit_service.write_audit(
+                session,
+                conversation_id=conversation_id,
+                node=audit_service.ADMIN_NODE,
+                action=action,
+                detail={
+                    "admin_id": str(admin_id),
+                    "from_status": str(from_status),
+                    "to_status": str(to),
+                    **(audit_extra or {}),
+                },
+            )
+            return
+        await session.rollback()
+        if await conversation_service.get_status_and_admin(session, conversation_id) is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        conflict = CONFLICT_CHANGED
+    raise HTTPException(status_code=409, detail=conflict)
 
 
 @router.get("/escalations", response_model=list[EscalationOut])
@@ -104,23 +195,42 @@ async def takeover_conversation(
     """Tiếp quản TƯỜNG MINH (fix 08c): chỉ đổi status khi admin BẤM NÚT — gán admin ĐÃ ĐĂNG NHẬP.
 
     Mở hội thoại để xem KHÔNG còn đổi status — ca escalate vẫn nằm trong hàng đợi cho tới khi có người nhận.
+    Status + người giữ ghi trong CÙNG câu UPDATE có điều kiện: ca đã đóng / đang do admin KHÁC giữ → 409 (không
+    cướp ca âm thầm — GRAPH-02.4); chính admin đó bấm lại → 200.
     """
-    conv = await conversation_service.assign_admin(
-        session, conversation_id, admin.id, status=ConversationStatus.HUMAN_HANDLING
+    state = await _state_or_404(session, conversation_id)
+    await _transition(
+        session,
+        conversation_id,
+        admin.id,
+        action="takeover",
+        to=ConversationStatus.HUMAN_HANDLING,
+        state=state,
+        assign=True,
     )
-    if conv is None:
-        raise HTTPException(status_code=404, detail="conversation not found")
+    await session.commit()
+    if state != (ConversationStatus.HUMAN_HANDLING, admin.id):
+        await hub.notify_status(
+            conversation_id, status=ConversationStatus.HUMAN_HANDLING, assigned_admin_id=admin.id
+        )
     return await conversation_service.get_conversation(session, conversation_id)
 
 
 @router.post("/conversations/{conversation_id}/resolve", response_model=AdminConversationOut)
 async def resolve_conversation(
-    conversation_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    conversation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
 ) -> AdminConversationOut:
-    """Đóng ca sau khi admin xử lý xong → status RESOLVED (08c)."""
-    conv = await conversation_service.set_status(session, conversation_id, ConversationStatus.RESOLVED)
-    if conv is None:
-        raise HTTPException(status_code=404, detail="conversation not found")
+    """Đóng ca sau khi admin xử lý xong → status RESOLVED (08c). Ca đã đóng / do admin KHÁC giữ → 409.
+
+    Phát frame `status` sau commit → khách rời trạng thái "đang chờ"/"đang kiểm tra" ngay (UX-02.3)."""
+    state = await _state_or_404(session, conversation_id)
+    await _transition(
+        session, conversation_id, admin.id, action="resolve", to=ConversationStatus.RESOLVED, state=state
+    )
+    await session.commit()
+    await hub.notify_status(conversation_id, status=ConversationStatus.RESOLVED, assigned_admin_id=state[1])
     return await conversation_service.get_conversation(session, conversation_id)
 
 
@@ -129,34 +239,56 @@ async def approve_draft(
     conversation_id: uuid.UUID,
     payload: ApproveRequest,
     session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
 ) -> AdminConversationOut:
     """Duyệt nháp (08a): gửi nháp (đã duyệt/sửa) tới khách qua hub + lưu (sender=AI) + status REPLIED.
-    Bỏ trống `content` → dùng `suggested_reply` trong EscalationCard."""
+    Bỏ trống `content` → dùng `suggested_reply` trong EscalationCard.
+
+    MỘT transaction: CAS PENDING_APPROVAL → REPLIED + chèn tin AI + dòng audit; commit rồi MỚI phát (FE-03.1). Ca
+    không còn PENDING_APPROVAL (đã duyệt / đã từ chối / đã đóng / đang có người tiếp quản) → 409: không lưu, không
+    gửi — hết gửi trùng, hết gửi nháp đã bị từ chối, hết hồi sinh ca đã đóng.
+    """
     conv = await conversation_service.get_conversation(session, conversation_id)
     if conv is None:
         raise HTTPException(status_code=404, detail="conversation not found")
-    content = (payload.content or "").strip() or (conv.escalation_card or {}).get("suggested_reply") or ""
+    draft = (conv.escalation_card or {}).get("suggested_reply") or ""
+    content = (payload.content or "").strip() or draft
     if not content:
         raise HTTPException(status_code=400, detail="no draft to send")
-    await conversation_service.add_message(
-        session, conversation_id, content=content, sender=MessageSender.AI
+    holder = conv.assigned_admin_id
+    await _transition(
+        session,
+        conversation_id,
+        admin.id,
+        action="approve",
+        to=ConversationStatus.REPLIED,
+        state=(conv.status, holder),
+        audit_extra={"edited": content.strip() != draft.strip()},
     )
-    await conversation_service.set_status(session, conversation_id, ConversationStatus.REPLIED)
+    message = await conversation_service.insert_message(
+        session, conversation_id, sender=MessageSender.AI, content=content
+    )
+    await session.commit()
     # Nháp đã duyệt → khách nhận realtime (hub). Egress này do ADMIN kích hoạt (duyệt) — vẫn là câu của shop/AI.
-    await hub.publish(str(conversation_id), {"type": "message", "from": "ai", "content": content})
+    await hub.notify_message(conversation_id, sender=MessageSender.AI, content=content, message_id=message.id)
+    await hub.notify_status(conversation_id, status=ConversationStatus.REPLIED, assigned_admin_id=holder)
     return await conversation_service.get_conversation(session, conversation_id)
 
 
 @router.post("/conversations/{conversation_id}/reject", response_model=AdminConversationOut)
 async def reject_draft(
-    conversation_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    conversation_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
 ) -> AdminConversationOut:
-    """Từ chối nháp (08a) → IN_HUMAN_QUEUE (admin tự tiếp quản xử lý)."""
-    conv = await conversation_service.set_status(
-        session, conversation_id, ConversationStatus.IN_HUMAN_QUEUE
+    """Từ chối nháp (08a) → IN_HUMAN_QUEUE (admin tự tiếp quản xử lý). Chỉ từ PENDING_APPROVAL — không kéo ngược
+    ca đang có người xử lý về hàng đợi (FE-03.3) → 409."""
+    state = await _state_or_404(session, conversation_id)
+    await _transition(
+        session, conversation_id, admin.id, action="reject", to=ConversationStatus.IN_HUMAN_QUEUE, state=state
     )
-    if conv is None:
-        raise HTTPException(status_code=404, detail="conversation not found")
+    await session.commit()
+    await hub.notify_status(conversation_id, status=ConversationStatus.IN_HUMAN_QUEUE, assigned_admin_id=state[1])
     return await conversation_service.get_conversation(session, conversation_id)
 
 
@@ -183,8 +315,16 @@ async def get_gate_config() -> GateConfigOut:
 
 
 @router.put("/gate-config", response_model=GateConfigOut)
-async def update_gate_config(payload: GateConfigUpdate) -> GateConfigOut:
-    """Cập nhật toggle hệ thống + `send_directly` per-intent."""
+async def update_gate_config(
+    payload: GateConfigUpdate,
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
+) -> GateConfigOut:
+    """Cập nhật toggle hệ thống + `send_directly` per-intent. Ghi MỘT dòng audit (node "admin", `gate_update`).
+
+    `gate_service.update_gate_config` tự mở + commit session riêng nên dòng audit đi NGAY SAU trong session của
+    request (không chung transaction được). Ghi audit lỗi chỉ log — cấu hình đã lưu, không trả lỗi cho admin.
+    """
     snap = await gate_service.update_gate_config(
         auto_reply_enabled=payload.auto_reply_enabled,
         auto_resolve_enabled=payload.auto_resolve_enabled,
@@ -192,4 +332,14 @@ async def update_gate_config(payload: GateConfigUpdate) -> GateConfigOut:
         auto_resolve_grace_minutes=payload.auto_resolve_grace_minutes,
         rules=[(r.intent, r.send_directly) for r in payload.rules] if payload.rules else None,
     )
+    try:
+        await audit_service.write_audit(
+            session,
+            node=audit_service.ADMIN_NODE,
+            action="gate_update",
+            detail={"admin_id": str(admin.id), "changes": payload.model_dump(exclude_none=True)},
+        )
+        await session.commit()
+    except Exception as exc:  # noqa: BLE001 — audit hỏng KHÔNG được làm hỏng cấu hình vừa lưu.
+        log.warning("audit gate_update failed (bỏ qua): %s", exc)
     return _gate_out(snap)

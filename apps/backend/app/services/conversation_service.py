@@ -213,12 +213,6 @@ async def get_status_and_admin(
     return (row.status, row.assigned_admin_id) if row is not None else None
 
 
-async def get_status(session: AsyncSession, conversation_id: uuid.UUID) -> str | None:
-    """`conversation.status` — nhẹ (KHÔNG load messages) cho status-gate WS (08c). Session NGẮN."""
-    conv = await session.get(Conversation, conversation_id)
-    return conv.status if conv else None
-
-
 async def get_status_and_intent(
     session: AsyncSession, conversation_id: uuid.UUID
 ) -> tuple[str | None, str | None]:
@@ -226,19 +220,6 @@ async def get_status_and_intent(
     status cho status-gate + loop-guard, intent gốc để khôi phục khi khách gõ mã đơn trơ."""
     conv = await session.get(Conversation, conversation_id)
     return (conv.status, conv.current_intent) if conv else (None, None)
-
-
-async def assign_admin(
-    session: AsyncSession, conversation_id: uuid.UUID, admin_id: uuid.UUID, *, status: str
-) -> Conversation | None:
-    """Takeover (08c): gán admin + đổi status trong MỘT ghi (session NGẮN). Nhẹ — KHÔNG load messages."""
-    conv = await session.get(Conversation, conversation_id)
-    if conv is None:
-        return None
-    conv.assigned_admin_id = admin_id
-    conv.status = status
-    await session.commit()
-    return conv
 
 
 async def get_conversation(
