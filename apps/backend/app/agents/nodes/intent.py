@@ -26,7 +26,7 @@ from ...core.logging import get_logger
 from ...core.sanitize import as_data_block
 from ...models.enums import INTENT_CATEGORY, ConversationStatus, Intent
 from ..state import ConversationState
-from ._entities import extract_entities_rule
+from ._entities import appears_only_as_amount, extract_entities_rule
 from ._history import format_history
 from .decision import CLARIFY_MISSING_ENTITY
 from .taxonomy import render_taxonomy
@@ -186,6 +186,12 @@ async def _classify_llm(
         else {}
     )
     entities = {**rule, **llm_entities}  # LLM đè trùng key; regex bù key thiếu
+    # CÙNG luật số tiền với regex (AGENT-01.2): LLM cũng trả "250000" từ "đơn giá 250000" → bỏ, rơi về mã regex
+    # (nếu có). Mã KHÔNG có trong câu hiện tại thì giữ — Agent 1 có thể giải mã đơn từ lịch sử.
+    if appears_only_as_amount(text, entities.get("order_id")):
+        del entities["order_id"]
+        if rule.get("order_id"):
+            entities["order_id"] = rule["order_id"]
 
     try:
         confidence = max(0.0, min(1.0, float(data.get("confidence"))))
