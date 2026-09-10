@@ -79,26 +79,6 @@ async def apply_escalation(
     )
 
 
-async def persist_escalation(
-    session: AsyncSession,
-    conversation_id: uuid.UUID,
-    *,
-    card: dict[str, Any],
-    priority: str | None,
-    severity: str | None,
-    reason: str | None,
-) -> None:
-    """Lưu card + priority/severity/reason lên conversation (session NGẮN — Neon free). Không load messages."""
-    conv = await session.get(Conversation, conversation_id)
-    if conv is None:
-        return
-    conv.escalation_card = card
-    conv.priority = priority
-    conv.severity = severity
-    conv.escalation_reason = reason
-    await session.commit()
-
-
 async def list_escalations(
     session: AsyncSession, statuses: list[str], limit: int = 50
 ) -> list[Conversation]:

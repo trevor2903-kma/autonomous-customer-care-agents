@@ -44,24 +44,6 @@ def _append_message(
     return msg
 
 
-async def add_message(
-    session: AsyncSession,
-    conversation_id: uuid.UUID,
-    *,
-    content: str,
-    sender: str = MessageSender.CUSTOMER,
-) -> Conversation | None:
-    conversation = await get_conversation(session, conversation_id)  # selectinload messages
-    if conversation is None:
-        return None
-    _append_message(conversation, sender=sender, content=content)
-    # Khách nhắn lại → thoát vòng auto-resolve (09c): xoá mốc đã-nhắc.
-    if sender == MessageSender.CUSTOMER:
-        conversation.auto_resolve_reminded_at = None
-    await session.commit()
-    return await get_conversation(session, conversation_id)
-
-
 async def send_auto_message(
     session: AsyncSession, conversation_id: uuid.UUID, *, content: str
 ) -> Conversation | None:
@@ -74,28 +56,6 @@ async def send_auto_message(
     _append_message(conversation, sender=MessageSender.AI, content=content, bump_activity=False)
     await session.commit()
     return await get_conversation(session, conversation_id)
-
-
-async def set_status(
-    session: AsyncSession,
-    conversation_id: uuid.UUID,
-    status: str,
-    *,
-    current_intent: str | None = None,
-) -> Conversation | None:
-    """Cập nhật `conversation.status` (theo final state của pipeline). Session NGẮN (Neon free).
-
-    `current_intent` (tuỳ chọn): ghi kèm intent của lượt — dùng khi vào `AWAITING_CUSTOMER` để lượt resume
-    khôi phục ĐÚNG intent gốc lúc khách chỉ gõ mã đơn trơ (follow-up 09b).
-    """
-    conversation = await get_conversation(session, conversation_id)
-    if conversation is None:
-        return None
-    conversation.status = status
-    if current_intent is not None:
-        conversation.current_intent = current_intent
-    await session.commit()
-    return conversation
 
 
 async def insert_message(
