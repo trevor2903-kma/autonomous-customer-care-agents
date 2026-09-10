@@ -286,7 +286,7 @@ export function DocumentsPanel() {
           reindex.mutate();
         }}
         title="Nạp lại tri thức từ repo"
-        message="Hành động này sẽ nạp lại toàn bộ dữ liệu từ thư mục knowledge/ trong repo. Tất cả tài liệu tạm thời sẽ mất và phải nạp lại thủ công. Bạn có chắc chắn muốn tiếp tục?"
+        message="Tri thức sẽ được dựng lại toàn bộ từ thư mục knowledge/ trong repo. Bot vẫn trả lời khách bằng bản hiện tại cho tới khi bản mới nạp xong — không gián đoạn phục vụ. Mọi tài liệu tải lên (tạm thời) sẽ bị gỡ và phải tải lại thủ công. Bạn có chắc chắn muốn tiếp tục?"
         confirmText="Đồng ý nạp lại"
         cancelText="Hủy"
         variant="warning"

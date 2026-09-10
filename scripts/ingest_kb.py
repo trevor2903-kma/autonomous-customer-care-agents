@@ -1,10 +1,12 @@
 """Nạp KB canonical (`apps/backend/knowledge/`) vào Qdrant — **Reset-and-reingest** (plan §1, P2).
 
-Repo là NGUỒN CHÂN LÝ; Qdrant là bản phái sinh → mỗi lần chạy là drop collection rồi nạp lại toàn bộ.
-Sửa file `.md` xong chạy lại là bot áp dụng bản mới. `facts.md` KHÔNG vào Qdrant (Agent 4 nạp riêng).
+Repo là NGUỒN CHÂN LÝ; Qdrant là bản phái sinh → mỗi lần chạy dựng một collection MỚI, nạp lại toàn bộ
+vào đó rồi mới đổi alias (blue/green — bot không gián đoạn). Sửa file `.md` xong chạy lại là bot áp dụng
+bản mới. `facts.md` KHÔNG vào Qdrant (Agent 4 nạp riêng).
 
 Ghi luôn sổ `knowledge_document` (Postgres) để console `/admin/knowledge` liệt kê đúng — cùng đường
-nạp với `POST /rag/reindex`.
+nạp với `POST /rag/reindex`. Khoá ghi của console chỉ có trong process server → đừng chạy script này
+song song với upload/xoá/reindex trên console.
 
 Chạy (cần .env gốc repo: QDRANT_URL/QDRANT_API_KEY + LLM_API_KEY + DATABASE_URL):
     cd apps/backend && uv run python ../../scripts/ingest_kb.py
@@ -54,8 +56,8 @@ async def main() -> int:
 
     print("-" * 87)
     print(
-        f"collection '{report['collection']}': {report['documents']} tài liệu -> {report['points']} point"
-        " (đã ghi sổ knowledge_document)"
+        f"collection '{report['collection']}' (alias -> '{report['physical_collection']}'): "
+        f"{report['documents']} tài liệu -> {report['points']} point (đã ghi sổ knowledge_document)"
     )
     missing = [d["source"] for d in report["per_document"] if not d["intent"]]
     if missing:
