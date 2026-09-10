@@ -2,99 +2,150 @@
 
 KHÔNG chạy pipeline ở đây (PRD §8 — pipeline là việc của graph). Lưu ý CLAUDE.md: phản hồi tới khách CHỈ phát
 từ Response Generator — service này KHÔNG tự sinh tin nhắn AI.
+
+Ghi status CHỈ qua `transition_status` (audit v2, GRAPH-02.2 / FE-03): UPDATE có điều kiện — compare-and-set cùng
+pattern `auto_resolve` — trả True khi đúng 1 dòng đổi. `transition_status` và `insert_message` KHÔNG commit: caller
+gộp nhiều ghi (status + tin + card + audit) vào MỘT transaction rồi tự commit.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from datetime import datetime, timezone
+from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, not_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql import Update
 
 from ..models.conversation import Conversation
 from ..models.enums import ConversationStatus, MessageSender
 from ..models.message import Message
 
 
-def _append_message(
-    conversation: Conversation,
+async def insert_message(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
     *,
     sender: str,
     content: str,
-    intent: str | None = None,
-    confidence: float | None = None,
+    client_msg_id: str | None = None,
     bump_activity: bool = True,
 ) -> Message:
-    # Append qua relationship: vừa set FK vừa cập nhật collection trong bộ nhớ (back_populates),
-    # nhờ vậy object trả về phản ánh đúng số tin nhắn ngay sau commit.
-    msg = Message(sender=sender, content=content, intent=intent, confidence=confidence)
-    conversation.messages.append(msg)
-    # Tin hệ thống auto-resolve (nhắc/đóng) KHÔNG được reset đồng hồ im-lặng của KHÁCH (bump_activity=False).
-    if bump_activity:
-        conversation.last_message_at = datetime.now(timezone.utc)
-    return msg
+    """Chèn 1 tin — INSERT nhẹ: KHÔNG nạp hội thoại/lịch sử, KHÔNG commit (caller commit, OPS-01.3 / GRAPH-02.1).
 
-
-async def add_message(
-    session: AsyncSession,
-    conversation_id: uuid.UUID,
-    *,
-    content: str,
-    sender: str = MessageSender.CUSTOMER,
-) -> Conversation | None:
-    conversation = await get_conversation(session, conversation_id)  # selectinload messages
-    if conversation is None:
-        return None
-    _append_message(conversation, sender=sender, content=content)
-    # Khách nhắn lại → thoát vòng auto-resolve (09c): xoá mốc đã-nhắc.
-    if sender == MessageSender.CUSTOMER:
-        conversation.auto_resolve_reminded_at = None
-    await session.commit()
-    return await get_conversation(session, conversation_id)
-
-
-async def send_auto_message(
-    session: AsyncSession, conversation_id: uuid.UUID, *, content: str
-) -> Conversation | None:
-    """Persist tin hệ thống auto-resolve (sender=ai) KHÔNG bump last_message_at (09c).
-
-    Đồng hồ im-lặng của khách phải giữ nguyên để grace/đóng đo đúng. Broadcast hub do call-site lo."""
-    conversation = await get_conversation(session, conversation_id)
-    if conversation is None:
-        return None
-    _append_message(conversation, sender=MessageSender.AI, content=content, bump_activity=False)
-    await session.commit()
-    return await get_conversation(session, conversation_id)
-
-
-async def set_status(
-    session: AsyncSession,
-    conversation_id: uuid.UUID,
-    status: str,
-    *,
-    current_intent: str | None = None,
-) -> Conversation | None:
-    """Cập nhật `conversation.status` (theo final state của pipeline). Session NGẮN (Neon free).
-
-    `current_intent` (tuỳ chọn): ghi kèm intent của lượt — dùng khi vào `AWAITING_CUSTOMER` để lượt resume
-    khôi phục ĐÚNG intent gốc lúc khách chỉ gõ mã đơn trơ (follow-up 09b).
+    `bump_activity`: tin thật (khách/AI/admin) đẩy `last_message_at`; tin hệ thống auto-resolve (nhắc/đóng) thì KHÔNG
+    — đồng hồ im-lặng của KHÁCH phải giữ nguyên để grace/đóng đo đúng (09c). Tin KHÁCH còn xoá mốc đã-nhắc (thoát
+    vòng auto-resolve). `client_msg_id` trùng trong cùng ca → IntegrityError ngay lúc flush (tin GỬI LẠI).
     """
-    conversation = await get_conversation(session, conversation_id)
-    if conversation is None:
-        return None
-    conversation.status = status
+    message = Message(
+        conversation_id=conversation_id, sender=sender, content=content, client_msg_id=client_msg_id
+    )
+    session.add(message)
+    await session.flush()  # lộ IntegrityError (trùng client_msg_id) TRƯỚC khi đụng tới hàng conversation
+    values: dict[str, Any] = {}
+    if bump_activity:
+        values["last_message_at"] = datetime.now(timezone.utc)
+    if sender == MessageSender.CUSTOMER:
+        values["auto_resolve_reminded_at"] = None
+    if values:
+        await session.execute(
+            update(Conversation)
+            .where(Conversation.id == conversation_id)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+    return message
+
+
+def transition_stmt(
+    conversation_id: uuid.UUID,
+    *,
+    to: str,
+    allowed_from: Iterable[str],
+    current_intent: str | None = None,
+    assigned_admin_id: uuid.UUID | None = None,
+    not_held_by_other_than: uuid.UUID | None = None,
+    expected_draft: str | None = None,
+) -> Update:
+    """Câu UPDATE compare-and-set của `transition_status` (tách riêng để test hình dạng SQL offline)."""
+    conditions = [Conversation.id == conversation_id, Conversation.status.in_(tuple(allowed_from))]
+    if expected_draft is not None:
+        # Nháp admin ĐÃ XEM phải còn là nháp hiện tại (FE-03.2): PENDING(D1) → REPLIED → PENDING(D2) vẫn qua điều
+        # kiện status (ABA) — so thêm nháp trên CHÍNH row đang ghi thì màn cũ không duyệt/từ chối nhầm D2.
+        conditions.append(Conversation.escalation_card["suggested_reply"].astext == expected_draft)
+    if not_held_by_other_than is not None:
+        # "Ca do admin KHÁC giữ": HUMAN_HANDLING + có người giữ + người đó không phải mình. HUMAN_HANDLING mà KHÔNG
+        # có người giữ (dữ liệu cũ) không tính là bị giữ — nếu không ca đó kẹt vĩnh viễn, không ai nhận/đóng được.
+        conditions.append(
+            not_(
+                and_(
+                    Conversation.status == ConversationStatus.HUMAN_HANDLING,
+                    Conversation.assigned_admin_id.is_not(None),
+                    Conversation.assigned_admin_id != not_held_by_other_than,
+                )
+            )
+        )
+    values: dict[str, Any] = {"status": to}
     if current_intent is not None:
-        conversation.current_intent = current_intent
-    await session.commit()
-    return conversation
+        values["current_intent"] = current_intent
+    if assigned_admin_id is not None:
+        values["assigned_admin_id"] = assigned_admin_id
+    return (
+        update(Conversation)
+        .where(*conditions)
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
 
 
-async def get_status(session: AsyncSession, conversation_id: uuid.UUID) -> str | None:
-    """`conversation.status` — nhẹ (KHÔNG load messages) cho status-gate WS (08c). Session NGẮN."""
-    conv = await session.get(Conversation, conversation_id)
-    return conv.status if conv else None
+async def transition_status(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    *,
+    to: str,
+    allowed_from: Iterable[str],
+    current_intent: str | None = None,
+    assigned_admin_id: uuid.UUID | None = None,
+    not_held_by_other_than: uuid.UUID | None = None,
+    expected_draft: str | None = None,
+) -> bool:
+    """Đổi status CÓ ĐIỀU KIỆN (compare-and-set): chỉ ghi khi status hiện tại ∈ `allowed_from` [và ca không do admin
+    KHÁC giữ]. True ⇔ đúng 1 dòng đổi; False = trạng thái đã đổi dưới chân (admin tiếp quản / đóng ca / từ chối…)
+    → caller KHÔNG được ghi tiếp gì của hành động đó. KHÔNG commit — ghép được vào transaction của caller.
+
+    `current_intent` (tuỳ chọn): ghi kèm intent lượt khi vào AWAITING_CUSTOMER (resume clarify 09b).
+    `assigned_admin_id` (tuỳ chọn): gán người giữ trong CÙNG câu UPDATE (takeover).
+    `expected_draft` (tuỳ chọn): chỉ ghi khi `escalation_card.suggested_reply` vẫn là nháp này (duyệt/từ chối — ABA).
+    """
+    result = await session.execute(
+        transition_stmt(
+            conversation_id,
+            to=to,
+            allowed_from=allowed_from,
+            current_intent=current_intent,
+            assigned_admin_id=assigned_admin_id,
+            not_held_by_other_than=not_held_by_other_than,
+            expected_draft=expected_draft,
+        )
+    )
+    return result.rowcount == 1
+
+
+async def get_status_and_admin(
+    session: AsyncSession, conversation_id: uuid.UUID, *, for_update: bool = False
+) -> tuple[str, uuid.UUID | None] | None:
+    """`(status, assigned_admin_id)` đọc TƯƠI từ DB (không qua identity map, không load messages). None = không có ca.
+
+    `for_update`: khoá hàng (SELECT … FOR UPDATE) tới hết transaction của caller — kiểm-rồi-chèn tin không đua với
+    một lần đổi status (resolve / auto-resolve phải CHỜ caller commit)."""
+    stmt = select(Conversation.status, Conversation.assigned_admin_id).where(Conversation.id == conversation_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    row = (await session.execute(stmt)).first()
+    return (row.status, row.assigned_admin_id) if row is not None else None
 
 
 async def get_status_and_intent(
@@ -104,19 +155,6 @@ async def get_status_and_intent(
     status cho status-gate + loop-guard, intent gốc để khôi phục khi khách gõ mã đơn trơ."""
     conv = await session.get(Conversation, conversation_id)
     return (conv.status, conv.current_intent) if conv else (None, None)
-
-
-async def assign_admin(
-    session: AsyncSession, conversation_id: uuid.UUID, admin_id: uuid.UUID, *, status: str
-) -> Conversation | None:
-    """Takeover (08c): gán admin + đổi status trong MỘT ghi (session NGẮN). Nhẹ — KHÔNG load messages."""
-    conv = await session.get(Conversation, conversation_id)
-    if conv is None:
-        return None
-    conv.assigned_admin_id = admin_id
-    conv.status = status
-    await session.commit()
-    return conv
 
 
 async def get_conversation(

@@ -1,7 +1,9 @@
 """Service audit — ghi nhật ký kiểm toán (PRD §20, NFR-4: 100% hành động agent/Admin truy vết được).
 
 Hai lớp:
-- `write_audit` (cũ): ghi 1 dòng vào session của CALLER (caller tự commit).
+- `write_audit`: ghi 1 dòng vào session của CALLER (caller tự commit) — hành động Admin (node `ADMIN_NODE`:
+  takeover/approve/reject/resolve/gate_update) ghi CÙNG transaction với chính hành động (audit v2, DATA-01.1).
+  Dòng admin KHÔNG có `turn_id` → tab Báo cáo (chỉ đọc dòng có turn_id) không bị lệch.
 - `record_turn` (P1): ghi CẢ MỘT LƯỢT khách từ luồng WS thật — nguồn dữ liệu của tab Báo cáo.
 
 `build_turn_rows` tách riêng làm HÀM THUẦN (không DB, không I/O) để test offline được: hình dạng dòng
@@ -29,6 +31,9 @@ log = get_logger("audit")
 # (nội dung đầy đủ đã nằm ở bảng `message`) — cắt để bảng audit không phình theo độ dài chat.
 _TEXT_CAP = 400
 _PREVIEW_CAP = 200
+
+# Giá trị `audit_log.node` cho hành động của Admin (detail chỉ chứa id + status — KHÔNG chép nội dung tin/nháp).
+ADMIN_NODE = "admin"
 
 # node -> action mặc định cho các bước không tự mang "hành động" (decision/response lấy từ state).
 _NODE_ACTION = {
@@ -127,13 +132,18 @@ def build_turn_rows(
     reply: str,
     outcome: str,
     total_ms: int,
+    message_id: uuid.UUID | None = None,
+    delivery_detail: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Dựng các dòng audit của MỘT lượt: `customer` → các node pipeline → `delivery`. HÀM THUẦN.
 
     `final=None` (pipeline ném lỗi) → vẫn dựng 2 dòng bao quanh: lượt hỏng cũng phải truy vết được,
     và đó chính là lượt cần nhìn nhất.
+
+    `message_id` = id tin KHÁCH đã lưu của lượt → mọi dòng nối thẳng về nguyên văn ở bảng `message` (PERF-01.5).
+    `delivery_detail` = khoá bổ sung cho dòng `delivery` (vd `timings`, lượt bị bỏ vì status đổi).
     """
-    common = {"turn_id": turn_id, "conversation_id": conversation_id}
+    common = {"turn_id": turn_id, "conversation_id": conversation_id, "message_id": message_id}
     rows: list[dict[str, Any]] = [
         {
             **common,
@@ -166,6 +176,7 @@ def build_turn_rows(
                 "status": str(final.get("status")) if final.get("status") else None,
                 "reply_len": len(reply or ""),
                 "customer_text": _clip(customer_text, _TEXT_CAP),
+                **(delivery_detail or {}),
             },
         }
     )
@@ -181,6 +192,8 @@ async def record_turn(
     reply: str,
     outcome: str,
     total_ms: int,
+    message_id: uuid.UUID | None = None,
+    delivery_detail: dict[str, Any] | None = None,
 ) -> int:
     """Ghi nhật ký một lượt (session NGẮN, 1 commit). Trả số dòng đã ghi; **KHÔNG BAO GIỜ ném lỗi**.
 
@@ -195,6 +208,8 @@ async def record_turn(
             reply=reply,
             outcome=outcome,
             total_ms=total_ms,
+            message_id=message_id,
+            delivery_detail=delivery_detail,
         )
         async with AsyncSessionLocal() as session:
             session.add_all([AuditLog(**row) for row in rows])
@@ -205,4 +220,4 @@ async def record_turn(
         return 0
 
 
-__all__ = ["write_audit", "build_turn_rows", "record_turn", "rag_sources", "TurnOutcome"]
+__all__ = ["ADMIN_NODE", "write_audit", "build_turn_rows", "record_turn", "rag_sources", "TurnOutcome"]

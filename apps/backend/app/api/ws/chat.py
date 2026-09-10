@@ -1,21 +1,31 @@
 """WebSocket chat khách — pipeline + persist + REALTIME 2 chiều (hub) + STATUS-GATE (PRD §6/§8/§10/§12/§16).
 
 Mỗi kết nối khách chạy HAI task (`asyncio.wait` FIRST_COMPLETED):
-- `_customer_reader`: đọc tin khách. **STATUS-GATE (08c):** nếu hội thoại đang có người xử lý (IN_HUMAN_QUEUE/
-  HUMAN_HANDLING/PENDING_APPROVAL) → AI KHÔNG chạy; lưu tin + đẩy lên admin qua hub. Ngược lại chạy ĐỦ pipeline
-  (intent→knowledge→decision→response) rồi trả lời (Response Generator = điểm phát ngôn TỰ ĐỘNG duy nhất, §7.4).
-  MỌI lượt (kể cả lượt AI tự trả lời) đều dội tin khách + trả lời lên hub → admin mở ca thấy realtime, không F5.
-- `_hub_listener`: nhận tin admin (từ hub) → đẩy xuống socket khách (`{type:"message", from:"admin"}`).
+- `_customer_reader`: đọc frame khách (giao thức v2 — contract §4.1). `ping` → `pong` NGAY. Tin nhắn → chống trùng
+  `client_msg_id` (tin gửi lại → ack duplicate, KHÔNG tốn hạn mức) → rate-limit (SEC-XC.2) → `ack` NGAY → xếp một
+  TASK LƯỢT. Reader KHÔNG chờ lượt chạy xong.
+- `_hub_listener`: nhận frame từ hub (tin admin, trả lời AI cho tab khác / cho lượt mà socket gốc đã chết, `status`)
+  → đẩy xuống socket khách.
 
-Tín hiệu ra socket khách: `typing` → `reply` (trả lời tự động) | `handoff` (Agent 3 đã chuyển người, ca vào
-hàng đợi) | `pending` (gate giữ nháp chờ duyệt). `handoff` là TYPE riêng để FE bám TRẠNG THÁI THẬT thay vì
-dò chữ trong câu trả lời.
+TASK LƯỢT (`_run_turn`) — TUẦN TỰ theo KHÁCH (mọi tab/socket) dưới một `asyncio.Lock` đánh thức FIFO (GRAPH-02.3):
+chọn ca (tìm-hoặc-mở DƯỚI khoá → hai tab không đẻ hai ca) → status+intent trước lượt → lưu tin khách → STATUS-GATE
+(08c: người đang xử lý → AI KHÔNG chạy, chỉ đẩy tin lên admin) → pipeline (intent→knowledge→decision→response;
+Response Generator = điểm phát ngôn TỰ ĐỘNG duy nhất, §7.4) → MỘT bước ghi được shield: CAS status + tin AI +
+EscalationCard trong MỘT transaction (GRAPH-02.1) → CHỈ SAU commit mới báo khách → hub → audit. Task lượt KHÔNG bị
+huỷ khi socket đóng: khách đóng tab thì lượt vẫn chạy xong + lưu; trả lời tới socket mới qua hub hoặc /me/thread.
+
+CAS (GRAPH-02.2): status chỉ được ghi nếu VẪN là status đọc ở đầu lượt. Admin tiếp quản / đóng ca trong lúc pipeline
+chạy → lượt bị BỎ (không lưu gì của lượt), khách nhận frame `status` (status hiện tại) THAY cho câu trả lời.
+
+Tín hiệu ra socket khách: `ack` → `typing` → `reply` (trả lời tự động) | `handoff` (ca vào hàng đợi người) |
+`pending` (gate giữ nháp chờ duyệt) | `status` (lượt bị bỏ vì status đổi). `handoff` là TYPE riêng để FE bám
+TRẠNG THÁI THẬT thay vì dò chữ trong câu trả lời.
 
 Ca sinh LƯỜI: lúc `accept()` chỉ TÌM ca đang mở; chưa có thì để trống và chỉ mở ca ở tin nhắn ĐẦU TIÊN —
 mở /chat rồi thoát KHÔNG để lại ca rỗng trong hàng đợi admin.
 
 Persist guarded (DB lỗi KHÔNG chặn chat). `db_conversation_id` = khoá hub (TÁCH khỏi thread_id checkpointer).
-Hub IN-PROCESS 1 worker (Redis pub/sub đa-worker = sau, FR-ASYNC-7). Handoff → EscalationCard vào hàng đợi (08b).
+Hub, khoá khách, registry chống trùng, rate limiter đều IN-PROCESS (1 worker; đa-worker = Redis, FR-ASYNC-7).
 """
 
 from __future__ import annotations
@@ -23,21 +33,27 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from typing import Any
+import weakref
+from collections import OrderedDict
+from dataclasses import dataclass
+from typing import Any, Literal
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from sqlalchemy.exc import IntegrityError
 
 from ...agents.graph import run_pipeline
 from ...core import tracing
 from ...core.config import settings
 from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
+from ...core.rate_limit import SlidingWindowLimiter
 from ...core.sanitize import sanitize_customer_message
 from ...models import User
-from ...models.enums import ConversationStatus, MessageSender, TurnOutcome, UserRole
+from ...models.enums import ConversationStatus, MessageSender, Priority, TurnOutcome, UserRole
+from ...models.message import CLIENT_MSG_ID_INDEX
 from ...services import audit_service, conversation_service, escalation_service, gate_service
 from .auth import WS_AUTH_CLOSE_CODE, authenticate_websocket
-from .hub import hub
+from .hub import hub, parse_client_frame
 
 router = APIRouter()
 log = get_logger("ws.chat")
@@ -47,6 +63,8 @@ _ERROR_REPLY = (
     "Dạ hệ thống đang gặp trục trặc tạm thời, em xin phép chuyển yêu cầu tới nhân viên hỗ trợ ạ. "
     "Mong anh/chị thông cảm."
 )
+# PRD §15: lỗi kỹ thuật → IN_HUMAN_QUEUE gắn nhãn [error] — lời hứa chuyển nhân viên của `_ERROR_REPLY` là thật.
+ERROR_ESCALATION_REASON = "[error] pipeline lỗi kỹ thuật — chuyển nhân viên tự động"
 
 # Status-gate (08c): hội thoại đang có người xử lý → AI KHÔNG chạy (chỉ định tuyến tin khách sang admin).
 HUMAN_HANDLED_STATUSES = frozenset(
@@ -59,6 +77,27 @@ HUMAN_HANDLED_STATUSES = frozenset(
 
 # Ca "đã đóng" (P2): khách nhắn tiếp → mở ca MỚI (AI-first), KHÔNG chạy lại trên ca cũ.
 _CLOSED_STATUSES = frozenset({ConversationStatus.RESOLVED, ConversationStatus.CLOSED})
+
+# Status mà lượt AI được phép ghi đè khi KHÔNG đọc được status đầu lượt (DB lỗi): không ai đang xử lý, chưa đóng.
+_AI_ACTIVE_STATUSES = frozenset(ConversationStatus) - HUMAN_HANDLED_STATUSES - _CLOSED_STATUSES
+
+# SEC-XC.2: trần tin/cửa sổ theo KHÁCH (cộng dồn mọi tab) — mỗi tin là 2 lời gọi LLM + 1 embedding. 0 = tắt.
+_chat_limiter = SlidingWindowLimiter(settings.chat_rate_per_customer, settings.rate_limit_window_seconds)
+
+# GRAPH-02.3: lượt của CÙNG một khách (mọi tab/socket) chạy TUẦN TỰ dưới một asyncio.Lock (đánh thức FIFO → giữ
+# thứ tự tới). WeakValueDictionary: không còn lượt nào giữ khoá thì khoá tự thu hồi (không rò theo số khách).
+_customer_locks: weakref.WeakValueDictionary[uuid.UUID, asyncio.Lock] = weakref.WeakValueDictionary()
+# asyncio chỉ giữ tham chiếu YẾU tới task → giữ MẠNH ở đây, bỏ ra khi xong. KHÔNG huỷ khi socket đóng.
+_turn_tasks: set[asyncio.Task[None]] = set()
+
+# IDEM-XC.1: client_msg_id đã nhận gần đây theo khách (in-process, có trần) — chặn tin GỬI LẠI ngay lúc nhận, kể cả
+# khi lượt gốc còn đang xếp hàng. Bảo đảm BỀN = partial unique index (conversation_id, client_msg_id) ở DB.
+_RECENT_IDS_PER_CUSTOMER = 200
+_RECENT_CUSTOMERS_MAX = 10_000
+_recent_client_ids: OrderedDict[uuid.UUID, OrderedDict[str, None]] = OrderedDict()
+
+# Kết quả lưu tin khách: "closed" = ca vừa bị đóng dưới chân → chọn lại ca; "unsaved" = chưa có ca / DB lỗi.
+_Saved = Literal["ok", "duplicate", "closed", "unsaved"]
 
 
 def should_run_ai(status: str | None) -> bool:
@@ -78,70 +117,87 @@ async def gate_holds(status_out: str | None, intent: str | None) -> bool:
     return gate_service.holds_auto_reply(snapshot, status_out, intent)
 
 
+def _sid(value: Any) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _ms(start: float, end: float) -> int:
+    return int((end - start) * 1000)
+
+
+async def _send(websocket: WebSocket, payload: dict[str, Any]) -> bool:
+    """Gửi 1 frame. Socket đã đóng/đứt → bỏ qua: lượt vẫn chạy xong + lưu (khách thấy qua hub hoặc /me/thread)."""
+    try:
+        await websocket.send_json(payload)
+        return True
+    except Exception as exc:  # noqa: BLE001 — socket chết KHÔNG được làm chết task lượt.
+        log.info("send to closed customer socket (bỏ qua): %s", exc)
+        return False
+
+
+# ── Chống trùng + tuần tự hoá theo khách (in-process) ────────────────────────
+def _already_accepted(customer_id: uuid.UUID, client_msg_id: str) -> bool:
+    """True nếu id này đã được NHẬN cho khách (tin gửi lại). CHỈ ĐỌC — ghi nhận là `_remember`, SAU rate-limit."""
+    ids = _recent_client_ids.get(customer_id)
+    return ids is not None and client_msg_id in ids
+
+
+def _remember(customer_id: uuid.UUID, client_msg_id: str) -> None:
+    """Ghi nhận id vừa NHẬN cho khách (có trần: bỏ khách lâu không nhắn nhất / id cũ nhất)."""
+    ids = _recent_client_ids.get(customer_id)
+    if ids is None:
+        if len(_recent_client_ids) >= _RECENT_CUSTOMERS_MAX:
+            _recent_client_ids.popitem(last=False)  # bỏ khách lâu không nhắn nhất
+        ids = _recent_client_ids[customer_id] = OrderedDict()
+    else:
+        _recent_client_ids.move_to_end(customer_id)
+    ids[client_msg_id] = None
+    if len(ids) > _RECENT_IDS_PER_CUSTOMER:
+        ids.popitem(last=False)
+
+
+def _customer_lock(customer_id: uuid.UUID) -> asyncio.Lock:
+    lock = _customer_locks.get(customer_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _customer_locks[customer_id] = lock
+    return lock
+
+
 # ── Persist / load helpers (guarded — DB lỗi KHÔNG chặn chat) ─────────────────
-async def _persist_message(conv_id: uuid.UUID | None, sender: str, content: str) -> None:
-    """Lưu 1 message (session NGẮN)."""
+async def _persist_customer_message(
+    conv_id: uuid.UUID | None, content: str, client_msg_id: str | None
+) -> tuple[uuid.UUID | None, _Saved]:
+    """Lưu tin khách (session NGẮN) → `(message_id, kết quả)`.
+
+    KHOÁ hàng conversation (SELECT … FOR UPDATE) rồi mới chèn (GRAPH-02.2): ca đã bị đóng (admin resolve / auto-resolve
+    commit giữa lúc lượt đọc status và lúc lưu) → `"closed"`, KHÔNG chèn vào ca đã đóng — caller chọn lại ca (ca MỚI,
+    PRD §15). Khoá giữ tới commit nên không ai đóng ca xen giữa lúc kiểm và lúc chèn; tin khách xoá mốc đã-nhắc trong
+    CÙNG transaction → RESOLVE của auto-resolve tự thua CAS.
+    Vi phạm partial unique index (conversation_id, client_msg_id) = tin GỬI LẠI đã có trong DB → `"duplicate"`: caller
+    bỏ lượt (pipeline KHÔNG chạy lần hai). Chưa có ca / DB lỗi khác → `(None, "unsaved")`: chat vẫn chạy, không
+    persist (như cũ)."""
     if conv_id is None:
-        return
+        return None, "unsaved"
     try:
         async with AsyncSessionLocal() as s:
-            await conversation_service.add_message(s, conv_id, content=content, sender=sender)
+            state = await conversation_service.get_status_and_admin(s, conv_id, for_update=True)
+            if state is not None and state[0] in _CLOSED_STATUSES:
+                return None, "closed"
+            message = await conversation_service.insert_message(
+                s, conv_id, sender=MessageSender.CUSTOMER, content=content, client_msg_id=client_msg_id
+            )
+            await s.commit()
+            return message.id, "ok"
+    except IntegrityError as exc:
+        if client_msg_id is not None and CLIENT_MSG_ID_INDEX in str(exc):
+            log.info("tin gửi lại (client_msg_id trùng, conv=%s) → bỏ lượt", conv_id)
+            return None, "duplicate"
+        log.warning("persist message failed (bỏ qua): %s", exc)
+        return None, "unsaved"
     except Exception as exc:  # noqa: BLE001 — persist là phụ, đừng để hỏng chat.
         log.warning("persist message failed (bỏ qua): %s", exc)
-
-
-async def _publish(
-    conv_key: str | None,
-    payload: dict[str, Any],
-    *,
-    exclude: asyncio.Queue[dict[str, Any]] | None = None,
-) -> None:
-    """Phát 1 payload lên hub của ca (admin đang MỞ ca thấy ngay, không phải F5).
-
-    Degrade AN TOÀN: chưa có ca / hub lỗi → bỏ qua, KHÔNG làm rớt hay chậm lượt của khách (bất biến §1).
-    """
-    if conv_key is None:
-        return
-    try:
-        await hub.publish(conv_key, payload, exclude=exclude)
-    except Exception as exc:  # noqa: BLE001 — realtime admin là phụ, đừng để hỏng chat.
-        log.warning("publish to hub failed (bỏ qua): %s", exc)
-
-
-async def _persist_status(
-    conv_id: uuid.UUID | None, status: str | None, current_intent: str | None = None
-) -> None:
-    """Ghi status (+ intent lượt khi có). `current_intent` chỉ truyền ở lượt clarify (AWAITING_CUSTOMER) để
-    lượt sau khôi phục đúng intent gốc khi khách gõ mã đơn trơ (follow-up 09b)."""
-    if conv_id is None or not status:
-        return
-    try:
-        async with AsyncSessionLocal() as s:
-            await conversation_service.set_status(s, conv_id, status, current_intent=current_intent)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("set status failed (bỏ qua): %s", exc)
-
-
-async def _persist_escalation_card(
-    conv_id: uuid.UUID | None, final: dict[str, Any], trigger_message: str, suggested_reply: str = ""
-) -> None:
-    """Lưu EscalationCard (dựng từ final state) + priority/severity/reason lên conversation. `suggested_reply`
-    rỗng cho handoff (08b); = nháp Agent 4 cho ca PENDING_APPROVAL (08a)."""
-    if conv_id is None:
-        return
-    try:
-        card = escalation_service.build_escalation_card(final, trigger_message, suggested_reply)
-        async with AsyncSessionLocal() as s:
-            await escalation_service.persist_escalation(
-                s,
-                conv_id,
-                card=card,
-                priority=final.get("priority"),
-                severity=final.get("severity"),
-                reason=final.get("escalation_reason"),
-            )
-    except Exception as exc:  # noqa: BLE001 — persist card là phụ, đừng để hỏng chat.
-        log.warning("persist escalation card failed (bỏ qua): %s", exc)
+        return None, "unsaved"
 
 
 async def _load_history(conv_id: uuid.UUID | None) -> list[dict[str, str]]:
@@ -157,7 +213,7 @@ async def _load_history(conv_id: uuid.UUID | None) -> list[dict[str, str]]:
 
 
 async def _load_prior(conv_id: uuid.UUID | None) -> tuple[str | None, str | None]:
-    """`(status, current_intent)` TRƯỚC lượt này (nhẹ) — status cho status-gate + loop-guard, intent gốc để
+    """`(status, current_intent)` TRƯỚC lượt này (nhẹ) — status cho status-gate + loop-guard + CAS, intent gốc để
     resume clarify. Guarded: DB lỗi → (None, None) (coi như AI-active, an toàn UX)."""
     if conv_id is None:
         return (None, None)
@@ -199,10 +255,6 @@ async def _run_pipeline_safe(
         return None, None, _ERROR_REPLY
 
 
-def _elapsed_ms(started: float) -> int:
-    return int((time.perf_counter() - started) * 1000)
-
-
 def _outcome_of(status_out: str | None, final: dict[str, Any] | None) -> str:
     """Kết cục GIAO của lượt (hàm thuần) — nguồn KPI %auto/%chuyển người ở tab Báo cáo.
 
@@ -216,6 +268,154 @@ def _outcome_of(status_out: str | None, final: dict[str, Any] | None) -> str:
     return TurnOutcome.SENT
 
 
+# ── Quyết định giao + MỘT bước ghi của lượt ──────────────────────────────────
+@dataclass(frozen=True)
+class TurnPlan:
+    """Kết cục giao của một lượt AI: frame báo khách + những gì phải ghi (trong MỘT transaction)."""
+
+    frame: str  # "reply" | "handoff" | "pending"
+    status_to: str
+    allowed_from: frozenset[str]  # CAS: status đọc ở đầu lượt
+    ai_message: str | None  # tin gửi khách + lưu (sender=ai); None cho "pending" — nháp giữ trong card, KHÔNG gửi
+    outcome: str
+    current_intent: str | None = None
+    card: dict[str, Any] | None = None
+    priority: str | None = None
+    severity: str | None = None
+    reason: str | None = None
+
+
+def plan_delivery(
+    *,
+    prior_status: str | None,
+    status_out: str | None,
+    final: dict[str, Any] | None,
+    reply: str,
+    customer_text: str,
+    held: bool,
+) -> TurnPlan:
+    """Quyết định giao từ kết quả pipeline (HÀM THUẦN, test offline).
+
+    - Pipeline NÉM LỖI (`final` None) → PRD §15: IN_HUMAN_QUEUE gắn nhãn [error] + EscalationCard (priority high);
+      khách nhận `handoff` với `_ERROR_REPLY`.
+    - Gate giữ nháp → PENDING_APPROVAL + card mang nháp (`suggested_reply`); khách chỉ nhận `pending`.
+    - IN_HUMAN_QUEUE (Agent 3 chuyển người, hoặc Agent 4 phải fallback) → EscalationCard + `handoff`.
+    - Còn lại (REPLIED / AWAITING_CUSTOMER) → `reply`; AWAITING_CUSTOMER ghi KÈM intent gốc → lượt sau khách gõ mã đơn
+      trơ vẫn resume đúng intent (09b).
+    CAS: `allowed_from` = status đọc ở đầu lượt; không đọc được → mọi status AI-active.
+    """
+    allowed = frozenset({prior_status}) if prior_status else _AI_ACTIVE_STATUSES
+    if final is None:
+        card = escalation_service.build_escalation_card(
+            {"escalation_reason": ERROR_ESCALATION_REASON, "priority": Priority.HIGH}, customer_text
+        )
+        return TurnPlan(
+            "handoff",
+            ConversationStatus.IN_HUMAN_QUEUE,
+            allowed,
+            reply,
+            _outcome_of(status_out, final),
+            card=card,
+            priority=Priority.HIGH,
+            reason=ERROR_ESCALATION_REASON,
+        )
+    if held:
+        return TurnPlan(
+            "pending",
+            ConversationStatus.PENDING_APPROVAL,
+            allowed,
+            None,
+            TurnOutcome.HELD_FOR_APPROVAL,
+            card=escalation_service.build_escalation_card(final, customer_text, suggested_reply=reply),
+            priority=final.get("priority"),
+            severity=final.get("severity"),
+            reason=final.get("escalation_reason"),
+        )
+    if status_out == ConversationStatus.IN_HUMAN_QUEUE:
+        return TurnPlan(
+            "handoff",
+            ConversationStatus.IN_HUMAN_QUEUE,
+            allowed,
+            reply,
+            _outcome_of(status_out, final),
+            card=escalation_service.build_escalation_card(final, customer_text),
+            priority=final.get("priority"),
+            severity=final.get("severity"),
+            reason=final.get("escalation_reason"),
+        )
+    # Pipeline luôn trả status; phòng hờ thiếu → REPLIED (khách đang nhận một câu trả lời tự động).
+    status_to = status_out or ConversationStatus.REPLIED
+    return TurnPlan(
+        "reply",
+        status_to,
+        allowed,
+        reply,
+        _outcome_of(status_out, final),
+        current_intent=final.get("intent") if status_to == ConversationStatus.AWAITING_CUSTOMER else None,
+    )
+
+
+@dataclass(frozen=True)
+class _PersistResult:
+    applied: bool = False  # CAS thắng + commit xong
+    discarded: bool = False  # CAS thua: status đã đổi dưới chân → KHÔNG lưu gì của lượt
+    message_id: uuid.UUID | None = None
+    status_now: str | None = None
+    assigned_admin_id: uuid.UUID | None = None
+
+
+async def _persist_turn(conv_id: uuid.UUID | None, plan: TurnPlan) -> _PersistResult:
+    """MỘT transaction cho kết quả lượt: CAS status + tin AI + EscalationCard (GRAPH-02.1). Caller bọc `shield`.
+
+    CAS thua (admin tiếp quản / đóng ca trong lúc pipeline chạy) → rollback, trả status HIỆN TẠI để báo khách (đọc lại
+    lỗi → status không rõ, lượt VẪN bị bỏ). Chưa có ca / DB lỗi khi GHI → không lưu được: vẫn báo khách như cũ (DB lỗi
+    KHÔNG chặn chat — bất biến §1).
+    """
+    if conv_id is None:
+        return _PersistResult()
+    lost_cas = False
+    try:
+        async with AsyncSessionLocal() as s:
+            ok = await conversation_service.transition_status(
+                s,
+                conv_id,
+                to=plan.status_to,
+                allowed_from=plan.allowed_from,
+                current_intent=plan.current_intent,
+            )
+            if not ok:
+                lost_cas = True
+                await s.rollback()
+                state = await conversation_service.get_status_and_admin(s, conv_id)
+                status_now, holder = state if state is not None else (None, None)
+                return _PersistResult(discarded=True, status_now=status_now, assigned_admin_id=holder)
+            message_id = None
+            if plan.ai_message is not None:
+                message = await conversation_service.insert_message(
+                    s, conv_id, sender=MessageSender.AI, content=plan.ai_message
+                )
+                message_id = message.id
+            if plan.card is not None:
+                await escalation_service.apply_escalation(
+                    s,
+                    conv_id,
+                    card=plan.card,
+                    priority=plan.priority,
+                    severity=plan.severity,
+                    reason=plan.reason,
+                )
+            await s.commit()
+            return _PersistResult(applied=True, message_id=message_id)
+    except Exception as exc:  # noqa: BLE001 — DB lỗi: vẫn báo khách, đừng để kẹt chat.
+        if lost_cas:
+            # CAS ĐÃ thua (status đổi dưới chân) mà đọc lại status lỗi → lượt VẪN bị bỏ: nhánh "DB lỗi → vẫn báo khách"
+            # chỉ dành cho GHI hỏng, không bao giờ cho CAS thua (GRAPH-02.2 — AI không nói chen vào ca người đã nhận).
+            log.warning("read status after lost CAS failed (bỏ lượt, conv=%s): %s", conv_id, exc)
+            return _PersistResult(discarded=True)
+        log.warning("persist turn failed (vẫn báo khách, không lưu): %s", exc)
+        return _PersistResult()
+
+
 async def _audit_turn(
     st: _CustomerSession,
     turn_id: uuid.UUID,
@@ -224,17 +424,18 @@ async def _audit_turn(
     reply: str,
     outcome: str,
     total_ms: int,
+    *,
+    message_id: uuid.UUID | None = None,
+    delivery_detail: dict[str, Any] | None = None,
 ) -> None:
-    """Ghi nhật ký lượt — gọi SAU khi khách đã nhận phản hồi nên không ảnh hưởng độ trễ khách thấy.
+    """Ghi nhật ký lượt — gọi SAU khi frame đã trao cho socket và hub đã phát, nên không cộng vào độ trễ.
 
     `conversation_id` lấy từ `st.conv_id` (ca THẬT trong DB): WS gọi `run_pipeline` không truyền
     conversation_id nên `final["conversation_id"]` chỉ là thread_id ngẫu nhiên của checkpointer.
     `record_turn` tự nuốt lỗi (bất biến §1) → không cần try/except ở đây.
 
-    **`asyncio.shield`**: khách đóng tab NGAY sau khi nhận trả lời → WS đứt → task reader bị huỷ giữa
-    chừng. Không shield thì chính lượt vừa xong mất dòng audit, và mọi KPI lệch âm thầm (đo được:
-    lượt cuối của kịch bản verify biến mất khỏi audit_log). Shield cho phép việc ghi chạy nốt sau khi
-    task bị huỷ.
+    **`asyncio.shield`**: task lượt không bị huỷ khi khách đóng tab, nhưng vẫn giữ shield (tắt server giữa
+    lượt…): không shield thì chính lượt vừa xong mất dòng audit, và mọi KPI lệch âm thầm.
     """
     await asyncio.shield(
         audit_service.record_turn(
@@ -245,6 +446,8 @@ async def _audit_turn(
             reply=reply,
             outcome=outcome,
             total_ms=total_ms,
+            message_id=message_id,
+            delivery_detail=delivery_detail,
         )
     )
 
@@ -257,7 +460,8 @@ class _CustomerSession:
     """Khách + ca đang mở + queue hub của ca đó. `conv_id/conv_key/queue` đổi khi mở ca mới.
 
     Tạo ca LƯỜI: mở chat mà chưa nhắn thì `conv_id` còn None (chưa có ca nào trong DB). `attached` báo cho
-    `_hub_listener` biết lúc đã có ca để bắt đầu đọc queue.
+    `_hub_listener` biết lúc đã có ca để bắt đầu đọc queue. `closed`: socket đã đóng — lượt còn chạy nốt KHÔNG
+    được đăng ký queue hub mới cho socket chết (không ai đọc → rò bộ nhớ).
     """
 
     def __init__(self, customer_id: uuid.UUID, display: str | None) -> None:
@@ -267,6 +471,7 @@ class _CustomerSession:
         self.conv_key: str | None = None
         self.queue: asyncio.Queue[dict[str, Any]] | None = None
         self.attached = asyncio.Event()  # set khi kết nối đã gắn vào MỘT ca (lần đầu)
+        self.closed = False
 
 
 def _switch_conversation(st: _CustomerSession, new_conv_id: uuid.UUID) -> None:
@@ -274,6 +479,9 @@ def _switch_conversation(st: _CustomerSession, new_conv_id: uuid.UUID) -> None:
     old_queue, old_key = st.queue, st.conv_key
     st.conv_id = new_conv_id
     st.conv_key = str(new_conv_id)
+    if st.closed:
+        st.queue = None  # socket đã đóng (queue cũ đã gỡ lúc đóng) → KHÔNG đăng ký queue mới
+        return
     st.queue = hub.register(st.conv_key)
     st.attached.set()  # gỡ chốt cho _hub_listener (kết nối mở trước khi có ca — tạo lười)
     if old_key is not None and old_queue is not None:
@@ -281,20 +489,36 @@ def _switch_conversation(st: _CustomerSession, new_conv_id: uuid.UUID) -> None:
         old_queue.put_nowait(_SWITCH)  # đánh thức _hub_listener để đọc st.queue mới
 
 
-async def _open_new_case(st: _CustomerSession) -> None:
-    """Mở ca MỚI (AI-first) cho khách + chuyển hub sang ca mới.
+async def _find_or_open_case(st: _CustomerSession) -> tuple[str | None, str | None]:
+    """Ca đang MỞ của khách (tab khác có thể vừa mở) — chưa có thì MỞ ca mới (AI-first) → `(status, intent)`.
 
-    Dùng ở HAI chỗ: tin nhắn đầu tiên (tạo lười) và khi ca cũ đã đóng. DB lỗi → giữ nguyên ca hiện tại
-    (có thể là CHƯA có ca) → lượt vẫn chạy nhưng không persist/hub; KHÔNG rớt WS.
+    Gọi DƯỚI khoá khách nên hai tab không bao giờ đẻ hai ca (GRAPH-02.3). DB lỗi → giữ nguyên ca hiện tại (có thể
+    CHƯA có ca) và báo status không rõ → lượt vẫn chạy nhưng không persist/hub; KHÔNG rớt WS.
     """
     try:
         async with AsyncSessionLocal() as s:
-            conv = await conversation_service.open_case_for_customer(
-                s, st.customer_id, display=st.display
-            )
-        _switch_conversation(st, conv.id)
+            conv = await conversation_service.get_active_conversation_for_customer(s, st.customer_id)
+            if conv is None:
+                conv = await conversation_service.open_case_for_customer(
+                    s, st.customer_id, display=st.display
+                )
     except Exception as exc:  # noqa: BLE001 — không mở được ca → chạy tiếp không persist.
         log.warning("open new case failed (chạy tiếp, không persist): %s", exc)
+        return None, None
+    if conv.id != st.conv_id:
+        _switch_conversation(st, conv.id)
+    return conv.status, conv.current_intent
+
+
+async def _resolve_case(st: _CustomerSession) -> tuple[str | None, str | None]:
+    """`(status, current_intent)` TRƯỚC lượt của ca sẽ nhận tin này. Gọi DƯỚI khoá khách."""
+    if st.conv_id is not None:
+        status, prior_intent = await _load_prior(st.conv_id)
+        if status not in _CLOSED_STATUSES:
+            return status, prior_intent
+    # TẠO LƯỜI (chưa có ca) hoặc ca đã đóng (admin resolve / auto-resolve giữa các lượt) → ca đang mở do tab khác
+    # vừa mở, hoặc ca MỚI (AI-first, agent chạy lại từ đầu).
+    return await _find_or_open_case(st)
 
 
 async def _load_customer_display(customer_id: uuid.UUID) -> str | None:
@@ -308,93 +532,192 @@ async def _load_customer_display(customer_id: uuid.UUID) -> str | None:
         return None
 
 
+async def _notify_message(
+    st: _CustomerSession,
+    sender: str,
+    content: str,
+    message_id: uuid.UUID | None,
+    client_msg_id: str | None = None,
+) -> None:
+    """Tin mới → admin đang mở ca + tab khác của khách (+ inbox). Chưa có ca → bỏ qua. `client_msg_id` (tin khách):
+    socket mới của chính khách (mở lại sau khi rớt) khớp được bong bóng của mình (IDEM-XC.1)."""
+    if st.conv_key is not None:
+        await hub.notify_message(
+            st.conv_key,
+            sender=sender,
+            content=content,
+            message_id=message_id,
+            client_msg_id=client_msg_id,
+            exclude=st.queue,
+        )
+
+
+# ── Một lượt khách (task riêng, tuần tự theo khách) ──────────────────────────
+async def _run_turn(
+    websocket: WebSocket,
+    st: _CustomerSession,
+    msg: str,
+    client_msg_id: str | None,
+    received: float,
+    lock: asyncio.Lock,
+) -> None:
+    """Task của MỘT tin khách — chạy DƯỚI khoá của khách (tuần tự mọi tab, đúng thứ tự tới). Không bao giờ ném."""
+    try:
+        async with lock:
+            await _turn(websocket, st, msg, client_msg_id, received)
+    except Exception as exc:  # noqa: BLE001 — lượt hỏng KHÔNG được làm sập task / kết nối.
+        log.warning("customer turn failed (conv=%s): %s", st.conv_id, exc)
+
+
+async def _turn(
+    websocket: WebSocket, st: _CustomerSession, msg: str, client_msg_id: str | None, received: float
+) -> None:
+    started = time.perf_counter()  # đã có khoá (hết xếp hàng sau lượt trước của khách)
+    for _attempt in range(2):
+        status, prior_intent = await _resolve_case(st)
+        run_ai = should_run_ai(status)
+        # history = lượt TRƯỚC (nạp trước khi lưu tin hiện tại) — THEO CA. Chỉ lượt AI mới cần.
+        history = await _load_history(st.conv_id) if run_ai else []
+        customer_message_id, saved = await _persist_customer_message(st.conv_id, msg, client_msg_id)
+        if saved != "closed":
+            break
+        # Ca vừa bị đóng dưới chân (giữa lúc đọc status và lúc lưu tin): tin KHÔNG vào ca đã đóng — vòng sau
+        # `_resolve_case` thấy ca đóng → ca đang mở / ca MỚI (PRD §15). Đóng lần hai liền (gần như không thể) → chạy
+        # tiếp như DB lỗi (không persist).
+    if saved == "duplicate":
+        # Tin gửi lại đã có trong DB (registry in-process không còn nhớ — vd tiến trình vừa khởi động lại):
+        # KHÔNG chạy lại pipeline; báo client đây là bản trùng.
+        await _send(
+            websocket, {"type": "ack", "client_msg_id": client_msg_id, "message_id": None, "duplicate": True}
+        )
+        return
+    t_fan0 = time.perf_counter()
+    # Admin đang mở ca (và tab khác của khách) thấy câu hỏi NGAY — trước cả pipeline.
+    await _notify_message(st, MessageSender.CUSTOMER, msg, customer_message_id, client_msg_id)
+    t_fan1 = time.perf_counter()
+    if not run_ai:
+        return  # STATUS-GATE (08c): đang có người xử lý → AI KHÔNG chạy; tin đã tới admin qua hub.
+
+    # `turn_id` sinh Ở ĐÂY (không trong pipeline): lượt pipeline NÉM LỖI vẫn ghi audit được.
+    turn_id = uuid.uuid4()
+    # Ngữ cảnh lượt cho Langfuse (P3) — đặt TRONG task lượt (contextvar riêng của task). No-op nếu chưa cấu hình.
+    tracing.set_turn(str(turn_id), str(st.conv_id) if st.conv_id else None)
+    await _send(websocket, {"type": "typing"})
+    t_pipeline = time.perf_counter()
+    status_out, final, reply = await _run_pipeline_safe(
+        msg, history, turn_id, st.customer_id, status, prior_intent
+    )
+    t_decide = time.perf_counter()
+    # Gate động P3: auto_reply không "gửi thẳng" → GIỮ nháp (PENDING_APPROVAL), KHÔNG gửi thẳng cho khách.
+    held = final is not None and await gate_holds(status_out, final.get("intent"))
+    plan = plan_delivery(
+        prior_status=status, status_out=status_out, final=final, reply=reply, customer_text=msg, held=held
+    )
+    # Ghi TRƯỚC, báo khách SAU: khách không bao giờ được hứa "đã chuyển nhân viên" cho một ca vắng mặt trong hàng
+    # đợi admin (GRAPH-02.1). Shield: không gì cắt ngang được bước ghi này.
+    result = await asyncio.shield(_persist_turn(st.conv_id, plan))
+    t_send = time.perf_counter()
+    if result.discarded:
+        # Admin tiếp quản / đóng ca trong lúc pipeline chạy → AI KHÔNG nói chen; báo status hiện tại (FE gỡ typing).
+        await _send(
+            websocket,
+            {"type": "status", "status": _sid(result.status_now), "assigned_admin_id": _sid(result.assigned_admin_id)},
+        )
+    elif plan.frame == "pending":
+        await _send(websocket, {"type": "pending"})  # gỡ typing ở FE (KHÔNG gửi nội dung — sole-egress)
+    else:
+        await _send(
+            websocket,
+            {"type": plan.frame, "content": plan.ai_message, "message_id": _sid(result.message_id)},
+        )
+    t_sent = time.perf_counter()
+    # Độ trễ PHÍA SERVER: từ lúc đọc được tin tới lúc frame được trao cho socket (không gồm mạng / render client).
+    total_ms = _ms(received, t_sent)
+
+    # Sau khi báo khách (không tính vào total_ms): phát cho admin đang theo dõi + tab khác của khách.
+    t_fan2 = time.perf_counter()
+    if not result.discarded:
+        if plan.ai_message is not None:
+            await _notify_message(st, MessageSender.AI, plan.ai_message, result.message_id)
+        if result.applied and plan.status_to != status and st.conv_key is not None:
+            await hub.notify_status(st.conv_key, status=plan.status_to, assigned_admin_id=None, exclude=st.queue)
+    t_fan3 = time.perf_counter()
+
+    # PERF-01.3: tách xếp hàng / I/O trước pipeline / pipeline / bước ghi / gửi socket; fan-out hub ghi riêng.
+    delivery_detail: dict[str, Any] = {
+        "timings": {
+            "queue_ms": _ms(received, started),
+            "pre_pipeline_ms": _ms(started, t_fan0) + _ms(t_fan1, t_pipeline),
+            "pipeline_ms": _ms(t_pipeline, t_decide),
+            "persist_ms": _ms(t_decide, t_send),
+            "send_ms": _ms(t_send, t_sent),
+            "fanout_ms": _ms(t_fan0, t_fan1) + _ms(t_fan2, t_fan3),
+        }
+    }
+    outcome = plan.outcome
+    if result.discarded:
+        # Không lưu/gửi gì; ca đang trong tay người (admin tiếp quản / đóng) → kết cục ít gây hiểu lầm nhất là
+        # QUEUED_FOR_HUMAN; `discarded` trong detail phân biệt với handoff thật của Agent 3.
+        delivery_detail.update(discarded=True, reason="status_changed", status_now=_sid(result.status_now))
+        outcome = TurnOutcome.QUEUED_FOR_HUMAN
+    await _audit_turn(
+        st,
+        turn_id,
+        msg,
+        final,
+        reply,
+        outcome,
+        total_ms,
+        message_id=customer_message_id,
+        delivery_detail=delivery_detail,
+    )
+
+
+def _spawn_turn(
+    websocket: WebSocket, st: _CustomerSession, msg: str, client_msg_id: str | None, received: float
+) -> None:
+    task = asyncio.create_task(
+        _run_turn(websocket, st, msg, client_msg_id, received, _customer_lock(st.customer_id))
+    )
+    _turn_tasks.add(task)
+    task.add_done_callback(_turn_tasks.discard)
+
+
 # ── Hai task cho một kết nối khách ───────────────────────────────────────────
 async def _customer_reader(websocket: WebSocket, st: _CustomerSession) -> None:
-    """Đọc tin khách. Ca đóng giữa lượt → mở ca mới (AI-first). Người đang xử lý → route admin; ngược lại pipeline."""
+    """Đọc frame khách (giao thức v2). KHÔNG chạy lượt tại chỗ: tin → chống trùng → rate-limit → `ack` NGAY → xếp
+    task lượt; `ping` → `pong` NGAY kể cả khi một lượt đang chạy (heartbeat phát hiện socket half-open — FE-01.4)."""
     try:
         while True:
+            raw = await websocket.receive_text()
+            received = time.perf_counter()
+            frame = parse_client_frame(raw)
+            if frame.kind == "ping":
+                await _send(websocket, {"type": "pong"})
+                continue
+            cid = frame.client_msg_id
+            # Tin GỬI LẠI (id đã nhận) → ack duplicate NGAY, KHÔNG tốn hạn mức (IDEM-XC.1): trả `rate_limited` ("KHÔNG
+            # lưu") cho một tin ĐÃ lưu + đã trả lời sẽ khiến FE đánh dấu nhầm là gửi lỗi.
+            if cid is not None and _already_accepted(st.customer_id, cid):
+                await _send(websocket, {"type": "ack", "client_msg_id": cid, "message_id": None, "duplicate": True})
+                continue
+            # SEC-XC.2: vượt trần tin/cửa sổ của KHÁCH → báo lỗi, KHÔNG lưu, KHÔNG xử lý.
+            if not _chat_limiter.hit(str(st.customer_id)):
+                await _send(websocket, {"type": "error", "code": "rate_limited", "client_msg_id": cid})
+                continue
             # Lớp A (slice 13): chuẩn hoá + cap NGAY tại biên — mọi đường phía sau (persist, hub,
             # pipeline, prompt LLM) chỉ thấy bản đã sạch. Cắt bớt, KHÔNG rớt kết nối.
-            msg = sanitize_customer_message(await websocket.receive_text())
-            if st.conv_id is None:
-                # TẠO LƯỜI: ca chỉ sinh khi khách THỰC SỰ nhắn. Mở /chat rồi thoát KHÔNG để lại ca rỗng
-                # `ACTIVE_AI` làm loãng hàng đợi admin.
-                await _open_new_case(st)
-                status, prior_intent = ConversationStatus.ACTIVE_AI, None
-            else:
-                status, prior_intent = await _load_prior(st.conv_id)
-                if status in _CLOSED_STATUSES:
-                    # Ca đã đóng (admin resolve giữa các lượt) → mở ca mới, agent chạy lại từ đầu (AI-first).
-                    await _open_new_case(st)
-                    status, prior_intent = ConversationStatus.ACTIVE_AI, None
-            if not should_run_ai(status):
-                # Đang có người xử lý → KHÔNG chạy AI: lưu tin khách + đẩy lên admin qua hub.
-                await _persist_message(st.conv_id, MessageSender.CUSTOMER, msg)
-                await _publish(
-                    st.conv_key, {"type": "message", "from": "customer", "content": msg}, exclude=st.queue
-                )
-                continue
-            # AI-active: pipeline đầy đủ. history = lượt TRƯỚC (nạp trước khi lưu tin hiện tại) — THEO CA.
-            # `turn_id` sinh Ở ĐÂY (không trong pipeline): lượt pipeline NÉM LỖI vẫn ghi audit được.
-            turn_id = uuid.uuid4()
-            started = time.perf_counter()
-            # Gắn ngữ cảnh lượt cho Langfuse (P3): trace LLM tra ngược được về `trc_…` ở tab Báo cáo.
-            # No-op nếu chưa cấu hình Langfuse.
-            tracing.set_turn(str(turn_id), str(st.conv_id) if st.conv_id else None)
-            await websocket.send_json({"type": "typing"})
-            history = await _load_history(st.conv_id)
-            await _persist_message(st.conv_id, MessageSender.CUSTOMER, msg)
-            # Trước khi chạy pipeline: admin đang mở ca thấy câu hỏi NGAY (mọi nhánh sau đó — reply thường,
-            # gate giữ nháp, handoff — đều đã đi qua đây).
-            await _publish(
-                st.conv_key, {"type": "message", "from": "customer", "content": msg}, exclude=st.queue
-            )
-            status_out, final, reply = await _run_pipeline_safe(
-                msg, history, turn_id, st.customer_id, status, prior_intent
-            )
-
-            # Gate động P3: auto_reply không "gửi thẳng" → GIỮ nháp (PENDING_APPROVAL), KHÔNG gửi thẳng cho khách.
-            if final is not None and await gate_holds(status_out, final.get("intent")):
-                await websocket.send_json({"type": "pending"})  # gỡ typing ở FE (KHÔNG gửi nội dung — sole-egress)
-                total_ms = _elapsed_ms(started)  # chốt NGAY khi khách nhận tín hiệu (đúng nghĩa NFR-1)
-                # Audit NGAY sau tín hiệu cho khách: càng để sau càng nhiều cơ hội bị huỷ vì khách đóng tab.
-                await _audit_turn(st, turn_id, msg, final, reply, TurnOutcome.HELD_FOR_APPROVAL, total_ms)
-                await _persist_status(st.conv_id, ConversationStatus.PENDING_APPROVAL)
-                await _persist_escalation_card(st.conv_id, final, msg, suggested_reply=reply)
-                continue  # nháp giữ trong card, chờ admin duyệt/sửa/gửi
-
-            # TÍN HIỆU chuyển người là TYPE riêng, không để FE đoán qua nội dung câu chữ: escalation là
-            # QUYẾT ĐỊNH của Agent 3 (status IN_HUMAN_QUEUE), nên FE phải bám state chứ không dò chữ
-            # "nhân viên hỗ trợ" — auto_reply nhắc tới nhân viên KHÔNG phải là đã chuyển người.
-            queued = status_out == ConversationStatus.IN_HUMAN_QUEUE
-            await websocket.send_json({"type": "handoff" if queued else "reply", "content": reply})
-            total_ms = _elapsed_ms(started)  # đo tới lúc khách NHẬN reply, chưa tính persist phía sau
-            # Sau khi khách nhận (không tính vào total_ms): dội trả lời AI lên hub cho admin đang theo dõi.
-            await _publish(
-                st.conv_key, {"type": "message", "from": "ai", "content": reply}, exclude=st.queue
-            )
-            await _audit_turn(st, turn_id, msg, final, reply, _outcome_of(status_out, final), total_ms)
-            await _persist_message(st.conv_id, MessageSender.AI, reply)
-            # Lượt clarify (AWAITING_CUSTOMER): ghi KÈM intent gốc → lượt sau khách gõ mã đơn trơ vẫn resume
-            # đúng intent (refund vẫn refund). Các status khác không đụng `current_intent`.
-            await _persist_status(
-                st.conv_id,
-                status_out,
-                current_intent=(
-                    (final or {}).get("intent")
-                    if status_out == ConversationStatus.AWAITING_CUSTOMER
-                    else None
-                ),
-            )
-            # Handoff → EscalationCard vào hàng đợi admin (08b). Chỉ khi pipeline chạy xong (final có).
-            if status_out == ConversationStatus.IN_HUMAN_QUEUE and final is not None:
-                await _persist_escalation_card(st.conv_id, final, msg)
+            msg = sanitize_customer_message(frame.content)
+            if cid is not None:
+                _remember(st.customer_id, cid)
+            await _send(websocket, {"type": "ack", "client_msg_id": cid, "message_id": None, "duplicate": False})
+            _spawn_turn(websocket, st, msg, cid, received)
     except WebSocketDisconnect:
         log.info("customer WS disconnected (conv=%s)", st.conv_id)
 
 
 async def _hub_listener(websocket: WebSocket, st: _CustomerSession) -> None:
-    """Nhận payload (tin admin) từ hub của ca HIỆN TẠI → đẩy xuống socket khách.
+    """Nhận payload từ hub của ca HIỆN TẠI (tin admin, trả lời AI, status…) → đẩy xuống socket khách.
 
     `_SWITCH` = ca đã chuyển (mở ca mới) → vòng sau đọc st.queue mới. Nhờ vậy khách vẫn nhận được tin admin
     nếu ca mới sau này escalate + có người tiếp quản, dù conv_id đã đổi giữa kết nối.
@@ -413,15 +736,32 @@ async def _hub_listener(websocket: WebSocket, st: _CustomerSession) -> None:
         await websocket.send_json(payload)
 
 
-async def _customer_ai_only(websocket: WebSocket) -> None:
-    """Degrade: KHÔNG tạo được conversation → chạy AI trực tiếp, KHÔNG persist/hub/status-gate."""
+async def _customer_ai_only(websocket: WebSocket, customer_id: uuid.UUID) -> None:
+    """Degrade: KHÔNG tạo được conversation → chạy AI trực tiếp, KHÔNG persist/hub/status-gate.
+
+    Vẫn nói giao thức v2 (ack/pong/rate limit/chống trùng in-process); lượt chạy tuần tự ngay trong reader như
+    trước (nhánh hiếm — DB đang chết)."""
     try:
         while True:
-            msg = sanitize_customer_message(await websocket.receive_text())  # Lớp A (slice 13)
+            frame = parse_client_frame(await websocket.receive_text())
+            if frame.kind == "ping":
+                await _send(websocket, {"type": "pong"})
+                continue
+            cid = frame.client_msg_id
+            if cid is not None and _already_accepted(customer_id, cid):  # gửi lại: KHÔNG tốn hạn mức (IDEM-XC.1)
+                await _send(websocket, {"type": "ack", "client_msg_id": cid, "message_id": None, "duplicate": True})
+                continue
+            if not _chat_limiter.hit(str(customer_id)):
+                await _send(websocket, {"type": "error", "code": "rate_limited", "client_msg_id": cid})
+                continue
+            msg = sanitize_customer_message(frame.content)  # Lớp A (slice 13)
+            if cid is not None:
+                _remember(customer_id, cid)
+            await _send(websocket, {"type": "ack", "client_msg_id": cid, "message_id": None, "duplicate": False})
             await websocket.send_json({"type": "typing"})
             # KHÔNG audit nhánh này: tới đây nghĩa là DB không dùng được, ghi audit chỉ tổ sinh log lỗi.
             _, _, reply = await _run_pipeline_safe(msg, None, uuid.uuid4())
-            await websocket.send_json({"type": "reply", "content": reply})
+            await websocket.send_json({"type": "reply", "content": reply, "message_id": None})
     except WebSocketDisconnect:
         log.info("customer WS (ai-only) disconnected")
 
@@ -442,13 +782,13 @@ async def chat_ws(websocket: WebSocket) -> None:
     st = _CustomerSession(customer_id, display)
 
     # Mô hình hội thoại theo khách: chỉ TÌM ca đang mở. KHÔNG mở ca mới ở đây — ca sinh LƯỜI ở tin nhắn
-    # ĐẦU TIÊN (`_customer_reader`), nếu không thì mỗi lần khách mở /chat rồi thoát lại đẻ một ca rỗng.
+    # ĐẦU TIÊN (task lượt), nếu không thì mỗi lần khách mở /chat rồi thoát lại đẻ một ca rỗng.
     try:
         async with AsyncSessionLocal() as s:
             conv = await conversation_service.get_active_conversation_for_customer(s, customer_id)
     except Exception as exc:  # noqa: BLE001 — DB lỗi → chat AI-only (KHÔNG persist/hub/status-gate).
         log.warning("resolve conversation failed (ai-only): %s", exc)
-        await _customer_ai_only(websocket)
+        await _customer_ai_only(websocket, customer_id)
         return
 
     if conv is not None:
@@ -465,6 +805,8 @@ async def chat_ws(websocket: WebSocket) -> None:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
     finally:
+        # Task lượt đang chạy KHÔNG bị huỷ — nó chạy nốt + lưu; `closed` chặn nó đăng ký queue cho socket chết.
+        st.closed = True
         if st.conv_key is not None and st.queue is not None:
             hub.unregister(st.conv_key, st.queue)
         log.info("customer WS closed (conv=%s)", st.conv_id)

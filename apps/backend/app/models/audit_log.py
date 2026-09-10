@@ -8,8 +8,13 @@ conversation_id/message_id để indexed UUID (không FK cứng) — audit phả
 
 Ý nghĩa `duration_ms` KHÁC nhau theo dòng, đừng cộng lẫn:
 - dòng node (intent/knowledge/decision/response) = thời gian chạy CỦA NODE đó;
-- dòng `delivery` = **end-to-end của cả lượt**, đo từ lúc nhận tin tới lúc khách NHẬN phản hồi → đây
-  mới là con số cho NFR-1 (≤ 5s), KHÔNG phải tổng các node (tổng node bỏ sót I/O ngoài pipeline).
+- dòng `delivery` = **end-to-end của cả lượt PHÍA SERVER**: từ lúc server đọc được tin (gồm cả thời gian xếp
+  hàng sau lượt trước của cùng khách) tới lúc frame phản hồi được TRAO CHO SOCKET — KHÔNG gồm mạng / render phía
+  client (chưa đo). Đây là con số cho NFR-1 (≤ 5s), KHÔNG phải tổng các node (tổng node bỏ sót I/O ngoài
+  pipeline). `detail.timings` tách queue / pre_pipeline / pipeline / persist / send; `fanout_ms` (phát hub cho
+  admin + tab khác) ghi riêng, không phải "xử lý".
+
+Dòng hành động Admin: node `admin`, `turn_id` NULL (không thuộc lượt khách nào → tab Báo cáo không đọc).
 """
 
 from __future__ import annotations

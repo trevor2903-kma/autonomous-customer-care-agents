@@ -106,6 +106,47 @@ def test_long_texts_are_capped() -> None:
     assert resp["detail"]["reply_len"] == 5000  # độ dài THẬT vẫn giữ, chỉ cắt bản lưu
 
 
+def test_turn_rows_link_the_customer_message() -> None:
+    # PERF-01.5: mọi dòng của lượt mang id tin KHÁCH đã lưu → nối thẳng về nguyên văn ở bảng message.
+    mid = uuid.uuid4()
+    assert all(r["message_id"] == mid for r in _rows(message_id=mid))
+    assert all(r["message_id"] is None for r in _rows())  # không lưu được tin (DB lỗi) → NULL như cũ
+
+
+def test_delivery_detail_is_merged_into_delivery_row_only() -> None:
+    extra = {"timings": {"pipeline_ms": 1800, "send_ms": 2}, "discarded": True, "status_now": "HUMAN_HANDLING"}
+    rows = _rows(delivery_detail=extra)
+    assert rows[-1]["detail"]["timings"] == {"pipeline_ms": 1800, "send_ms": 2}
+    assert rows[-1]["detail"]["discarded"] is True and rows[-1]["detail"]["intent"] == "shipping"
+    assert all("timings" not in r["detail"] for r in rows[:-1])
+
+
+async def test_record_turn_writes_message_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    written: list = []
+
+    class _S:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a: object) -> None:
+            return None
+
+        def add_all(self, objs: list) -> None:
+            written.extend(objs)
+
+        async def commit(self) -> None:
+            return None
+
+    monkeypatch.setattr(audit_service, "AsyncSessionLocal", _S)
+    mid = uuid.uuid4()
+    n = await audit_service.record_turn(
+        turn_id=TURN, conversation_id=CONV, customer_text="x", final=FINAL,
+        reply="y", outcome=TurnOutcome.SENT, total_ms=1, message_id=mid,
+    )
+    assert n == len(written) == 6
+    assert {row.message_id for row in written} == {mid}  # cột audit_log.message_id KHÔNG còn luôn NULL
+
+
 async def test_record_turn_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     """Bất biến §1: audit hỏng KHÔNG được làm rớt lượt trả lời khách."""
 
