@@ -3,7 +3,8 @@
 **Đổi vai ở P3** (Reset-and-reingest, plan §1): `knowledge/` trong repo là NGUỒN CHÂN LÝ.
 - `POST /reindex` — nạp lại toàn bộ KB từ repo (đường nạp CHÍNH).
 - `GET /documents` — sổ tài liệu đang index (từ `knowledge_document`).
-- `POST /upload` — AD-HOC, non-canonical: nạp nhanh một file lẻ, **mất khi reindex**.
+- `POST /upload` — AD-HOC, non-canonical: nạp nhanh một file lẻ, **mất khi reindex**. Upload lại cùng tên
+  = THAY bản cũ. Tên file chỉ giữ thành phần cuối (không chạm được tài liệu canonical).
 - `DELETE /documents/{id}` — chỉ gỡ được doc ad-hoc; doc canonical phải xoá file trong repo rồi reindex.
 - `POST /reset` — drop collection + xoá sổ.
 
@@ -12,6 +13,7 @@ KHÔNG OCR (PDF scan không text layer → 422). Cả router yêu cầu admin: r
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
@@ -25,6 +27,16 @@ from ..deps import require_admin
 router = APIRouter(prefix="/rag", tags=["rag"], dependencies=[Depends(require_admin)])
 
 _ALLOWED_SUFFIXES = (".pdf", ".docx", ".txt", ".md")
+_PATH_SEP_RE = re.compile(r"[/\\]")
+
+
+def _safe_filename(raw: str | None) -> str:
+    """Tên file là KHOÁ tài liệu (`payload.source` / `file_ref`) → chỉ giữ thành phần CUỐI (tách cả '/' lẫn
+    '\\'): 'faq/x.md' không được đè lên tài liệu canonical cùng khoá, '../' không đi đâu được (RAG-01.4)."""
+    name = _PATH_SEP_RE.split(raw or "")[-1].strip()
+    if name in ("", ".", ".."):
+        raise HTTPException(status_code=400, detail=f"Tên file không hợp lệ: {raw!r}")
+    return name
 
 
 def _out(doc) -> KnowledgeDocumentOut:
@@ -68,7 +80,7 @@ async def delete_document(doc_id: str) -> KnowledgeDocumentOut:
 @router.post("/upload")
 async def upload(file: UploadFile) -> dict[str, Any]:
     """Nạp AD-HOC một file lẻ (non-canonical). Không có frontmatter → `intent=None`, chunking tổng quát."""
-    name = file.filename or ""
+    name = _safe_filename(file.filename)
     if not name.lower().endswith(_ALLOWED_SUFFIXES):
         raise HTTPException(
             status_code=415, detail=f"Định dạng không hỗ trợ. Chỉ nhận {_ALLOWED_SUFFIXES}; nhận {name!r}"
@@ -87,11 +99,12 @@ async def upload(file: UploadFile) -> dict[str, Any]:
             detail="Không trích được văn bản (PDF scan không có text layer? — lát cắt KHÔNG OCR).",
         )
 
-    chunks = await rag_service.ingest_document(text, source=name, title=name)
-    await knowledge_service.record_upload(
-        source=name, title=name, fmt=name.rsplit(".", 1)[-1].lower(),
-        chunks=chunks, collection=settings.qdrant_collection,
-    )
+    try:
+        chunks = await knowledge_service.upload_document(
+            text, source=name, title=name, fmt=name.rsplit(".", 1)[-1].lower()
+        )
+    except ValueError as exc:  # trùng tài liệu canonical — repo là nguồn chân lý
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"source": name, "chunks": chunks, "collection": settings.qdrant_collection, "canonical": False}
 
 
