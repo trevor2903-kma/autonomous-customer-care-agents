@@ -12,9 +12,10 @@ class LatencyOut(BaseModel):
     avg_ms: int | None = None
     p50_ms: int | None = None
     p95_ms: int | None = None
+    p99_ms: int | None = None  # đuôi nặng (PERF-01.4)
     nfr_threshold_ms: int  # ngưỡng NFR-1 (env `NFR_LATENCY_MS`)
     within_nfr_pct: float  # % lượt ≤ ngưỡng
-    measured: int  # số lượt có số đo (mẫu của p50/p95)
+    measured: int  # số lượt có số đo (mẫu của p50/p95/p99)
 
 
 class EscalationReasonOut(BaseModel):

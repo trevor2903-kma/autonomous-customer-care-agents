@@ -132,7 +132,7 @@ def _pct(part: int, total: int) -> float:
 
 
 def summarize(turns: list[TurnView]) -> dict[str, Any]:
-    """KPI tổng: tỉ lệ kết cục · fallback · độ trễ (avg/p50/p95, %≤NFR-1) · bóc tách lý do escalate."""
+    """KPI tổng: tỉ lệ kết cục · fallback · độ trễ (avg/p50/p95/p99, %≤NFR-1) · bóc tách lý do escalate."""
     total = len(turns)
     counts = {o: 0 for o in (TurnOutcome.SENT, TurnOutcome.HELD_FOR_APPROVAL,
                              TurnOutcome.QUEUED_FOR_HUMAN, TurnOutcome.ERROR)}
@@ -163,6 +163,8 @@ def summarize(turns: list[TurnView]) -> dict[str, Any]:
             "avg_ms": round(sum(latencies) / len(latencies)) if latencies else None,
             "p50_ms": percentile(latencies, 50),
             "p95_ms": percentile(latencies, 95),
+            # Đuôi nặng (LLM retry, Qdrant cold-start) — PERF-01.4. NFR-1 vẫn đo theo p95/within_nfr_pct.
+            "p99_ms": percentile(latencies, 99),
             "nfr_threshold_ms": settings.nfr_latency_ms,
             "within_nfr_pct": _pct(within, len(latencies)),
             "measured": len(latencies),

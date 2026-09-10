@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.models.audit_log import AuditLog
 from app.models.enums import TurnOutcome
+from app.schemas.report import LatencyOut
 from app.services import report_service as rs
 
 NOW = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
@@ -56,6 +57,14 @@ def test_summary_nfr_and_percentiles() -> None:
     assert lat["p95_ms"] == 9000
     assert lat["avg_ms"] == round((900 + 1200 + 2000 + 4800 + 9000) / 5)
     assert lat["measured"] == 5
+
+
+def test_summary_p99_reaches_the_tail_beyond_p95() -> None:
+    # PERF-01.4: 100 lượt 1..100ms -> p99 = 99 (nearest-rank, số đo THẬT), khác p95 = 95; p50/p95 không đổi.
+    lat = rs.summarize([_turn(TurnOutcome.SENT, ms=ms) for ms in range(1, 101)])["latency"]
+    assert (lat["p50_ms"], lat["p95_ms"], lat["p99_ms"]) == (50, 95, 99)
+    assert LatencyOut(**lat).p99_ms == 99  # schema trả được ra API
+    assert rs.summarize([])["latency"]["p99_ms"] is None
 
 
 def test_summary_escalation_reasons_counted_by_blocking_flag() -> None:
