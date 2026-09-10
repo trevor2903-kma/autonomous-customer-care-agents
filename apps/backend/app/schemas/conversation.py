@@ -17,6 +17,8 @@ class ThreadMessageOut(BaseModel):
     conversation_id: uuid.UUID
     sender: str
     content: str
+    # Id do client sinh (audit v2) — FE khớp bong bóng lạc quan/gửi lại với bản đã lưu; None cho tin hệ thống/legacy.
+    client_msg_id: str | None = None
     created_at: datetime
 
 

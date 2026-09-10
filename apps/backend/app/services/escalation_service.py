@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import case, select
+from sqlalchemy import case, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -56,6 +56,27 @@ def build_escalation_card(
         "severity": final_state.get("severity"),
         "suggested_reply": suggested_reply or "",
     }
+
+
+async def apply_escalation(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    *,
+    card: dict[str, Any],
+    priority: str | None,
+    severity: str | None,
+    reason: str | None,
+) -> None:
+    """Ghi card + priority/severity/reason lên conversation — UPDATE nhẹ, KHÔNG commit (audit v2, GRAPH-02.1).
+
+    Chạy CHUNG transaction với CAS status + tin AI của lượt: ca không bao giờ ở IN_HUMAN_QUEUE/PENDING_APPROVAL mà
+    thiếu card (hàng đợi admin trống ca đã hứa chuyển người) — caller commit một lần cho cả ba."""
+    await session.execute(
+        update(Conversation)
+        .where(Conversation.id == conversation_id)
+        .values(escalation_card=card, priority=priority, severity=severity, escalation_reason=reason)
+        .execution_options(synchronize_session=False)
+    )
 
 
 async def persist_escalation(

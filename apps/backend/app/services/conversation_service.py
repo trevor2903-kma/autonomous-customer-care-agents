@@ -2,16 +2,23 @@
 
 KHÔNG chạy pipeline ở đây (PRD §8 — pipeline là việc của graph). Lưu ý CLAUDE.md: phản hồi tới khách CHỈ phát
 từ Response Generator — service này KHÔNG tự sinh tin nhắn AI.
+
+Ghi status CHỈ qua `transition_status` (audit v2, GRAPH-02.2 / FE-03): UPDATE có điều kiện — compare-and-set cùng
+pattern `auto_resolve` — trả True khi đúng 1 dòng đổi. `transition_status` và `insert_message` KHÔNG commit: caller
+gộp nhiều ghi (status + tin + card + audit) vào MỘT transaction rồi tự commit.
 """
 
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from datetime import datetime, timezone
+from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, not_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql import Update
 
 from ..models.conversation import Conversation
 from ..models.enums import ConversationStatus, MessageSender
@@ -89,6 +96,121 @@ async def set_status(
         conversation.current_intent = current_intent
     await session.commit()
     return conversation
+
+
+async def insert_message(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    *,
+    sender: str,
+    content: str,
+    client_msg_id: str | None = None,
+    bump_activity: bool = True,
+) -> Message:
+    """Chèn 1 tin — INSERT nhẹ: KHÔNG nạp hội thoại/lịch sử, KHÔNG commit (caller commit, OPS-01.3 / GRAPH-02.1).
+
+    `bump_activity`: tin thật (khách/AI/admin) đẩy `last_message_at`; tin hệ thống auto-resolve (nhắc/đóng) thì KHÔNG
+    — đồng hồ im-lặng của KHÁCH phải giữ nguyên để grace/đóng đo đúng (09c). Tin KHÁCH còn xoá mốc đã-nhắc (thoát
+    vòng auto-resolve). `client_msg_id` trùng trong cùng ca → IntegrityError ngay lúc flush (tin GỬI LẠI).
+    """
+    message = Message(
+        conversation_id=conversation_id, sender=sender, content=content, client_msg_id=client_msg_id
+    )
+    session.add(message)
+    await session.flush()  # lộ IntegrityError (trùng client_msg_id) TRƯỚC khi đụng tới hàng conversation
+    values: dict[str, Any] = {}
+    if bump_activity:
+        values["last_message_at"] = datetime.now(timezone.utc)
+    if sender == MessageSender.CUSTOMER:
+        values["auto_resolve_reminded_at"] = None
+    if values:
+        await session.execute(
+            update(Conversation)
+            .where(Conversation.id == conversation_id)
+            .values(**values)
+            .execution_options(synchronize_session=False)
+        )
+    return message
+
+
+def transition_stmt(
+    conversation_id: uuid.UUID,
+    *,
+    to: str,
+    allowed_from: Iterable[str],
+    current_intent: str | None = None,
+    assigned_admin_id: uuid.UUID | None = None,
+    not_held_by_other_than: uuid.UUID | None = None,
+) -> Update:
+    """Câu UPDATE compare-and-set của `transition_status` (tách riêng để test hình dạng SQL offline)."""
+    conditions = [Conversation.id == conversation_id, Conversation.status.in_(tuple(allowed_from))]
+    if not_held_by_other_than is not None:
+        # "Ca do admin KHÁC giữ": HUMAN_HANDLING + có người giữ + người đó không phải mình. HUMAN_HANDLING mà KHÔNG
+        # có người giữ (dữ liệu cũ) không tính là bị giữ — nếu không ca đó kẹt vĩnh viễn, không ai nhận/đóng được.
+        conditions.append(
+            not_(
+                and_(
+                    Conversation.status == ConversationStatus.HUMAN_HANDLING,
+                    Conversation.assigned_admin_id.is_not(None),
+                    Conversation.assigned_admin_id != not_held_by_other_than,
+                )
+            )
+        )
+    values: dict[str, Any] = {"status": to}
+    if current_intent is not None:
+        values["current_intent"] = current_intent
+    if assigned_admin_id is not None:
+        values["assigned_admin_id"] = assigned_admin_id
+    return (
+        update(Conversation)
+        .where(*conditions)
+        .values(**values)
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def transition_status(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    *,
+    to: str,
+    allowed_from: Iterable[str],
+    current_intent: str | None = None,
+    assigned_admin_id: uuid.UUID | None = None,
+    not_held_by_other_than: uuid.UUID | None = None,
+) -> bool:
+    """Đổi status CÓ ĐIỀU KIỆN (compare-and-set): chỉ ghi khi status hiện tại ∈ `allowed_from` [và ca không do admin
+    KHÁC giữ]. True ⇔ đúng 1 dòng đổi; False = trạng thái đã đổi dưới chân (admin tiếp quản / đóng ca / từ chối…)
+    → caller KHÔNG được ghi tiếp gì của hành động đó. KHÔNG commit — ghép được vào transaction của caller.
+
+    `current_intent` (tuỳ chọn): ghi kèm intent lượt khi vào AWAITING_CUSTOMER (resume clarify 09b).
+    `assigned_admin_id` (tuỳ chọn): gán người giữ trong CÙNG câu UPDATE (takeover).
+    """
+    result = await session.execute(
+        transition_stmt(
+            conversation_id,
+            to=to,
+            allowed_from=allowed_from,
+            current_intent=current_intent,
+            assigned_admin_id=assigned_admin_id,
+            not_held_by_other_than=not_held_by_other_than,
+        )
+    )
+    return result.rowcount == 1
+
+
+async def get_status_and_admin(
+    session: AsyncSession, conversation_id: uuid.UUID
+) -> tuple[str, uuid.UUID | None] | None:
+    """`(status, assigned_admin_id)` đọc TƯƠI từ DB (không qua identity map, không load messages). None = không có ca."""
+    row = (
+        await session.execute(
+            select(Conversation.status, Conversation.assigned_admin_id).where(
+                Conversation.id == conversation_id
+            )
+        )
+    ).first()
+    return (row.status, row.assigned_admin_id) if row is not None else None
 
 
 async def get_status(session: AsyncSession, conversation_id: uuid.UUID) -> str | None:

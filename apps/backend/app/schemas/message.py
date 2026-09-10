@@ -16,4 +16,6 @@ class MessageOut(BaseModel):
     content: str
     intent: str | None = None
     confidence: float | None = None
+    # Id do client sinh (audit v2) — FE khớp bong bóng lạc quan với bản đã lưu; None cho tin hệ thống/legacy.
+    client_msg_id: str | None = None
     created_at: datetime
