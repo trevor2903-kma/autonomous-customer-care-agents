@@ -43,6 +43,14 @@
   observing the pipeline is now the **Báo cáo** tab's job, reading real customer turns from `audit_log`.)*
 - **Phase 2 (08a/08b/08c) · 10a · 11 · 12 · 13 · 16 — all DONE.** Details in their phase sections below; the
   short version is in Quick status at the bottom.
+- **Audit v2 fixes (2026-09-10) — DONE.** 49 real findings of the audit v2 report fixed (0 critical): compare-and-set
+  on every status transition + 409 for stale admin actions, per-customer serialized turns that commit BEFORE telling
+  the customer, realtime protocol v2 (ack/ping/status/inbox, `client_msg_id` idempotency), security (analyze admin-only,
+  rate limits, WS role from DB, health leak), order lookup for refund/exchange/complaint, fallback → handoff
+  (FR-PIPE-5), alias-based blue/green reindex, resilient chat UI (reconnect, send states, multiline, sticky scroll).
+  **Waiting on a user decision:** cancel-order intent (AGENT-01.3, PRD gap); whether the fixed "không tìm thấy đơn"
+  reply bypasses the auto-reply gate (now: treated like a clarification); a case held by an absent admin (no
+  force-release); AI-only chat when Postgres is down (WS auth now fails closed). Client-side RTT not measured.
 
 > **Autonomous core reached:** the pipeline now **decides + escalates on real traffic** (not just the happy path):
 > KB-answerable → grounded auto-reply; out-of-domain / no-grounding → `human_handoff` + IN_HUMAN_QUEUE. Conversations
@@ -142,6 +150,12 @@
   defense is the structure (deterministic Agent 3, scoped lookup, grounding) plus these layers.
 - **UI redesign.** End-phase visual pass, incremental, no-backend-touched, plain Tailwind.
 - **14 — Deploy ← NEXT.** Backend → Render/Railway; frontend → Vercel; cloud infra; env secrets; personal-data care (NFR-6).
+  Constraints from audit v2: keep ONE uvicorn worker (hub, per-customer turn lock, dedupe registry, rate limiters and
+  the RAG write lock are in-process) until Redis pub/sub + locks (FR-ASYNC-7); run uvicorn with `--proxy-headers
+  --forwarded-allow-ips` or every client shares the proxy IP's login/register rate limit; `alembic upgrade head`
+  (7c4e2a9f1b3d adds `message.client_msg_id`); the first reindex turns the real `knowledge` collection into an alias
+  (sub-second gap — do it off-peak). DB round trips now sit inside the measured latency (commit before replying), so
+  co-locate the backend with Neon.
   → **Milestone:** running on the internet, demo-able remotely.
 
 ---

@@ -114,36 +114,55 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
 ## Trạng thái hiện tại & ranh giới
 
 **Đã THẬT (đừng coi là stub):**
-- **Agent 1** Intent Classifier — taxonomy trong prompt, KHÔNG retrieval; entities LLM⊕regex.
-- **Agent 2** Knowledge Agent/RAG (`/api/agents/analyze`) — truy hồi Qdrant → `rag_contexts` + `retrieval_confidence` + cờ.
+- **Agent 1** Intent Classifier — taxonomy trong prompt, KHÔNG retrieval; entities LLM⊕regex. `order_id` neo từ khoá
+  + từ nối đóng; số tiền ("đơn giá 250000", "đơn trên 500k", "500.000đ") KHÔNG thành mã — cùng luật lọc cả entity LLM.
+- **Agent 2** Knowledge Agent/RAG — truy hồi Qdrant → `rag_contexts` + `retrieval_confidence` + cờ (`search_error` =
+  Qdrant/embedding hỏng ≠ `no_relevant_knowledge`). Tra đơn SCOPED cho `order_status`/`shipping`/`refund`/`exchange`/
+  `complaint`: đơn tra được thì cờ grounding truy hồi KHÔNG chặn (dữ liệu đơn là grounding); shipping không ra đơn →
+  trả lời chính sách; thiếu danh tính → `order_unresolved`. Lượt resume mã trơ truy hồi theo CÂU HỎI GỐC; mã hỏng chỉ
+  đếm khi bot đã thật sự báo "không tìm thấy" (khớp đúng template). Route dev `/api/agents/analyze` = admin-only.
 - **Agent 3** Decision Engine — **tất định**: route trên CỜ (`BLOCKING_FLAGS`), **KHÔNG blend confidence**;
   `RETRIEVAL_THRESHOLD` tách khỏi `confidence_threshold`; priority/severity theo intent. KHÔNG LLM/reasoning.
-- **Agent 4** Response Generator — grounded từ `rag_contexts` + phanh anti-hallucination (không tri thức → fallback +
-  `hallucination_risk`). **Sole-egress:** phát cả câu trả lời, `HANDOFF_NOTICE` (+ biến thể ngoài giờ), lẫn câu hỏi clarify.
+- **Agent 4** Response Generator — grounded từ facts.md + `rag_contexts` + `order_context`; phanh anti-hallucination:
+  không nguồn / LLM lỗi → KHÔNG bịa, `hallucination_risk` → **chuyển người** (HANDOFF_NOTICE + `IN_HUMAN_QUEUE` +
+  EscalationCard, FR-PIPE-5). "Không tìm thấy đơn" = template cố định → `AWAITING_CUSTOMER` (intent resume được) để
+  khách gửi lại mã trơ. **Sole-egress:** phát câu trả lời, `HANDOFF_NOTICE` (+ biến thể ngoài giờ), câu hỏi clarify.
+  Dòng blockquote (`>`) trong facts.md = ghi chú biên tập, KHÔNG vào prompt.
 - **Persistence + bộ nhớ đa lượt:** lưu conversation + message (Postgres, ca theo `customer_id` từ JWT);
   `history` (history_window) từ DB vào prompt Agent 1 + Agent 4 — **bộ nhớ từ DB**, `thread_id` sinh MỖI lượt
   (KHÔNG từ checkpointer).
-- **Realtime:** `/ws/chat` chạy đủ pipeline (typing → reply). `ENABLE_LLM=true`.
+- **Realtime (giao thức v2, audit v2):** `/ws/chat`, `/ws/admin/{id}`, `/ws/admin-inbox` nói frame JSON (ack ·
+  ping/pong · typing · reply · handoff · pending · message · status · error). Tin mang `client_msg_id` → chống trùng
+  (registry in-process + unique index `message(conversation_id, client_msg_id)`), ack biên nhận ngay. Lượt khách TUẦN TỰ
+  theo khách (asyncio.Lock, mọi tab), chạy trong task KHÔNG bị huỷ khi khách đóng tab; kết quả lượt ghi MỘT transaction
+  (CAS status + tin AI + EscalationCard) **TRƯỚC** khi báo khách; thua CAS (admin vừa tiếp quản/đóng) → không gửi trả
+  lời, gửi frame `status`. Dashboard tự nối lại (backoff + heartbeat) rồi ghép lại lịch sử; inbox admin thay polling
+  (refetch 60 s chỉ là lưới an toàn). `ENABLE_LLM=true`.
 - **HITL đầy đủ (08a/08b/08c):** EscalationCard + hàng đợi admin (`GET /admin/escalations`); gate §9 hai van
   (`/admin/gate-config` + `gate_service.holds_auto_reply`) với ba kết cục gửi thẳng / `PENDING_APPROVAL` /
   `IN_HUMAN_QUEUE`; admin takeover/resolve/approve/reject + chat admin↔khách qua hub in-process (status-gate:
-  ca đang có người xử lý thì AI KHÔNG chạy).
+  ca đang có người xử lý thì AI KHÔNG chạy). Mọi chuyển trạng thái (pipeline, admin, auto-resolve) là
+  **compare-and-set** (`conversation_service.transition_status`, bảng chuyển PRD §15): sai trạng thái / ca do admin
+  khác giữ → 409; duyệt/từ chối kèm `expected_draft` (chống ABA); WS admin chỉ người đang giữ ca gửi được; mọi hành
+  động admin ghi `audit_log` (FR-ESC-5).
 - **Auto-resolve theo im lặng (09c, phần inactivity):** `services/auto_resolve.py` — `classify_idle` THUẦN (NOOP/
   REMIND/RESOLVE) + `run_sweep_once`/`sweep_loop` (asyncio task trong lifespan, quét Postgres mỗi
   `sweep_interval_seconds`, KHÔNG polling Redis). CHỈ `REPLIED`/`AWAITING_CUSTOMER`; gate `auto_resolve` OFF →
   no-op. Hai ngưỡng T1 `auto_resolve_minutes` (→ 1 tin nhắc) + T2 `auto_resolve_grace_minutes` (→ `RESOLVED`);
-  `conversation.auto_resolve_reminded_at` mốc đã nhắc, reset khi khách nhắn (`add_message`). Ghi bằng **guarded
-  UPDATE** (`WHERE status IN sweepable [+ reminded_at guard]`, chỉ hành động khi `rowcount==1`) → KHÔNG đóng nhầm
-  ca vừa bị admin takeover / khách nhắn lại (FR-ASYNC-4). Tin nhắc/đóng = template cố định qua `send_auto_message`
-  (KHÔNG bump `last_message_at`) + `hub.publish` (sole-egress, KHÔNG LLM). Sweep có pre-filter thời gian + `LIMIT`
-  (`sweep_batch_limit`) để không nạp mọi ca `REPLIED` mỗi vòng.
+  `conversation.auto_resolve_reminded_at` mốc đã nhắc, reset khi khách nhắn. Ghi bằng **guarded UPDATE**
+  (`WHERE status IN sweepable [+ reminded_at guard] [+ REMIND: vẫn im lặng ≥ T1 trên chính row]`, chỉ hành động khi
+  `rowcount==1`) → KHÔNG nhắc/đóng nhầm ca vừa bị admin takeover / khách nhắn lại (FR-ASYNC-4). Tin nhắc/đóng =
+  template cố định chèn bằng `conversation_service.insert_message` (KHÔNG bump `last_message_at`) trong CÙNG transaction
+  với CAS, commit rồi mới phát hub (sole-egress, KHÔNG LLM) — không còn "đã đánh dấu nhắc mà tin không tới". Session
+  ngắn mỗi ca; pre-filter thời gian + `LIMIT` (`sweep_batch_limit`) để không nạp mọi ca `REPLIED` mỗi vòng.
 - **Lượt clarification (09b, AWAITING_CUSTOMER):** Decision route thứ ba `clarify` (SAU safety-gate) khi intent
   gắn-với-đơn (`order_status`/`refund`/`exchange`) thiếu `order_id` (`CLARIFY_MISSING_ENTITY`) → Response phát câu hỏi
   CỐ ĐỊNH (`CLARIFY_QUESTION`, no LLM) + `AWAITING_CUSTOMER`. Loop-guard qua `state.prior_status` (WS truyền status
   TRƯỚC lượt): đã hỏi 1 lần vẫn thiếu → `human_handoff` (FR-ASYNC-2). Resume = lượt kế với DB history (KHÔNG
   checkpointer). Safety-gate LUÔN ưu tiên clarify; refund/exchange sau khi có mã vẫn qua gate/duyệt nháp.
   **Resume mã TRƠ:** khách đáp chỉ bằng con số → `intent.resume_order_code` + short-circuit TẤT ĐỊNH khôi phục
-  intent GỐC (lấy từ `conversation.current_intent`, persist ở lượt clarify qua `set_status(current_intent=)`)
+  intent GỐC (lấy từ `conversation.current_intent`, persist mỗi khi lượt kết thúc ở `AWAITING_CUSTOMER` — clarify HOẶC
+  "không tìm thấy đơn" — qua `transition_status(current_intent=)`)
   + `order_id`, **KHÔNG gọi LLM** — vì LLM hay xếp số trơ thành `other` → `out_of_domain` → escalate oan.
   Chỉ nới trong ngữ cảnh resume (regex `order_id` thường vẫn neo TỪ KHOÁ, chống nhầm "giá 250000").
   `intent.py` import `CLARIFY_MISSING_ENTITY` từ `decision.py` để tập intent clarify có MỘT nguồn chân lý.
@@ -151,14 +170,25 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
   `support_hours_start/end` + `support_timezone` Asia/Ho_Chi_Minh, dep `tzdata`). `response_node` nhánh handoff NGOÀI
   giờ → `HANDOFF_NOTICE_AFTER_HOURS` ("nhân viên sẽ phản hồi sớm") thay `HANDOFF_NOTICE`; ca vẫn `IN_HUMAN_QUEUE` +
   EscalationCard. AI auto-reply 24/7 không đổi. **Chưa có:** admin-presence thật (nay chỉ theo giờ).
-- **Auth (11):** JWT HS256 + RBAC; admin routes qua `require_admin`, `/ws/chat` xác thực `?token=` (role customer).
+- **Auth (11):** JWT HS256 + RBAC; admin routes qua `require_admin`; mọi WS xác thực `?token=` và đọc role TỪ DB
+  (token hỏng / sai role / user bị xoá → 4401; DB lỗi → 1011, client nối lại). Rate limit in-process
+  (`core/rate_limit.py`): login theo IP + email, register theo IP (429 + `Retry-After`), tin `/ws/chat` theo khách;
+  bcrypt chạy threadpool + hash giả khi email không tồn tại. `/api/health` không trả nguyên văn lỗi hạ tầng.
 - **Đơn hàng (16):** `order_service.lookup(order_code, customer_id)` — tra **SCOPED theo khách**; mã người khác
   và mã không tồn tại trả CÙNG một kết quả (không lộ sự tồn tại).
-- **Observability:** mỗi lượt khách ghi 6 dòng `audit_log` (cùng `turn_id` + `duration_ms`); tab **Báo cáo**
-  (`/admin/reports`) tổng hợp từ đó. Langfuse **bổ trợ** (trace LLM), no-op khi thiếu key.
+- **Tri thức (RAG):** reindex **blue/green qua ALIAS Qdrant** — tên phục vụ (`qdrant_collection`) là alias trỏ
+  collection vật lý; dựng xong mới đổi alias nguyên tử (không gián đoạn; lần reindex ĐẦU chuyển collection thật → alias,
+  gián đoạn < 1 s) rồi dọn bản mồ côi. Upload ad-hoc có phiên bản (upload lại = THAY; ghi sổ hỏng → gỡ đúng bản vừa
+  ghi), bỏ `## Internal Note`, tên file chỉ lấy phần cuối, không đè dòng canonical. Khoá ghi in-process cho
+  reindex/upload/xoá/reset.
+- **Observability:** mỗi lượt khách ghi 6 dòng `audit_log` (cùng `turn_id` + `message_id`; dòng `delivery` có
+  `timings` tách pre-pipeline / pipeline / ghi DB / gửi socket / fan-out — số đo phía SERVER); mỗi hành động admin ghi 1
+  dòng `node="admin"`. Tab **Báo cáo** (`/admin/reports`): trung vị/p95/p99, % ≤ NFR-1, lý do chuyển người. Langfuse
+  **bổ trợ** (trace LLM), no-op khi thiếu key. Client OpenAI có timeout + `max_retries` từ env.
 - **Chống prompt-injection (13, NFR-7):** `core/sanitize.py` — Lớp A chuẩn hoá + cap `max_message_chars` tại
   biên WS; Lớp B `as_data_block` bọc tin khách `<tin_nhan_khach>` + chunk RAG `<tri_thuc>` (vô hiệu thẻ giả
-  mạo); Lớp C 5 luật chống-injection trong system prompt Agent 1 + Agent 4; Lớp D sanitize upload RAG ad-hoc.
+  mạo, kể cả thẻ có thuộc tính) — áp cho CẢ lịch sử hội thoại (`neutralize_tags` + repr); Lớp C 5 luật chống-injection
+  trong system prompt Agent 1 + Agent 4; Lớp D sanitize upload RAG ad-hoc.
   **KHÔNG có cờ/detector injection** — phòng thủ là cấu trúc + 4 lớp, cố ý.
 
 **KHÔNG (giữ ranh giới — CHƯA tới lượt, xem ROADMAP):**
@@ -166,7 +196,8 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
   quyết định kiến trúc VĨNH VIỄN, không phải "chưa tới lượt".)
 - **durable checkpointer + `interrupt()`** (09b — nay vẫn `MemorySaver` in-memory, `graph.py`; **lượt clarification
   AWAITING_CUSTOMER ĐÃ XONG** trên DB+status, checkpointer chưa); **admin-presence offline** (09c — **offline theo giờ
-  hỗ trợ ĐÃ XONG**, presence thật chưa); Redis pub/sub đa-worker (nay hub IN-PROCESS, 1 worker); deploy (14); vòng học (15).
+  hỗ trợ ĐÃ XONG**, presence thật chưa); Redis pub/sub đa-worker (nay hub, khoá lượt theo khách, registry chống trùng,
+  rate limiter, khoá ghi RAG đều IN-PROCESS → GIỮ 1 uvicorn worker); deploy (14); vòng học (15).
 - KHÔNG worker queue polling Redis — dùng BackgroundTasks/session ngắn (giữ free-tier).
 
 **Slice tiếp theo:** **14 — Deploy** (backend → Render/Railway, FE → Vercel; hạ tầng cloud, secret theo env,
