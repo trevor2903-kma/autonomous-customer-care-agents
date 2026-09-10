@@ -209,9 +209,11 @@ export async function getConversations(
   return res.json();
 }
 
+// Hành động HITL: 409 = chuyển trạng thái không hợp lệ / ca đang do admin khác giữ (FE-03) → ném đúng `detail`
+// tiếng Việt của backend để màn ca hiện inline (không thất bại im lặng).
 export async function takeoverConversation(id: string): Promise<AdminConversation> {
   const res = await req(`/api/admin/conversations/${id}/takeover`, { method: "POST" });
-  if (!res.ok) throw new Error(`takeover ${res.status}`);
+  if (!res.ok) await fail(res, `Không tiếp quản được ca (${res.status})`);
   return res.json();
 }
 
@@ -221,19 +223,19 @@ export async function approveDraft(id: string, content?: string): Promise<AdminC
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content: content ?? null }),
   });
-  if (!res.ok) throw new Error(`approve ${res.status}`);
+  if (!res.ok) await fail(res, `Không duyệt được nháp (${res.status})`);
   return res.json();
 }
 
 export async function resolveConversation(id: string): Promise<AdminConversation> {
   const res = await req(`/api/admin/conversations/${id}/resolve`, { method: "POST" });
-  if (!res.ok) throw new Error(`resolve ${res.status}`);
+  if (!res.ok) await fail(res, `Không đóng được ca (${res.status})`);
   return res.json();
 }
 
 export async function rejectDraft(id: string): Promise<AdminConversation> {
   const res = await req(`/api/admin/conversations/${id}/reject`, { method: "POST" });
-  if (!res.ok) throw new Error(`reject ${res.status}`);
+  if (!res.ok) await fail(res, `Không chuyển được sang xử lý tay (${res.status})`);
   return res.json();
 }
 
