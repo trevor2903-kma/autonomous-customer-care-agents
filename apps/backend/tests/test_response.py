@@ -182,6 +182,30 @@ def test_facts_not_indexed_but_available_to_agent4() -> None:
     assert "miễn phí cho đơn từ 500.000đ" in resp.load_facts().lower()
 
 
+def test_load_facts_drops_editor_blockquote_notes(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    # Dòng blockquote (`>`) = ghi chú BIÊN TẬP ("Giá trị dưới đây là MẪU") — KHÔNG vào khối SỰ THẬT CỬA HÀNG
+    # "luôn đúng" của prompt (AGENT-03.2). Nội dung sự thật xung quanh giữ nguyên.
+    facts = tmp_path / "facts.md"
+    facts.write_text(
+        "---\ntitle: x\n---\n# Thông tin\n\n> ⚠️ Giá trị dưới đây là MẪU.\n  > dòng ghi chú thụt lề\n\n"
+        "- **Giờ hỗ trợ**: 9:00–21:00.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(resp, "_FACTS_PATH", facts)
+    monkeypatch.setattr(resp, "_facts_cache", None)
+    out = resp.load_facts()
+    assert "MẪU" not in out and "ghi chú thụt lề" not in out
+    assert "# Thông tin" in out and "- **Giờ hỗ trợ**: 9:00–21:00." in out
+    assert "MẪU" not in resp._system_prompt()
+
+
+def test_real_facts_editor_note_not_in_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    # facts.md thật vẫn còn dòng "> ⚠️ … MẪU" (giá trị thật phải do chủ shop cung cấp) — prompt không được mang nó.
+    monkeypatch.setattr(resp, "_facts_cache", None)
+    assert "MẪU" not in resp.load_facts()
+    assert "miễn phí cho đơn từ 500.000đ" in resp.load_facts().lower()
+
+
 def test_context_block_labels_case_as_process() -> None:
     block = resp._context_block(
         [

@@ -111,11 +111,18 @@ _TYPE_LABEL = {
 
 
 def load_facts() -> str:
-    """Đọc `knowledge/facts.md` MỘT LẦN rồi cache (đọc lúc khởi động qua `warmup_facts`)."""
+    """Đọc `knowledge/facts.md` MỘT LẦN rồi cache (đọc lúc khởi động qua `warmup_facts`).
+
+    Bỏ các dòng blockquote markdown (`>`) = ghi chú cho người BIÊN TẬP (vd "Giá trị dưới đây là MẪU"), không phải
+    sự thật cửa hàng — để nguyên thì chúng vào khối "SỰ THẬT CỬA HÀNG (luôn đúng)" của prompt (AGENT-03.2).
+    """
     global _facts_cache
     if _facts_cache is None:
         try:
-            _facts_cache = frontmatter.load(_FACTS_PATH).content.strip()
+            content = frontmatter.load(_FACTS_PATH).content
+            _facts_cache = "\n".join(
+                line for line in content.splitlines() if not line.lstrip().startswith(">")
+            ).strip()
         except OSError as exc:  # thiếu file → chạy không facts, đừng làm rớt app
             log.warning("facts.md không đọc được (%s) — bỏ qua khối SỰ THẬT CỬA HÀNG", exc)
             _facts_cache = ""
