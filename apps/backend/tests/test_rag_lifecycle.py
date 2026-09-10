@@ -11,12 +11,14 @@ import logging
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import CreateAliasOperation, Distance, VectorParams
+from qdrant_client.http.exceptions import ResponseHandlingException
+from qdrant_client.models import CreateAlias, CreateAliasOperation, Distance, PointStruct, VectorParams
 
 from app.api.deps import require_admin
 from app.api.routes import rag as rag_routes
@@ -272,6 +274,112 @@ async def test_legacy_migration_keeps_the_new_kb_if_alias_creation_fails(
     assert "chạy lại reindex" in caplog.text
 
 
+# Lời gọi báo lỗi SAU khi server đã áp (qdrant-client gói timeout đọc / mất kết nối thành
+# ResponseHandlingException; task bị huỷ lúc tắt server) — KHÔNG được coi là "chưa gì thay đổi".
+async def test_swap_applied_but_reported_failed_keeps_the_new_kb_and_writes_the_ledger(
+    qdrant: _StrictQdrant, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = _kb(tmp_path)
+    await rag_service.ingest_knowledge_base(root)
+    real_update = qdrant.update_collection_aliases
+
+    async def applied_then_timeout(change_aliases_operations: Any, **kwargs: Any) -> bool:
+        await real_update(change_aliases_operations, **kwargs)
+        raise ResponseHandlingException(TimeoutError("read timeout"))
+
+    monkeypatch.setattr(qdrant, "update_collection_aliases", applied_then_timeout)
+    session = _FakeSession()
+    _use_session(monkeypatch, session)
+    report = await knowledge_service.reindex_from_repo(root)
+    assert (await qdrant.alias_map())[ALIAS] == report["physical_collection"]  # tên phục vụ còn, trỏ bản mới
+    assert await qdrant.real_collections() == {report["physical_collection"]}
+    assert len(await _points(qdrant)) == report["points"] == 4
+    assert session.committed  # đã đổi thật → sổ ghi theo bản mới, hai kho khớp nhau
+
+
+async def test_cancelled_swap_that_was_applied_still_serves_the_new_collection(
+    qdrant: _StrictQdrant, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ok = await rag_service.ingest_knowledge_base(_kb(tmp_path))
+    real_update = qdrant.update_collection_aliases
+
+    async def applied_then_cancelled(change_aliases_operations: Any, **kwargs: Any) -> bool:
+        await real_update(change_aliases_operations, **kwargs)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(qdrant, "update_collection_aliases", applied_then_cancelled)
+    with pytest.raises(asyncio.CancelledError):  # huỷ vẫn phải lan ra
+        await rag_service.reset_collection()
+    served = (await qdrant.alias_map())[ALIAS]
+    assert served != ok["physical_collection"] and served in await qdrant.real_collections()
+    assert await _points(qdrant) == []
+
+
+async def test_legacy_delete_applied_but_reported_failed_keeps_the_new_kb_and_a_rerun_recovers(
+    qdrant: _StrictQdrant, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    await qdrant.create_collection(ALIAS, vectors_config=VectorParams(size=3, distance=Distance.COSINE))
+    real_delete = qdrant.delete_collection
+
+    async def applied_then_timeout(collection_name: str, **kwargs: Any) -> bool:
+        await real_delete(collection_name, **kwargs)
+        raise ResponseHandlingException(TimeoutError("read timeout"))
+
+    monkeypatch.setattr(qdrant, "delete_collection", applied_then_timeout)
+    with caplog.at_level(logging.ERROR, logger="rag"), pytest.raises(ResponseHandlingException):
+        await rag_service.ingest_knowledge_base(_kb(tmp_path))
+    kept = await qdrant.real_collections()
+    assert len(kept) == 1 and next(iter(kept)).startswith(f"{ALIAS}__")  # collection cũ đã mất: giữ bản mới
+    assert "chạy lại reindex" in caplog.text
+
+    monkeypatch.setattr(qdrant, "delete_collection", real_delete)
+    report = await rag_service.ingest_knowledge_base(_kb(tmp_path))  # chạy lại: có alias + dọn bản mồ côi
+    assert (await qdrant.alias_map())[ALIAS] == report["physical_collection"]
+    assert await qdrant.real_collections() == {report["physical_collection"]}
+
+
+async def test_unreadable_state_after_a_failed_swap_deletes_nothing(
+    qdrant: _StrictQdrant, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    ok = await rag_service.ingest_knowledge_base(_kb(tmp_path))
+    real_get_aliases = qdrant.get_aliases
+    down = {"on": False}
+
+    async def get_aliases(**kwargs: Any) -> Any:
+        if down["on"]:
+            raise ResponseHandlingException(ConnectionError("mất kết nối"))
+        return await real_get_aliases(**kwargs)
+
+    async def lost(*args: Any, **kwargs: Any) -> bool:
+        down["on"] = True  # mất kết nối giữa chừng: không biết server đã áp hay chưa
+        raise ResponseHandlingException(ConnectionError("mất kết nối"))
+
+    monkeypatch.setattr(qdrant, "get_aliases", get_aliases)
+    monkeypatch.setattr(qdrant, "update_collection_aliases", lost)
+    with caplog.at_level(logging.ERROR, logger="rag"), pytest.raises(ResponseHandlingException):
+        await rag_service.ingest_knowledge_base(_kb(tmp_path))
+    down["on"] = False
+    assert (await qdrant.alias_map())[ALIAS] == ok["physical_collection"]
+    assert len(await qdrant.real_collections()) == 2  # không đoán → không xoá gì (lần đổi alias sau sẽ dọn)
+    assert "chạy lại reindex" in caplog.text
+
+
+async def test_swap_sweeps_leftover_physical_collections_but_nothing_else(
+    qdrant: _StrictQdrant, tmp_path: Path
+) -> None:
+    # Bản mồ côi (restart giữa reindex, dọn dẹp hỏng) = nguyên một bản KB chiếm bộ nhớ free-tier nếu không dọn.
+    vectors = VectorParams(size=3, distance=Distance.COSINE)
+    for name in (f"{ALIAS}__mo_coi", f"{ALIAS}__alias_khac", f"{ALIAS}_khac"):
+        await qdrant.create_collection(name, vectors_config=vectors)
+    await qdrant.update_collection_aliases(
+        change_aliases_operations=[
+            CreateAliasOperation(create_alias=CreateAlias(collection_name=f"{ALIAS}__alias_khac", alias_name="kb_khac"))
+        ]
+    )
+    report = await rag_service.ingest_knowledge_base(_kb(tmp_path))
+    assert await qdrant.real_collections() == {report["physical_collection"], f"{ALIAS}__alias_khac", f"{ALIAS}_khac"}
+
+
 async def test_reset_swaps_in_an_empty_collection_and_drops_the_old_one(
     qdrant: _StrictQdrant, tmp_path: Path
 ) -> None:
@@ -473,6 +581,57 @@ async def test_ledger_failure_removes_exactly_this_uploads_points(
     # Bản cũ vẫn khớp dòng sổ cũ; lần hỏng không để lại vector mồ côi (UI không thấy, không xoá được).
     assert sorted(p.id for p in await _of(qdrant, "km.md")) == before
     assert await _of(qdrant, "moi-tinh.md") == []
+
+
+async def test_failed_removal_of_the_old_version_is_logged_and_raised_after_the_ledger_is_written(
+    qdrant: _StrictQdrant, ledger: list[dict], monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def broken(source: str, keep_version: str) -> None:
+        raise RuntimeError("Qdrant 503")
+
+    monkeypatch.setattr(rag_service, "delete_stale_versions", broken)
+    with caplog.at_level(logging.ERROR, logger="knowledge"), pytest.raises(RuntimeError, match="503"):
+        await _upload(_doc(2, "mới"))
+    assert [r["chunks"] for r in ledger] == [2]  # sổ ĐÃ ghi bản mới...
+    assert len(await _of(qdrant, "km.md")) == 2  # ...và bù trừ KHÔNG gỡ nhầm bản mới (sổ vẫn khớp vector)
+    assert "lẫn hai bản" in caplog.text
+
+
+async def test_failed_compensation_is_logged_and_the_original_error_still_propagates(
+    qdrant: _StrictQdrant, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    async def ledger_down(**kwargs: Any) -> None:
+        raise RuntimeError("Neon ngắt kết nối")
+
+    async def qdrant_down(source: str, version: str) -> None:
+        raise RuntimeError("Qdrant 503")
+
+    monkeypatch.setattr(knowledge_service, "record_upload", ledger_down)
+    monkeypatch.setattr(rag_service, "delete_upload_version", qdrant_down)
+    with caplog.at_level(logging.ERROR, logger="knowledge"), pytest.raises(RuntimeError, match="Neon"):
+        await _upload(_doc(1, "mới"))
+    assert "vector mồ côi" in caplog.text  # bù trừ hỏng: không che lỗi gốc, nhưng để lại dấu vết
+
+
+async def test_reupload_replaces_points_written_before_upload_versions_existed(
+    qdrant: _StrictQdrant, ledger: list[dict]
+) -> None:
+    # Point upload do bản code cũ ghi: id theo `source#i`, KHÔNG có `upload_version`.
+    await rag_service.ensure_collection()
+    await qdrant.upsert(
+        collection_name=ALIAS,
+        points=[
+            PointStruct(
+                id=str(uuid5(NAMESPACE_URL, f"km.md#{i}")), vector=[1.0, 0.0, 0.5],
+                payload={"text": f"bản cũ {i}", "source": "km.md", "type": "upload"},
+            )
+            for i in range(3)
+        ],
+        wait=True,
+    )
+    await _upload(_doc(1, "mới"))
+    kept = await _of(qdrant, "km.md")
+    assert len(kept) == 1 and kept[0].payload.get("upload_version")
 
 
 # ── Tên file an toàn + dòng canonical bất khả xâm phạm (RAG-01.4) ─────────────

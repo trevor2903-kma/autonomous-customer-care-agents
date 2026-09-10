@@ -145,6 +145,53 @@ async def _drop_quietly(collection: str) -> None:
         log.warning("qdrant: không xoá được collection %r (xoá tay): %s", collection, exc)
 
 
+async def _sweep_orphans(keep: str) -> None:
+    """Dọn collection vật lý `<tên phục vụ>__*` bị bỏ lại (restart giữa reindex, dọn dẹp hỏng, đổi alias
+    không rõ kết quả…): mỗi bản mồ côi là nguyên một bản KB chiếm bộ nhớ Qdrant free-tier. Gọi SAU khi đổi
+    alias xong (dưới khoá ghi); KHÔNG đụng `keep` hay collection nào đang có alias trỏ tới. Best-effort."""
+    client = get_qdrant()
+    prefix = f"{settings.qdrant_collection}__"
+    try:
+        names = [c.name for c in (await client.get_collections()).collections]
+        served = {a.collection_name for a in (await client.get_aliases()).aliases}
+    except Exception as exc:  # noqa: BLE001 — dọn dẹp không được làm hỏng lần đổi alias vừa xong.
+        log.warning("qdrant: không liệt kê được collection để dọn bản mồ côi: %s", exc)
+        return
+    for name in names:
+        if name.startswith(prefix) and name != keep and name not in served:
+            await _drop_quietly(name)
+
+
+async def _settle_failed_activate(alias: str, target: str, *, legacy: bool) -> bool:
+    """`_activate` gặp lỗi → đọc lại trạng thái THẬT rồi mới dọn. qdrant-client gói MỌI lỗi transport (kể cả
+    timeout đọc SAU khi server đã áp) thành `ResponseHandlingException`, task bị huỷ cũng tới giữa chừng →
+    "lời gọi báo lỗi" KHÔNG có nghĩa "chưa gì thay đổi". Xoá `target` khi alias đã trỏ vào nó = Qdrant bỏ luôn
+    alias → tên phục vụ biến mất, mọi lượt khách rơi sang người.
+
+    True = alias ĐÃ trỏ `target`. False = chưa đổi: bỏ `target` khi chắc an toàn; bản cũ đã mất hoặc không
+    đọc được trạng thái → GIỮ `target` và log (lần đổi alias thành công sau sẽ dọn qua `_sweep_orphans`).
+    """
+    try:
+        if await _alias_target(alias) == target:
+            return True
+        only_copy = legacy and not await get_qdrant().collection_exists(alias)
+    except Exception as exc:  # noqa: BLE001 — không biết Qdrant đang ở đâu: đừng đoán, đừng xoá gì.
+        log.error(
+            "qdrant: không đọc được alias %r sau khi đổi -> %r lỗi (%s) — GIỮ %r; kiểm tra rồi chạy lại reindex.",
+            alias, target, exc, target,
+        )
+        return False
+    if only_copy:  # collection thật cũ đã mất: `target` là bản DUY NHẤT còn lại — giữ, đừng xoá.
+        log.error(
+            "qdrant: đã xoá collection thật %r nhưng tạo alias -> %r lỗi — tên phục vụ đang trống; "
+            "chạy lại reindex.",
+            alias, target,
+        )
+    else:
+        await _drop_quietly(target)
+    return False
+
+
 async def _activate(target: str) -> None:
     """Trỏ tên phục vụ sang collection vật lý `target` rồi bỏ collection vật lý cũ (blue/green).
 
@@ -152,42 +199,41 @@ async def _activate(target: str) -> None:
     - Chưa có gì (cài mới) → cùng lời gọi đó (xoá alias chưa tồn tại = no-op).
     - Bản cũ: tên phục vụ là collection THẬT → Qdrant cấm alias trùng tên collection, nên phải xoá nó trước
       rồi mới tạo alias: gián đoạn ngắn (có log), CHỈ lần đầu.
-    Hỏng trước khi đổi được → bỏ `target` rồi raise (không gì thay đổi).
+    Hỏng → `_settle_failed_activate` đọc lại trạng thái: chưa đổi → bỏ `target` rồi raise (không gì thay đổi);
+    ĐÃ đổi (lỗi tới sau khi Qdrant áp) → đi tiếp như thành công. Xong → dọn bản mồ côi (`_sweep_orphans`).
     """
     client = get_qdrant()
     alias = settings.qdrant_collection
     previous: str | None = None
-    legacy_dropped = False
+    legacy = False
     started = 0.0
     try:
         previous = await _alias_target(alias)
         if previous is None and await client.collection_exists(alias):
+            legacy = True
             started = time.perf_counter()
             await client.delete_collection(alias)
-            legacy_dropped = True
         await client.update_collection_aliases(
             change_aliases_operations=[
                 DeleteAliasOperation(delete_alias=DeleteAlias(alias_name=alias)),
                 CreateAliasOperation(create_alias=CreateAlias(collection_name=target, alias_name=alias)),
             ]
         )
-    except BaseException:
-        if legacy_dropped:  # collection cũ đã mất: `target` là bản DUY NHẤT còn lại — giữ, đừng xoá.
-            log.error(
-                "qdrant: đã xoá collection thật %r nhưng tạo alias -> %r lỗi — tên phục vụ đang trống; "
-                "chạy lại reindex (rồi xoá tay collection mồ côi %r).",
-                alias, target, target,
-            )
-        else:
-            await _drop_quietly(target)
-        raise
-    if legacy_dropped:
+    except BaseException as exc:
+        if not await _settle_failed_activate(alias, target, legacy=legacy):
+            raise
+        # Đã đổi thật → giữ bản mới để sổ được ghi theo nó; task bị huỷ (CancelledError…) thì vẫn phải raise.
+        log.warning("qdrant: đổi alias %r -> %r báo lỗi (%r) nhưng Qdrant ĐÃ áp — giữ bản mới.", alias, target, exc)
+        if not isinstance(exc, Exception):
+            raise
+    if legacy:
         log.warning(
             "qdrant: chuyển collection thật %r sang alias -> %r (gián đoạn ~%d ms, chỉ lần đầu)",
             alias, target, round((time.perf_counter() - started) * 1000),
         )
     elif previous is not None and previous != target:
         await _drop_quietly(previous)
+    await _sweep_orphans(keep=target)
 
 
 def _normalize(text: str) -> str:
