@@ -8,6 +8,8 @@ Chống lạm dụng (audit v2, SEC-XC.2):
   DUY NHẤT (mọi /ws/chat đứng hình theo).
 - Email không tồn tại vẫn verify MỘT lần với hash giả → thời gian phản hồi không lộ email nào có tài khoản.
 - Giới hạn tần suất in-process (`core/rate_limit`): login theo IP + theo email, register theo IP → 429 + Retry-After.
+- Email có trần độ dài ở schema (`EMAIL_MAX_LENGTH`): email là KHOÁ của bộ đếm theo email → email cỡ MB bị 422
+  trước khi vào route, không găm được vào RAM của bộ đếm.
 """
 
 from __future__ import annotations

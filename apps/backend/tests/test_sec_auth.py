@@ -20,6 +20,7 @@ from app.core.rate_limit import SlidingWindowLimiter
 from app.core.security import hash_password
 from app.models import User
 from app.models.enums import UserRole
+from app.schemas.auth import EMAIL_MAX_LENGTH
 
 PASSWORD = "matkhau-dung"
 EXISTING = User(
@@ -192,3 +193,29 @@ async def test_register_rate_limited_per_ip(client: httpx.AsyncClient, monkeypat
         for i in range(3)
     ]
     assert codes == [201, 201, 429]
+
+
+# ── Trần độ dài email: khoá của bộ đếm theo email không phình tuỳ ý ──────────
+def _email_of_length(n: int) -> str:
+    domain = "@shop.vn"
+    return "a" * (n - len(domain)) + domain
+
+
+async def test_oversized_login_email_is_rejected_before_any_limiter_keeps_a_key(client: httpx.AsyncClient) -> None:
+    r = await _login(client, _email_of_length(EMAIL_MAX_LENGTH + 1))
+    assert r.status_code == 422  # pydantic chặn trước khi vào route
+    assert auth_routes._login_email_limiter._hits == {}  # không găm được khoá cỡ tuỳ ý vào RAM
+    assert auth_routes._login_ip_limiter._hits == {}
+
+
+async def test_login_email_at_max_length_still_reaches_the_route(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(auth_routes, "verify_password", lambda *_: False)
+    assert (await _login(client, _email_of_length(EMAIL_MAX_LENGTH))).status_code == 401
+
+
+async def test_register_rejects_oversized_email(client: httpx.AsyncClient) -> None:
+    body = {"email": _email_of_length(EMAIL_MAX_LENGTH + 1), "password": "123456"}
+    assert (await client.post("/api/auth/register", json=body)).status_code == 422
+    assert auth_routes._register_ip_limiter._hits == {}
