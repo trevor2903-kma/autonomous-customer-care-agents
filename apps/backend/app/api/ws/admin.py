@@ -7,9 +7,9 @@
 MỞ KẾT NỐI = CHỈ XEM (fix 08c): chỉ đọc status, KHÔNG đổi trạng thái. Tiếp quản là hành động tường minh
 `POST /api/admin/conversations/{id}/takeover` — nhờ vậy xem một ca không làm nó rời hàng đợi.
 
-CHỈ admin ĐANG GIỮ ca mới gửi được tin (audit v2, FE-03.2 / GRAPH-02.4): mỗi tin đọc lại DB — ca phải
-HUMAN_HANDLING và `assigned_admin_id` = admin của socket (JWT `sub`); ngược lại → `error/not_assigned`, KHÔNG
-lưu, KHÔNG phát.
+CHỈ admin ĐANG GIỮ ca mới gửi được tin (audit v2, FE-03.2 / GRAPH-02.4): mỗi tin đọc lại DB — người gửi VẪN là admin
+(SEC-XC.3), ca phải HUMAN_HANDLING và `assigned_admin_id` = admin của socket (JWT `sub`); ngược lại →
+`error/not_assigned`, KHÔNG lưu, KHÔNG phát.
 
 Hai task mỗi kết nối ca:
 - `_admin_reader`: frame admin (giao thức v2: message / ping / chữ thô legacy) → lưu (sender=ADMIN) + phát sang
@@ -31,6 +31,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ...core.database import AsyncSessionLocal
 from ...core.logging import get_logger
+from ...models import User
 from ...models.enums import ConversationStatus, MessageSender, UserRole
 from ...models.message import CLIENT_MSG_ID_INDEX
 from ...services import conversation_service
@@ -65,14 +66,19 @@ async def _current_state(conv_id: uuid.UUID) -> tuple[str | None, uuid.UUID | No
 async def _persist_admin_message(
     conv_id: uuid.UUID, admin_id: uuid.UUID, content: str, client_msg_id: str | None
 ) -> tuple[_SendResult, uuid.UUID | None]:
-    """Lưu tin admin NẾU admin này đang giữ ca (đọc tươi, session NGẮN).
+    """Lưu tin admin NẾU người gửi VẪN là admin và đang giữ ca (đọc tươi, session NGẮN).
 
     → `("ok", id)` | `("not_assigned", None)` | `("duplicate", None)` (client_msg_id đã lưu = gửi lại) |
-    `("error", None)` (DB lỗi). Kiểm "đang giữ ca" bằng SELECT … FOR UPDATE, khoá giữ tới commit: một lần đổi status
-    (kể cả resolve của CHÍNH admin này từ tab/PWA khác) phải CHỜ tin được lưu → không có tin admin nằm trong ca đã đóng.
+    `("error", None)` (DB lỗi). Role đọc lại MỖI tin (SEC-XC.3): WS chỉ kiểm role lúc mở, nên admin bị hạ quyền / xoá
+    giữa chừng vẫn giữ socket cũ — tin của họ bị từ chối như `not_assigned`. Kiểm "đang giữ ca" bằng SELECT … FOR
+    UPDATE, khoá giữ tới commit: một lần đổi status (kể cả resolve của CHÍNH admin này từ tab/PWA khác) phải CHỜ tin
+    được lưu → không có tin admin nằm trong ca đã đóng.
     """
     try:
         async with AsyncSessionLocal() as s:
+            user = await s.get(User, admin_id)
+            if user is None or user.role != UserRole.ADMIN:
+                return "not_assigned", None
             state = await conversation_service.get_status_and_admin(s, conv_id, for_update=True)
             if state is None or state[0] != ConversationStatus.HUMAN_HANDLING or state[1] != admin_id:
                 return "not_assigned", None

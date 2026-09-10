@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from starlette.routing import Match
 from app.api.ws import admin as ws_admin
 from app.api.ws.hub import INBOX_KEY, ConnectionHub
 from app.models.enums import ConversationStatus as S
+from app.models.enums import UserRole
 from tests.test_state_support import FakeStore, FakeWebSocket, drain, install_service_fakes, until
 
 ME = uuid.uuid4()
@@ -26,6 +28,7 @@ OTHER = uuid.uuid4()
 def env(monkeypatch: pytest.MonkeyPatch) -> tuple[FakeStore, ConnectionHub]:
     store = FakeStore()
     install_service_fakes(monkeypatch, store)
+    store.users.update({u: SimpleNamespace(id=u, role=UserRole.ADMIN) for u in (ME, OTHER)})  # role đọc lại mỗi tin
     hub = ConnectionHub()
     monkeypatch.setattr(ws_admin, "hub", hub)
     monkeypatch.setattr(ws_admin, "AsyncSessionLocal", store.session)
@@ -80,6 +83,27 @@ async def test_non_assigned_admin_gets_error_and_nothing_is_persisted_or_sent(
     assert ws.frames("error") == [{"type": "error", "code": "not_assigned", "client_msg_id": "c-1"}]
     assert store.messages == [] and drain(customer_q) == [] and drain(inbox_q) == []
     assert ws.frames("ack") == []
+    await _close(ws, task)
+
+
+@pytest.mark.parametrize("demotion", ["role_changed", "deleted"])
+async def test_admin_demoted_after_connecting_can_no_longer_send(
+    env: tuple[FakeStore, ConnectionHub], demotion: str
+) -> None:
+    # SEC-XC.3: WS chỉ kiểm role lúc mở → admin bị hạ quyền / xoá vẫn giữ socket cũ (đang giữ ca). Mỗi tin đọc lại role.
+    store, hub = env
+    cid = store.add_conv(status=S.HUMAN_HANDLING, assigned_admin_id=ME)
+    customer_q = hub.register(str(cid))
+    ws, task = await _open(cid, ME)
+    if demotion == "deleted":
+        del store.users[ME]
+    else:
+        store.users[ME] = SimpleNamespace(id=ME, role=UserRole.CUSTOMER)
+
+    ws.push(_msg("em chào anh", "d-1"))
+    await until(lambda: bool(ws.frames("error")))
+    assert ws.frames("error") == [{"type": "error", "code": "not_assigned", "client_msg_id": "d-1"}]
+    assert store.messages == [] and drain(customer_q) == [] and ws.frames("ack") == []
     await _close(ws, task)
 
 

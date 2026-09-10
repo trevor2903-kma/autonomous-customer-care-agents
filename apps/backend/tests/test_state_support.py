@@ -1,6 +1,6 @@
 """Bộ giả lập dùng chung cho test cụm A (module HỖ TRỢ — không có hàm test_*). Offline hoàn toàn.
 
-- `FakeStore`: "DB" in-memory (conversation + message + audit) + nhật ký sự kiện `log` (commit, frame đã gửi…) để
+- `FakeStore`: "DB" in-memory (conversation + message + audit + user) + nhật ký sự kiện `log` (commit, frame đã gửi…) để
   khẳng định THỨ TỰ (vd ghi DB trước khi báo khách).
 - `FakeSession`: một transaction — ghi được STAGE, chỉ áp vào store khi `commit`; `rollback`/đóng session = bỏ.
 - `install_service_fakes`: thay các hàm service bằng bản giả CÙNG CHỮ KÝ (keyword-only như bản thật) → gọi sai
@@ -59,6 +59,10 @@ class FakeSession:
     async def flush(self) -> None:
         return None
 
+    async def get(self, model: Any, ident: Any) -> Any:
+        """`session.get(User, id)` — bảng duy nhất cụm A đọc theo khoá chính (quyền admin đọc lại mỗi tin)."""
+        return self.store.users.get(ident)
+
     async def commit(self) -> None:
         if self.store.fail_commit:
             raise RuntimeError("DB down")
@@ -81,6 +85,7 @@ class FakeStore:
         self.convs: dict[uuid.UUID, dict[str, Any]] = {}
         self.messages: list[FakeMessage] = []
         self.audit: list[Any] = []
+        self.users: dict[uuid.UUID, Any] = {}  # user trong "DB" theo id (role đọc qua `session.get(User, id)`)
         self.log: list[str] = []
         self.sessions = 0
         self.fail_commit = False
