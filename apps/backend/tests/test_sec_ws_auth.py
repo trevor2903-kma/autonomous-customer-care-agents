@@ -99,7 +99,8 @@ async def test_db_error_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_db(monkeypatch, admin, boom=True)
     ws = _ws(admin.id, UserRole.ADMIN)
     assert await ws_auth.authenticate_websocket(ws, UserRole.ADMIN) is None
-    assert ws.closed_with == ws_auth.WS_AUTH_CLOSE_CODE
+    # Vẫn KHÔNG cho vào, nhưng là lỗi server (1011) chứ không phải lỗi xác thực (4401): token còn hợp lệ → FE nối lại.
+    assert ws.closed_with == ws_auth.WS_INTERNAL_ERROR_CODE != ws_auth.WS_AUTH_CLOSE_CODE
 
 
 @pytest.mark.parametrize("token", [None, "", "khong-phai-jwt"], ids=["missing", "empty", "garbage"])

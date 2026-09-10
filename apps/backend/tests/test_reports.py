@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 from app.models.audit_log import AuditLog
@@ -94,6 +95,33 @@ def test_summary_empty_is_zero_not_crash() -> None:
     s = rs.summarize([])
     assert s["turns"] == 0 and s["auto_reply_pct"] == 0.0
     assert s["latency"]["p95_ms"] is None and s["latency"]["within_nfr_pct"] == 0.0
+
+
+def test_summary_reasons_for_escalations_without_blocking_flags() -> None:
+    # Chuyển người mà Agent 3 KHÔNG có cờ chặn vẫn có lý do thật: Agent 4 fallback → chuyển người (FR-PIPE-5), lượt bị
+    # huỷ vì nhân viên tiếp quản giữa lượt (audit v2), đã hỏi mã đơn mà khách vẫn thiếu — KHÔNG dồn vào "(không rõ)".
+    turns = [
+        _turn(TurnOutcome.QUEUED_FOR_HUMAN, fallback=True),
+        replace(_turn(TurnOutcome.QUEUED_FOR_HUMAN), discarded=True),
+        replace(_turn(TurnOutcome.QUEUED_FOR_HUMAN), escalation_reason="clarify_unresolved"),
+        _turn(TurnOutcome.QUEUED_FOR_HUMAN),
+        _turn(TurnOutcome.QUEUED_FOR_HUMAN, blocking=["out_of_domain"], fallback=True),  # có cờ chặn → theo cờ
+    ]
+    reasons = {r["flag"]: r["count"] for r in rs.summarize(turns)["escalation_reasons"]}
+    assert reasons == {
+        "hallucination_risk": 1, "status_changed": 1, "clarify_unresolved": 1, "(không rõ)": 1, "out_of_domain": 1,
+    }
+
+
+def test_turn_view_reads_discarded_from_the_delivery_row() -> None:
+    turn_id = uuid.uuid4()
+    delivery = AuditLog(
+        turn_id=turn_id, conversation_id=uuid.uuid4(), node="delivery", action=TurnOutcome.QUEUED_FOR_HUMAN,
+        duration_ms=900, uncertainty_flags=[], created_at=NOW,
+        detail={"discarded": True, "reason": "status_changed", "status_now": "HUMAN_HANDLING"},
+    )
+    view = rs.build_turn_view([delivery])
+    assert view is not None and view.discarded is True
 
 
 # ── Theo intent ──────────────────────────────────────────────────────────────

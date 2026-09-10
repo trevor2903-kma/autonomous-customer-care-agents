@@ -67,6 +67,9 @@ export const FLAG_LABEL: Record<string, string> = {
   hallucination_risk: "Thiếu căn cứ để trả lời",
   order_unresolved: "Không tra cứu được đơn hàng",
   human_requested: "Khách yêu cầu gặp nhân viên",
+  // Lý do suy từ dữ liệu lượt khi Agent 3 không có cờ chặn (report_service._unflagged_reason).
+  clarify_unresolved: "Đã hỏi mã đơn nhưng khách chưa cung cấp",
+  status_changed: "Nhân viên tiếp quản/đóng ca giữa lượt",
 };
 
 // Nhãn tiếng Việt cho các Intent của khách hàng (PRD §7.1).

@@ -17,6 +17,7 @@ import { RequireAuth } from "@/components/auth/RequireAuth";
 import { type CustomerThread, chatWsUrl, getMyThread, getToken } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
+  absorbOwnById,
   absorbOwnEcho,
   appendUnique,
   markEchoPending,
@@ -168,12 +169,22 @@ function ChatInner() {
         // Agent 3 đã chuyển người THẬT (ca vào hàng đợi, AI dừng cho hội thoại này).
         push({ from: "system", text, messageId });
         break;
+      case "status":
+        // status null = server không đọc lại được trạng thái → nạp lại mạch để lấy status thật (reducer giữ nguyên).
+        if (typeof f.status !== "string") void refetch().then(({ data }) => data && applyThread(data));
+        break;
       case "message":
         if (f.from === "customer") {
-          // Tin của CHÍNH khách: tiếng vọng tin mình gửi trước lúc nối lại → gắn vào bong bóng sẵn có; còn lại là tin
-          // gõ ở tab/thiết bị khác (FE-01.6) → bong bóng "bạn", KHÔNG phải AI.
+          // Tin của CHÍNH khách. Backend kèm client_msg_id → khớp CHÍNH XÁC bong bóng tab này đã gửi (tiếng vọng tin
+          // gửi trước lúc nối lại) → gắn message_id vào bong bóng đó; không khớp = tin gõ ở tab/thiết bị khác (FE-01.6)
+          // → bong bóng "bạn", KHÔNG phải AI. Frame thiếu client_msg_id (server cũ) mới khớp theo nội dung.
           const item: ChatMessage = { id: nextId(), from: "you", text, time: now(), messageId };
-          setMessages((prev) => absorbOwnEcho(prev, text, messageId) ?? appendUnique(prev, item));
+          if (cid) clearAck(cid);
+          setMessages(
+            (prev) =>
+              (cid ? absorbOwnById(prev, cid, messageId) : absorbOwnEcho(prev, text, messageId)) ??
+              appendUnique(prev, item),
+          );
         } else {
           // Nhân viên, hoặc AI qua hub: nháp vừa được duyệt, tin nhắc/đóng tự động, trả lời của lượt mà socket cũ
           // đã rớt.

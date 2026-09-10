@@ -17,7 +17,7 @@ help:
 	@echo   health             - curl /api/health
 	@echo   check-conn         - kiem tra ket noi Neon/Upstash/Qdrant (Phase 1)
 	@echo   ingest-kb          - nap lai KB apps/backend/knowledge vao Qdrant (reset-and-reingest)
-	@echo   test               - pytest backend (graph compile + 2 nhanh)
+	@echo   test               - pytest backend + unit test dashboard (node --test)
 	@echo   build              - pnpm -r build
 	@echo   local-infra-up     - docker compose local (du phong)
 	@echo   local-infra-down   - dung docker compose local
@@ -49,6 +49,7 @@ ingest-kb:
 
 test:
 	cd apps/backend && uv run pytest -q
+	pnpm --filter dashboard test
 
 build:
 	pnpm -r build

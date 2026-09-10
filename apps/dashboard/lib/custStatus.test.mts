@@ -103,3 +103,12 @@ test("lượt không bao giờ âm; frame không liên quan trả nguyên trạn
   assert.equal(custTurnAfter(t, { type: "message", from: "customer", content: "tab khác" }), t);
   assert.equal(custTurnAfter(t, { type: "system", message: "connected" }), t);
 });
+
+test("frame status null (server đọc lại status lỗi sau khi huỷ lượt) → giữ trạng thái, chỉ gỡ typing + hết lượt", () => {
+  const out = custTurnAfter(turn({ status: "waiting", typing: true, inFlight: 1 }), {
+    type: "status",
+    status: null,
+    assigned_admin_id: null,
+  });
+  assert.deepEqual(out, { status: "waiting", typing: false, inFlight: 0 });
+});

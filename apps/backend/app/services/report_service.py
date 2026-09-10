@@ -68,6 +68,8 @@ class TurnView:
     escalation_reason: str | None = None
     blocking_flags: list[str] = field(default_factory=list)
     fallback: bool = False
+    # Lượt bị huỷ vì status đổi giữa lượt (nhân viên tiếp quản/đóng ca — CAS thua): KHÔNG có gì được gửi cho khách.
+    discarded: bool = False
 
     @property
     def short_id(self) -> str:
@@ -103,6 +105,7 @@ def build_turn_view(rows: list[AuditLog]) -> TurnView | None:
         escalation_reason=(decision.escalation_reason if decision is not None else None),
         blocking_flags=list(((decision.detail or {}).get("blocking_flags") or []) if decision else []),
         fallback=_FALLBACK_FLAG in list((response.uncertainty_flags or []) if response else []),
+        discarded=bool(detail.get("discarded")),
     )
 
 
@@ -131,6 +134,19 @@ def _pct(part: int, total: int) -> float:
     return round(100.0 * part / total, 1) if total else 0.0
 
 
+def _unflagged_reason(t: TurnView) -> str:
+    """Lý do của lượt chuyển người mà Agent 3 KHÔNG có cờ chặn — vẫn là lý do thật, đừng dồn vào "(không rõ)":
+    lượt bị huỷ vì nhân viên tiếp quản/đóng giữa lượt; Agent 4 phải fallback → chuyển người (FR-PIPE-5); đã hỏi mã
+    đơn một lần mà khách vẫn không đưa (clarify_unresolved)."""
+    if t.discarded:
+        return "status_changed"
+    if t.fallback:
+        return _FALLBACK_FLAG
+    if t.escalation_reason == "clarify_unresolved":
+        return "clarify_unresolved"
+    return "(không rõ)"
+
+
 def summarize(turns: list[TurnView]) -> dict[str, Any]:
     """KPI tổng: tỉ lệ kết cục · fallback · độ trễ (avg/p50/p95/p99, %≤NFR-1) · bóc tách lý do escalate."""
     total = len(turns)
@@ -148,7 +164,7 @@ def summarize(turns: list[TurnView]) -> dict[str, Any]:
     reasons: dict[str, int] = {}
     escalated = [t for t in turns if t.outcome == TurnOutcome.QUEUED_FOR_HUMAN]
     for t in escalated:
-        for flag in t.blocking_flags or ["(không rõ)"]:
+        for flag in t.blocking_flags or [_unflagged_reason(t)]:
             reasons[flag] = reasons.get(flag, 0) + 1
 
     return {

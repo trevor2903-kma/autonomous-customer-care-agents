@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  absorbOwnById,
   absorbOwnEcho,
   appendUnique,
   markEchoPending,
@@ -171,6 +172,18 @@ test("FE-01.6: tab khác gửi đúng câu mình từng gửi (bong bóng KHÔNG
 test("FE-01.6: tin gửi lại bị hết hạn ack ('chưa gửi được') mà tiếng vọng tới → đã lưu, tức 'đã gửi'", () => {
   const list = markEchoPending([you(1, "a", "c1", "failed")], new Set(["c1"]));
   assert.equal(absorbOwnEcho(list, "a", "m1")?.[0].sendState, "sent");
+});
+
+test("FE-01.6: frame hub có client_msg_id → khớp CHÍNH XÁC bong bóng của tab này, không cần so nội dung", () => {
+  const list = [you(1, "Kiểm tra đơn hàng…", "c1", "sending"), you(2, "Kiểm tra đơn hàng…", "c2", "sent")];
+  const out = absorbOwnById(list, "c2", "m9");
+  assert.ok(out);
+  assert.equal(out.length, 2, "không thêm bong bóng 'bạn' thứ hai");
+  assert.equal(out[1].messageId, "m9");
+  assert.equal(out[1].sendState, "sent");
+  assert.equal(out[0].messageId, list[0].messageId, "bong bóng cùng chữ nhưng khác id không bị đụng");
+  // Tin CÙNG chữ gõ ở tab/thiết bị khác mang client_msg_id khác → không phải của tab này → thêm như thường.
+  assert.equal(absorbOwnById(list, "c-tab-khac", "m10"), null);
 });
 
 test("senderToFrom: khách → you, admin → admin, còn lại → ai", () => {

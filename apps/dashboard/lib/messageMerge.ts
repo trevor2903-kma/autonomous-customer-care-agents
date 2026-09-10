@@ -112,6 +112,20 @@ export function markEchoPending(list: ChatMessage[], cids: ReadonlySet<string>):
   return list.map((m) => (m.clientMsgId && cids.has(m.clientMsgId) ? { ...m, echoPending: true } : m));
 }
 
+/** Frame hub from:"customer" CÓ client_msg_id (FE-01.6): khớp CHÍNH XÁC bong bóng tab này đã gửi → gắn message_id,
+ *  "đã gửi" (không thêm bong bóng thứ hai). null = không phải tin của tab này (tab/thiết bị khác) → thêm như thường. */
+export function absorbOwnById(
+  list: ChatMessage[],
+  cid: string,
+  messageId: string | null,
+): ChatMessage[] | null {
+  const i = list.findIndex((m) => m.clientMsgId === cid);
+  if (i < 0) return null;
+  const out = list.slice();
+  out[i] = { ...list[i], messageId: messageId ?? list[i].messageId, echoPending: false, sendState: "sent" };
+  return out;
+}
+
 // So nội dung như server thấy: backend chuẩn hoá tin khách (NFKC + gộp khoảng trắng — core/sanitize.py) rồi mới
 // lưu/phát, nên chuẩn hoá tương tự ở cả hai phía.
 const normText = (s: string) => s.normalize("NFKC").replace(/\s+/g, " ").trim();

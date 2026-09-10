@@ -430,8 +430,8 @@ export default function AdminConversationPage({
           <ApprovalPanel
             draft={conv.escalation_card.suggested_reply}
             busy={busy}
-            onApprove={(content) => act(() => approveDraft(id, content))}
-            onReject={() => act(() => rejectDraft(id))}
+            onApprove={(content, shown) => act(() => approveDraft(id, content, shown))}
+            onReject={(shown) => act(() => rejectDraft(id, shown))}
           />
         )}
 

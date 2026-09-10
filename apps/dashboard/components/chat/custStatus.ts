@@ -67,7 +67,12 @@ export function custTurnAfter(t: CustTurn, f: Frame): CustTurn {
     case "status": {
       // Trạng thái ca đổi do người khác (admin tiếp quản/đóng/duyệt/từ chối, tự đóng, tab khác) HOẶC lượt của chính
       // tab này bị huỷ (CAS) → không còn reply nào theo sau: gỡ typing (UX-02.3).
-      const status = custStatusFrom(typeof f.status === "string" ? f.status : null);
+      if (typeof f.status !== "string") {
+        // Lượt bị huỷ mà server đọc lại status cũng lỗi → status null: KHÔNG đoán trạng thái (trang tự nạp lại
+        // /me/thread để lấy status thật) — chỉ gỡ typing và kết thúc lượt này.
+        return { ...t, typing: false, inFlight: settled(t.inFlight) };
+      }
+      const status = custStatusFrom(f.status);
       return { status, typing: false, inFlight: status === "ai" ? settled(t.inFlight) : 0 };
     }
     case "message":

@@ -4,9 +4,11 @@ Browser KHÔNG set được header Authorization cho WS → truyền JWT qua que
 Xác thực SAU `accept()` (để gửi được close-frame có mã): sai/thiếu token hoặc sai role → đóng 4401.
 
 Role đọc từ DB, KHÔNG từ claim trong token (audit v2, SEC-XC.3) — cùng luật với `deps.require_admin`: admin bị
-hạ quyền / user bị xoá thì token cũ (còn hạn `jwt_expire_minutes`) không mở được WS nữa. DB lỗi → đóng (fail closed).
+hạ quyền / user bị xoá thì token cũ (còn hạn `jwt_expire_minutes`) không mở được WS nữa. DB lỗi → đóng (fail closed)
+với mã 1011 (lỗi server) chứ KHÔNG phải 4401: token vẫn hợp lệ, client nối lại theo backoff; 4401 làm FE tưởng phiên
+hết hạn và thôi nối lại.
 Hệ quả CÓ CHỦ ĐÍCH: khi Postgres sập/cold-start, nhánh degrade AI-only của `/ws/chat` (`chat._customer_ai_only`)
-KHÔNG còn tới được lúc kết nối — khách bị đóng 4401 thay vì được AI trả lời không persist. Muốn giữ AI-only thì
+KHÔNG còn tới được lúc kết nối — khách bị đóng 1011 thay vì được AI trả lời không persist. Muốn giữ AI-only thì
 phải chấp nhận fail open cho role customer khi DB lỗi (admin vẫn đóng) — chờ người dùng quyết.
 """
 
@@ -25,6 +27,7 @@ from ...models import User
 log = get_logger("ws.auth")
 
 WS_AUTH_CLOSE_CODE = 4401  # tự-định-nghĩa (4000–4999): xác thực WS thất bại
+WS_INTERNAL_ERROR_CODE = 1011  # chuẩn RFC 6455: lỗi phía server (DB lỗi lúc xác minh quyền) — client nối lại
 
 
 async def _db_role(sub: Any) -> str | None:
@@ -48,6 +51,8 @@ async def authenticate_websocket(websocket: WebSocket, required_role: str) -> di
             role = await _db_role(payload.get("sub"))
         except Exception as exc:  # noqa: BLE001 — không xác minh được quyền → KHÔNG cho vào (fail closed).
             log.warning("ws auth: đọc role từ DB lỗi (đóng kết nối): %s", exc)
+            await websocket.close(code=WS_INTERNAL_ERROR_CODE)
+            return None
     if role is None or role != required_role:
         await websocket.close(code=WS_AUTH_CLOSE_CODE)
         return None

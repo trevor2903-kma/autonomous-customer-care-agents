@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 // Khối duyệt nháp (08a, design "Nháp phản hồi gợi ý"): nháp Agent 4 hiện ra để admin đọc, SỬA TRỰC TIẾP rồi gửi.
 // Chỉ 2 hành động: gửi (nội dung đang có trong ô) hoặc chuyển sang tự xử lý — "sửa & gửi" chính là sửa ô rồi bấm gửi,
 // nên không tách thành nút riêng làm cùng một việc.
+// Cả hai hành động gửi kèm `draft` ĐANG HIỂN THỊ (FE-03.2): server từ chối (409) nếu card đã sang nháp mới.
 export function ApprovalPanel({
   draft,
   busy,
@@ -13,8 +14,8 @@ export function ApprovalPanel({
 }: {
   draft: string;
   busy: boolean;
-  onApprove: (content: string) => void;
-  onReject: () => void;
+  onApprove: (content: string, shownDraft: string) => void;
+  onReject: (shownDraft: string) => void;
 }) {
   const [text, setText] = useState(draft);
   useEffect(() => setText(draft), [draft]);
@@ -38,14 +39,14 @@ export function ApprovalPanel({
 
       <div className="mt-3.5 flex flex-wrap items-center gap-2.5">
         <button
-          onClick={() => onApprove(text)}
+          onClick={() => onApprove(text, draft)}
           disabled={busy || !text.trim()}
           className="rounded-[9px] bg-olive px-[22px] py-[11px] text-sm font-semibold text-white hover:bg-olive-dark disabled:opacity-50"
         >
           Duyệt &amp; gửi
         </button>
         <button
-          onClick={onReject}
+          onClick={() => onReject(draft)}
           disabled={busy}
           className="rounded-[9px] border border-line bg-transparent px-[18px] py-[11px] text-sm text-faint hover:bg-cream disabled:opacity-50"
         >

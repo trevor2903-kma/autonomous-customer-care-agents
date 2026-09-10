@@ -234,11 +234,17 @@ export async function takeoverConversation(id: string): Promise<AdminConversatio
   return res.json();
 }
 
-export async function approveDraft(id: string, content?: string): Promise<AdminConversation> {
+// `expectedDraft` = nháp màn admin ĐANG hiển thị (FE-03.2, chống ABA): card đã sang nháp mới (khách vừa nhắn thêm) → 409,
+// không duyệt/từ chối nhầm một nháp admin chưa đọc.
+export async function approveDraft(
+  id: string,
+  content?: string,
+  expectedDraft?: string,
+): Promise<AdminConversation> {
   const res = await req(`/api/admin/conversations/${id}/approve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: content ?? null }),
+    body: JSON.stringify({ content: content ?? null, expected_draft: expectedDraft ?? null }),
   });
   if (!res.ok) await fail(res, `Không duyệt được nháp (${res.status})`);
   return res.json();
@@ -250,8 +256,12 @@ export async function resolveConversation(id: string): Promise<AdminConversation
   return res.json();
 }
 
-export async function rejectDraft(id: string): Promise<AdminConversation> {
-  const res = await req(`/api/admin/conversations/${id}/reject`, { method: "POST" });
+export async function rejectDraft(id: string, expectedDraft?: string): Promise<AdminConversation> {
+  const res = await req(`/api/admin/conversations/${id}/reject`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ expected_draft: expectedDraft ?? null }),
+  });
   if (!res.ok) await fail(res, `Không chuyển được sang xử lý tay (${res.status})`);
   return res.json();
 }

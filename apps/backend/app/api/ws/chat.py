@@ -760,7 +760,8 @@ async def _customer_ai_only(websocket: WebSocket, customer_id: uuid.UUID) -> Non
             await _send(websocket, {"type": "ack", "client_msg_id": cid, "message_id": None, "duplicate": False})
             await websocket.send_json({"type": "typing"})
             # KHÔNG audit nhánh này: tới đây nghĩa là DB không dùng được, ghi audit chỉ tổ sinh log lỗi.
-            _, _, reply = await _run_pipeline_safe(msg, None, uuid.uuid4())
+            # Vẫn truyền danh tính khách: DB hồi lại giữa chừng thì tra đơn scoped vẫn chạy đúng (AGENT-01.4).
+            _, _, reply = await _run_pipeline_safe(msg, None, uuid.uuid4(), customer_id)
             await websocket.send_json({"type": "reply", "content": reply, "message_id": None})
     except WebSocketDisconnect:
         log.info("customer WS (ai-only) disconnected")
