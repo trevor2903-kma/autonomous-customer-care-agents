@@ -40,7 +40,7 @@ export function ConversationListPane({
   const { data, isLoading, isError, error } = useQuery<ConversationListItem[], Error>({
     queryKey: ["conversations", active.key],
     queryFn: () => getConversations(active.statuses.length ? active.statuses : undefined, 100),
-    refetchInterval: 10000,
+    refetchInterval: 60000, // lưới an toàn — làm tươi chính theo sự kiện inbox (FE-01.5, useAdminInbox)
   });
 
   const rows = useMemo(() => {

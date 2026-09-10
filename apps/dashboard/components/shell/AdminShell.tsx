@@ -8,6 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { Escalation } from "shared-types";
 import { getEscalations } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useAdminInbox } from "@/lib/useAdminInbox";
 import { ConversationListPane } from "@/components/admin/ConversationListPane";
 
 // Vỏ admin (design): sidebar 250px + vùng module. ≤820px sidebar thành drawer off-canvas + scrim + hamburger.
@@ -109,10 +110,13 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
     router.replace("/login");
   }
 
+  // Kênh inbox (FE-01.5): MỘT socket cho mọi trang /admin — sự kiện ca → làm tươi danh sách + badge.
+  useAdminInbox();
+
   const { data: escalations } = useQuery<Escalation[], Error>({
     queryKey: ["escalations"],
     queryFn: getEscalations,
-    refetchInterval: 10000, // badge hàng đợi — dashboard, không phải đường realtime của khách
+    refetchInterval: 60000, // lưới an toàn khi socket inbox rớt lâu — đường chính là sự kiện inbox
   });
   const counts = {
     queue: (escalations ?? []).filter((e) => e.status === "IN_HUMAN_QUEUE").length,

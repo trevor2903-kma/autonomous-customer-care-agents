@@ -81,6 +81,10 @@ export function chatWsUrl(token: string): string {
 export function adminWsUrl(conversationId: string, token: string): string {
   return `${getWsBase()}/ws/admin/${conversationId}?token=${encodeURIComponent(token)}`;
 }
+// Inbox admin (FE-01.5): sự kiện tin mới / đổi status của MỌI ca → làm tươi danh sách + badge thay polling.
+export function adminInboxWsUrl(token: string): string {
+  return `${getWsBase()}/ws/admin-inbox?token=${encodeURIComponent(token)}`;
+}
 
 // ── Auth (slice 11) ──────────────────────────────────────────────────────────
 export interface AuthUser {
@@ -125,6 +129,23 @@ export async function getMe(): Promise<AuthUser> {
   const res = await req("/api/auth/me");
   if (!res.ok) throw new Error(`me ${res.status}`);
   return res.json();
+}
+
+// Kiểm lại phiên sau khi WS bị đóng 4401 (FE-01.2): backend đóng 4401 cả khi token hỏng/hết hạn LẪN khi DB lỗi lúc
+// đọc role → phải hỏi REST mới biết có hết phiên thật không. null = 401 (token hỏng/hết hạn/user không còn);
+// undefined = không rõ (mạng / 5xx / quá `timeoutMs`); AuthUser = token vẫn dùng được (kèm vai HIỆN TẠI trong DB).
+export async function probeSession(timeoutMs: number): Promise<AuthUser | null | undefined> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await req("/api/auth/me", { signal: ctrl.signal });
+    if (res.status === 401) return null;
+    return res.ok ? ((await res.json()) as AuthUser) : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── RAG management (PRD §17 Module 1) ────────────────────────────────────────
@@ -205,9 +226,11 @@ export async function getConversations(
   return res.json();
 }
 
+// Hành động HITL: 409 = chuyển trạng thái không hợp lệ / ca đang do admin khác giữ (FE-03) → ném đúng `detail`
+// tiếng Việt của backend để màn ca hiện inline (không thất bại im lặng).
 export async function takeoverConversation(id: string): Promise<AdminConversation> {
   const res = await req(`/api/admin/conversations/${id}/takeover`, { method: "POST" });
-  if (!res.ok) throw new Error(`takeover ${res.status}`);
+  if (!res.ok) await fail(res, `Không tiếp quản được ca (${res.status})`);
   return res.json();
 }
 
@@ -217,19 +240,19 @@ export async function approveDraft(id: string, content?: string): Promise<AdminC
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content: content ?? null }),
   });
-  if (!res.ok) throw new Error(`approve ${res.status}`);
+  if (!res.ok) await fail(res, `Không duyệt được nháp (${res.status})`);
   return res.json();
 }
 
 export async function resolveConversation(id: string): Promise<AdminConversation> {
   const res = await req(`/api/admin/conversations/${id}/resolve`, { method: "POST" });
-  if (!res.ok) throw new Error(`resolve ${res.status}`);
+  if (!res.ok) await fail(res, `Không đóng được ca (${res.status})`);
   return res.json();
 }
 
 export async function rejectDraft(id: string): Promise<AdminConversation> {
   const res = await req(`/api/admin/conversations/${id}/reject`, { method: "POST" });
-  if (!res.ok) throw new Error(`reject ${res.status}`);
+  if (!res.ok) await fail(res, `Không chuyển được sang xử lý tay (${res.status})`);
   return res.json();
 }
 
@@ -278,6 +301,8 @@ export interface ThreadMessage {
   sender: MessageSender;
   content: string;
   created_at: string;
+  /** uuid client sinh khi gửi (protocol v2) — nối lại thì tin "đang gửi" có id này coi là đã lưu. */
+  client_msg_id?: string | null;
 }
 export interface CustomerThread {
   messages: ThreadMessage[];
@@ -299,6 +324,7 @@ export interface ReportLatency {
   avg_ms: number | null;
   p50_ms: number | null;
   p95_ms: number | null;
+  p99_ms: number | null; // đuôi nặng (PERF-01.4) — backend cũ chưa trả thì FE ẩn
   nfr_threshold_ms: number;
   within_nfr_pct: number;
   measured: number;
