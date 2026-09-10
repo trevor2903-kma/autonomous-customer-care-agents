@@ -17,6 +17,8 @@ engine = create_async_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,
+    # Lỗi SQL KHÔNG in tham số ra log: tham số là nội dung tin khách / email (dữ liệu cá nhân, NFR-6).
+    hide_parameters=True,
     connect_args={"ssl": settings.database_ssl},
 )
 
