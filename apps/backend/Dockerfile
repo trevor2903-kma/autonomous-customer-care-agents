@@ -18,4 +18,5 @@ COPY . .
 RUN uv sync --no-dev
 
 EXPOSE 8000
-CMD ["sh", "-c", "uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# --ws-max-size: trần 64 KiB mỗi frame WebSocket (SEC-XC.2) — tin khách đã cap max_message_chars, frame to hơn chỉ tốn CPU.
+CMD ["sh", "-c", "uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --ws-max-size 65536"]

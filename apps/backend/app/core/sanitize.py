@@ -82,6 +82,10 @@ def sanitize_customer_message(text: str) -> str:
     Degrade AN TOÀN (bất biến §1): lỗi ở bước phụ này KHÔNG được làm rớt lượt chat hợp lệ — cùng lắm
     tin đi tiếp ở dạng thô, chỉ bị cắt độ dài.
     """
+    # Cắt THÔ trước (SEC-XC.2): chuẩn hoá chạy TỪNG KÝ TỰ bằng Python ngay trên event loop — một frame nhiều MB làm
+    # đứng cả worker. Để dư (x4) cho phần ký tự vô hình / khoảng trắng bị bỏ; cap CUỐI vẫn giữ vì NFKC có thể làm văn
+    # bản DÀI ra.
+    text = text[: settings.max_message_chars * 4]
     try:
         cleaned = normalize_text(text)
     except Exception as exc:  # noqa: BLE001 — sanitize hỏng → vẫn cho khách nhắn (chỉ cap độ dài).

@@ -26,8 +26,9 @@ install:
 	cd apps/backend && uv sync
 	pnpm install
 
+# --ws-max-size: trần 64 KiB mỗi frame WebSocket (SEC-XC.2) — tin khách đã cap max_message_chars, frame to hơn chỉ tốn CPU.
 dev-backend:
-	cd apps/backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	cd apps/backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --ws-max-size 65536
 
 dev-dashboard:
 	pnpm --filter dashboard dev

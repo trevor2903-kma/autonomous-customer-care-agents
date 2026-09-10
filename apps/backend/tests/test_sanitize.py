@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import time
+
+import pytest
+
+from app.core import sanitize
 from app.core.config import settings
 from app.core.sanitize import (
     as_data_block,
@@ -14,6 +19,25 @@ from app.core.sanitize import (
 def test_cap_do_dai_cat_bot_khong_bao_loi() -> None:
     # "Tường văn bản" nhồi chỉ dẫn → CẮT BỚT (không rớt, không ném lỗi).
     assert len(sanitize_customer_message("x" * 50_000)) == settings.max_message_chars
+
+
+def test_tin_nhieu_megabyte_duoc_cat_tho_truoc_khi_chuan_hoa(monkeypatch: pytest.MonkeyPatch) -> None:
+    # SEC-XC.2: chuẩn hoá chạy TỪNG KÝ TỰ bằng Python ngay trên event loop → cắt thô (vài lần cap) TRƯỚC, để một frame
+    # nhiều MB không làm đứng cả worker. Cap CUỐI vẫn giữ: NFKC có thể làm văn bản DÀI ra ("ﷺ" → 18 ký tự).
+    seen: list[int] = []
+    real = sanitize.normalize_text
+
+    def spy(text: str) -> str:
+        seen.append(len(text))
+        return real(text)
+
+    monkeypatch.setattr(sanitize, "normalize_text", spy)
+    huge = "ﷺ ６​" * 1_000_000  # ~10 MB UTF-8: chữ giãn dài khi NFKC + chữ fullwidth + zero-width
+    started = time.perf_counter()
+    out = sanitize_customer_message(huge)
+    assert time.perf_counter() - started < 0.5
+    assert seen == [settings.max_message_chars * 4]  # bộ chuẩn hoá chỉ thấy phần đã cắt thô
+    assert len(out) == settings.max_message_chars
 
 
 def test_bo_ky_tu_dieu_khien_va_zero_width() -> None:
