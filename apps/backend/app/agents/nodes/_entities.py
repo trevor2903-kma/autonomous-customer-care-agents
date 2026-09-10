@@ -9,23 +9,25 @@ from __future__ import annotations
 import re
 
 # order_id: neo theo từ khoá "đơn/đơn hàng/order/mã/mã đơn/#", giá trị ≥3 chữ số (lấy TRỌN dãy số). Giữa từ khoá
-# và số CHỈ cho khoảng trắng + vài từ nối ("số", "là", ":", "#", "mã" sau "đơn", "của em/mình/tôi") — `\D{0,8}`
-# cũ nuốt cả "giá"/"trên"/"từ" nên "đơn giá 250000", "đơn trên 500000" thành mã giả (AGENT-01.2). Vì vậy
-# "mã giảm/voucher/otp/bưu…", "đơn giá/trên/từ/dưới/tối thiểu/hơn" không khớp; "vận đơn" (mã vận chuyển)
-# loại bằng lookbehind.
+# và số CHỈ cho khoảng trắng + vài từ nối ("số", "là", ":", "#", "mã" sau "đơn", "của em/mình/tôi/anh/chị",
+# "bên", "nè", "giúp", "order no.") và tiền tố "DH" ("mã đơn DH865277" → 865277: mã trong DB đều là số, "DH"
+# chỉ là cách khách viết — AGENT-01.5) — `\D{0,8}` cũ nuốt cả "giá"/"trên"/"từ" nên "đơn giá 250000", "đơn trên
+# 500000" thành mã giả (AGENT-01.2). Vì vậy "mã giảm/voucher/otp/bưu…", "đơn giá/trên/từ/dưới/tối thiểu/hơn"
+# không khớp; "vận đơn" (mã vận chuyển) loại bằng lookbehind.
 _ORDER_ID_RE = re.compile(
     r"(?:mã\s*đơn(?:\s*hàng)?|(?<!vận\s)đơn(?:\s*hàng)?|order|mã|#)"
-    r"(?:[\s:#-]|số|là|mã|của|em|mình|tôi)*?"
+    r"(?:[\s:#-]|số|là|mã|của|em|mình|tôi|anh|chị|bên|nè|giúp|no\.?|dh)*?"
     r"(\d{3,})(?!\d)",
     re.IGNORECASE,
 )
 # Ngữ cảnh SỐ TIỀN của một dãy số — MỘT luật dùng chung cho regex lẫn entities đã merge với LLM (AGENT-01.2):
 # đứng SAU từ chỉ giá/ngưỡng, hoặc đứng TRƯỚC đơn vị tiền / nhóm nghìn. "k"/"tr"/"đ" phải DÍNH số ("500k"):
 # viết tắt chat "đơn 716449 k thấy" (k = không) không được biến mã thật thành số tiền; `\b` giữ "không"/"đã"/
-# "trả" khỏi dính.
+# "trả" khỏi dính. "đồng" TRỪ từ ghép ("đồng thời/ý/bộ/kiểm/phục/giá"): "đơn 716449 đồng thời…" vẫn là mã.
 _AMOUNT_BEFORE_RE = re.compile(r"(?<!\w)(?:giá|trên|từ|dưới|tối\s*thiểu|hơn)\s*$", re.IGNORECASE)
 _AMOUNT_AFTER_RE = re.compile(
-    r"(?:k|tr|đ)\b|\s*(?:đồng|vnđ|vnd|nghìn|ngàn|triệu)\b|[.,]\d{3}", re.IGNORECASE
+    r"(?:k|tr|đ)\b|\s*(?:đồng(?!\s*(?:thời|ý|bộ|kiểm|phục|giá)\b)|vnđ|vnd|nghìn|ngàn|triệu)\b|[.,]\d{3}",
+    re.IGNORECASE,
 )
 # Mã đơn TRƠ = CẢ tin nhắn chỉ là con số (cho phép '#' và một dấu câu cuối). `_ORDER_ID_RE` neo TỪ KHOÁ để không
 # nhận nhầm giá/số lượng; số trơ chỉ là mã ở ngữ cảnh VỪA HỎI MÃ — xem `intent.resume_order_code`.

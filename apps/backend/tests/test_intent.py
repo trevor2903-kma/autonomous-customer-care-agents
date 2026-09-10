@@ -64,6 +64,21 @@ def test_extract_no_false_positive_order_id() -> None:
         ("đơn của em 716449 tới đâu", "716449"),
         ("đơn em 716449 k thấy giao", "716449"),  # "k" = "không" (viết tắt chat), không phải "nghìn"
         ("đơn 500k, mã đơn 716449", "716449"),  # bỏ số tiền, lấy mã thật phía sau
+        # Cách khách hay viết mã THẬT (review AGENT-01.2): tiền tố "DH" dính số (mã trong DB đều là số —
+        # AGENT-01.5), từ đệm khẩu ngữ; "đồng thời/ý" sau mã KHÔNG phải đơn vị tiền.
+        ("mã đơn DH865277", "865277"),
+        ("đơn hàng DH865277 của em", "865277"),
+        ("đơn nè 716449", "716449"),
+        ("order no. 716449", "716449"),
+        ("đơn hàng bên em 716449", "716449"),
+        ("đơn của anh 716449 giao chưa em", "716449"),
+        ("tra đơn giúp mình: 716449", "716449"),
+        ("đơn 716449 đồng thời cho mình hỏi phí ship", "716449"),
+        ("đơn 716449 đồng ý đổi size", "716449"),
+        # …nhưng vẫn KHÔNG nhận: tiền tố lạ sau "mã", "đồng" là đơn vị tiền.
+        ("mã otp123456", None),
+        ("đơn 500000 đồng", None),
+        ("đơn 500000 đồng có freeship không", None),
     ],
 )
 def test_extract_order_id_ignores_amounts(text: str, expected: str | None) -> None:
@@ -77,6 +92,9 @@ def test_appears_only_as_amount() -> None:
     # Mã KHÔNG có trong câu hiện tại → giữ (Agent 1 có thể lấy mã từ lịch sử).
     assert not appears_only_as_amount("đơn đó của mình tới đâu rồi", "716449")
     assert not appears_only_as_amount("bất kỳ", None)
+    # "đồng" trong từ ghép KHÔNG phải đơn vị tiền → mã LLM trả đúng thì giữ; "đồng" đứng một mình vẫn là tiền.
+    assert not appears_only_as_amount("đơn 716449 đồng thời cho mình hỏi phí ship", "716449")
+    assert appears_only_as_amount("đơn 500000 đồng có freeship không", "500000")
 
 
 class _FakeLLM:
