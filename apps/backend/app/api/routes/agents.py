@@ -8,17 +8,21 @@ thay vì chạy lại một câu test không lưu vết. `/run-demo` GỠ cùng 
 
 Cổng chat khách THẬT (persist + bộ nhớ đa lượt) = WebSocket /ws/chat. Response Generator vẫn là điểm phát ngôn
 DUY NHẤT tới khách (PRD §7.4) — route này chỉ trả METADATA.
+
+CHỈ ADMIN (audit v2, SEC-XC.1): route gọi LLM thật và trả nguyên văn `rag_contexts` — mở cho người lạ là vừa đốt
+tiền LLM vừa dump được toàn bộ tri thức. `message` bị chặn độ dài như biên WS (`max_message_chars`).
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from ...agents.nodes.intent import classify_intent
 from ...agents.nodes.knowledge import retrieve_knowledge
 from ...schemas.agent import AnalyzeResult, ClassifyRequest
+from ..deps import require_admin
 
-router = APIRouter(prefix="/agents", tags=["agents"])
+router = APIRouter(prefix="/agents", tags=["agents"], dependencies=[Depends(require_admin)])
 
 
 @router.post("/analyze", response_model=AnalyzeResult)
