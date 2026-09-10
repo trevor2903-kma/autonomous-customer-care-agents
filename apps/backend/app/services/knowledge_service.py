@@ -188,18 +188,18 @@ async def delete_upload(doc_id: str) -> KnowledgeDocument | None:
 async def reset_all() -> None:
     """Drop collection + xoá sổ (giữ hai kho đồng bộ).
 
-    Vector TRƯỚC, sổ SAU (như `delete_upload`): Qdrant lỗi → sổ còn nguyên, hai kho vẫn khớp; xoá sổ lỗi
-    SAU khi Qdrant đã sạch → log rõ kho nào đang lệch rồi raise (RAG-01.2).
+    Xoá sổ TRONG transaction → reset Qdrant → commit (RAG-01.2): Postgres hỏng lộ ra TRƯỚC khi đụng Qdrant; Qdrant
+    hỏng → không commit (đóng session = rollback), sổ còn nguyên và vẫn khớp Qdrant chưa đổi. Kẽ còn lại: commit hỏng
+    SAU khi Qdrant đã sạch → log rõ kho nào đang lệch rồi raise.
     """
-    async with _write_lock:
+    async with _write_lock, AsyncSessionLocal() as s:
+        await s.execute(delete(KnowledgeDocument))
         await rag_service.reset_collection()
         try:
-            async with AsyncSessionLocal() as s:
-                await s.execute(delete(KnowledgeDocument))
-                await s.commit()
+            await s.commit()
         except Exception:
             log.exception(
-                "knowledge.reset: Qdrant ĐÃ xoá sạch nhưng xoá sổ knowledge_document LỖI — sổ còn liệt kê "
+                "knowledge.reset: Qdrant ĐÃ xoá sạch nhưng commit xoá sổ knowledge_document LỖI — sổ còn liệt kê "
                 "tài liệu không còn vector; bấm reset lại."
             )
             raise

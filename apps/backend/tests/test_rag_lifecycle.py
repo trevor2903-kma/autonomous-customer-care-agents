@@ -118,6 +118,7 @@ class _FakeSession:
         self.added: list[Any] = []
         self.deleted: list[Any] = []
         self.committed = False
+        self.closed = False
 
     async def get(self, model: Any, key: Any) -> KnowledgeDocument | None:
         return self.existing
@@ -129,6 +130,7 @@ class _FakeSession:
         return self
 
     async def __aexit__(self, *exc: object) -> bool:
+        self.closed = True  # session thật: đóng mà chưa commit = rollback
         return False
 
     async def execute(self, stmt: Any) -> Any:
@@ -454,28 +456,67 @@ async def test_ledger_failure_after_the_swap_is_logged_for_a_rerun_and_raised(
     assert "chạy lại reindex" in caplog.text and ALIAS in caplog.text
 
 
-async def test_reset_all_clears_vectors_first_then_the_ledger(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+async def test_reset_all_deletes_the_ledger_in_a_transaction_a_qdrant_failure_rolls_back(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Xoá sổ TRONG transaction → reset Qdrant → commit (RAG-01.2): Qdrant hỏng → không commit (đóng session = rollback),
+    # sổ còn nguyên và vẫn khớp Qdrant chưa đổi gì.
     session = _FakeSession()
     _use_session(monkeypatch, session)
+    seen_at_reset: list[tuple[list[str], bool]] = []
 
     async def qdrant_down() -> None:
+        seen_at_reset.append(([type(s).__name__ for s in session.statements], session.committed))
         raise RuntimeError("Qdrant down")
 
     monkeypatch.setattr(rag_service, "reset_collection", qdrant_down)
     with pytest.raises(RuntimeError, match="Qdrant"):
         await knowledge_service.reset_all()
-    assert session.statements == [] and not session.committed  # Qdrant hỏng → sổ không bị đụng: vẫn khớp
+    assert seen_at_reset == [(["Delete"], False)]  # lệnh xoá sổ đã chạy, CHƯA commit, trước khi đụng Qdrant
+    assert session.closed and not session.committed
+
+    session = _FakeSession()
+    _use_session(monkeypatch, session)
+
+    async def qdrant_ok() -> None:
+        seen_at_reset.append(([type(s).__name__ for s in session.statements], session.committed))
+
+    monkeypatch.setattr(rag_service, "reset_collection", qdrant_ok)
+    await knowledge_service.reset_all()
+    assert seen_at_reset[-1] == (["Delete"], False) and session.committed  # commit SAU khi Qdrant đã sạch
+
+
+async def test_reset_all_never_touches_qdrant_when_postgres_is_down(monkeypatch: pytest.MonkeyPatch) -> None:
+    resets: list[str] = []
+
+    async def reset() -> None:
+        resets.append("reset")
+
+    monkeypatch.setattr(rag_service, "reset_collection", reset)
+    _db_down(monkeypatch)
+    with pytest.raises(RuntimeError, match="Neon"):
+        await knowledge_service.reset_all()
+    assert resets == []  # Postgres hỏng lộ ra TRƯỚC khi Qdrant bị xoá: hai kho vẫn khớp
+
+
+async def test_reset_all_logs_a_failed_commit_after_qdrant_was_cleared(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    session = _FakeSession()
+
+    async def commit() -> None:
+        raise RuntimeError("Neon ngắt kết nối")
+
+    session.commit = commit  # type: ignore[method-assign]
+    _use_session(monkeypatch, session)
 
     async def qdrant_ok() -> None:
         return None
 
     monkeypatch.setattr(rag_service, "reset_collection", qdrant_ok)
-    _db_down(monkeypatch)
     with caplog.at_level(logging.ERROR, logger="knowledge"), pytest.raises(RuntimeError, match="Neon"):
         await knowledge_service.reset_all()
-    assert "reset lại" in caplog.text  # nói rõ kho nào đang lệch
+    assert "reset lại" in caplog.text  # kẽ còn lại: commit hỏng SAU khi Qdrant đã sạch → nói rõ kho nào lệch
 
 
 async def test_upload_waits_for_a_running_reindex(monkeypatch: pytest.MonkeyPatch) -> None:
