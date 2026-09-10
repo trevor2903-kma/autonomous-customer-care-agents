@@ -27,6 +27,8 @@ export interface Message {
   intent?: string | null;
   confidence?: number | null;
   created_at: string;
+  /** uuid client sinh khi gửi qua WS (protocol v2) — FE ghép tin đang gửi với bản đã lưu, không trùng. */
+  client_msg_id?: string | null;
 }
 
 // RAG management (PRD §17 Module 1).

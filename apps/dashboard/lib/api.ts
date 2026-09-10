@@ -282,6 +282,8 @@ export interface ThreadMessage {
   sender: MessageSender;
   content: string;
   created_at: string;
+  /** uuid client sinh khi gửi (protocol v2) — nối lại thì tin "đang gửi" có id này coi là đã lưu. */
+  client_msg_id?: string | null;
 }
 export interface CustomerThread {
   messages: ThreadMessage[];

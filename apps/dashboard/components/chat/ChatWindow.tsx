@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import type { SendState } from "@/lib/messageMerge";
 
 export type ChatMessage = {
   id: number;
@@ -9,6 +10,14 @@ export type ChatMessage = {
   time: string;
   /** Nguồn tri thức Agent 2 dùng để trả lời (chip "Căn cứ tri thức"). */
   sources?: string[];
+  /** id tin đã lưu (message.id) — khoá chống trùng khi ghép lịch sử với frame realtime. */
+  messageId?: string | null;
+  /** Tin khách gửi từ CHÍNH tab này: uuid client sinh, dùng lại nguyên văn khi gửi lại (IDEM-XC.1). */
+  clientMsgId?: string;
+  /** Vòng đời gửi của tin có clientMsgId: đang gửi → đã gửi (ack) → chưa gửi được (FE-01.4 / UX-02.2). */
+  sendState?: SendState;
+  /** Bong bóng dựng từ /me/thread — bị thay toàn bộ ở lần ghép lịch sử kế tiếp. */
+  fromHistory?: boolean;
 };
 
 // Bong bóng theo design: khách (nền đậm, phải) · AI (trắng + avatar olive) · nhân viên (avatar steel) ·
@@ -17,10 +26,15 @@ export function ChatWindow({
   messages,
   typing = false,
   waiting = false,
+  onRetry,
+  canRetry = true,
 }: {
   messages: ChatMessage[];
   typing?: boolean;
   waiting?: boolean;
+  /** "Gửi lại" một tin chưa gửi được — cùng client_msg_id (server nhận ra tin trùng, không chạy lại lượt). */
+  onRetry?: (clientMsgId: string, text: string) => void;
+  canRetry?: boolean;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
   // Luôn cuộn tới tin mới nhất (kể cả khi đang hiện "đang trả lời…").
@@ -38,12 +52,33 @@ export function ChatWindow({
 
       {messages.map((m) => {
         if (m.from === "you") {
+          const cid = m.clientMsgId;
           return (
             <div key={m.id} className="flex flex-col items-end gap-[5px]">
-              <div className="max-w-[80%] rounded-[16px_16px_5px_16px] bg-ink px-4 py-3 text-[15px] leading-[1.55] text-ink-paper">
+              <div
+                className={`max-w-[80%] rounded-[16px_16px_5px_16px] bg-ink px-4 py-3 text-[15px] leading-[1.55] text-ink-paper ${
+                  m.sendState === "sending" ? "opacity-70" : ""
+                }`}
+              >
                 {m.text}
               </div>
-              <span className="pr-1 text-[11px] text-dim">{m.time}</span>
+              {m.sendState === "failed" && cid ? (
+                <span className="flex items-center gap-1 pr-1 text-[11.5px] text-terracotta">
+                  Chưa gửi được ·
+                  <button
+                    type="button"
+                    onClick={() => onRetry?.(cid, m.text)}
+                    disabled={!canRetry}
+                    className="font-semibold hover:underline disabled:opacity-50"
+                  >
+                    Gửi lại
+                  </button>
+                </span>
+              ) : (
+                <span className="pr-1 text-[11px] text-dim">
+                  {m.sendState === "sending" ? "Đang gửi…" : m.time}
+                </span>
+              )}
             </div>
           );
         }
