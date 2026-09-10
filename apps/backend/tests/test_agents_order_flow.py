@@ -213,6 +213,24 @@ async def test_clarify_then_two_wrong_bare_codes_escalates(monkeypatch: pytest.M
     assert "order_unresolved" in t3["escalation_reason"]
 
 
+# ── AGENT-01.2 (review): số tiền ở lượt hỏi ship KHÔNG làm bẩn bộ đếm mã hỏng của lượt sau ──
+async def test_amount_in_shipping_turn_does_not_poison_later_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tái hiện live: "đơn 500000 có được freeship không" — regex lẫn LLM vẫn ra 500000 — được trả lời chính sách;
+    # lượt SAU khách gõ nhầm mã LẦN ĐẦU phải nhận câu "không tìm thấy", KHÔNG bị chuyển người vì con số 500000.
+    _search_returns(monkeypatch, 0.8)
+    _scoped_db(monkeypatch, {"716449": _CUSTOMER})
+    history: list[dict[str, str]] = []
+    _classify_as(monkeypatch, "shipping", {"order_id": "500000"})
+    t1 = await _turn("đơn 500000 có được freeship không shop", history, None)
+    assert t1["action"] == "auto_reply" and t1["status"] == "REPLIED"
+    assert t1["order_not_found"] is None
+
+    _classify_as(monkeypatch, "order_status", {"order_id": "716448"})
+    t2 = await _turn("đơn 716448 tới đâu rồi", history, t1)
+    assert t2["action"] == "auto_reply"
+    assert t2["result"]["reply"] == resp.ORDER_NOT_FOUND_TEMPLATE.format(code="716448")
+
+
 # ── AGENT-03.1: lượt Agent 4 phải fallback → chuyển người, card mang đúng lý do ──
 async def test_fallback_turn_is_handed_to_a_human_with_reason(monkeypatch: pytest.MonkeyPatch) -> None:
     _classify_as(monkeypatch, "product_price", {})

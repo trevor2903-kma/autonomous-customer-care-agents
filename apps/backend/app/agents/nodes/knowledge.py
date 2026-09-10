@@ -18,6 +18,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from typing import Any
@@ -27,8 +28,9 @@ from ...core.logging import get_logger
 from ...models.enums import ConversationStatus
 from ...services import order_service, rag_service
 from ..state import ConversationState
-from ._entities import bare_order_code, extract_entities_rule
+from ._entities import bare_order_code
 from .intent import resume_order_code
+from .response import ORDER_NOT_FOUND_TEMPLATE
 
 log = get_logger("agent.knowledge")
 
@@ -100,25 +102,31 @@ async def retrieve_knowledge(query: str, top_k: int = 4, intent: str | None = No
     }
 
 
+# Câu "không tìm thấy đơn" CỐ ĐỊNH của Agent 4 dưới dạng khớp NGUYÊN VĂN — chỉ chỗ `{code}` được thay đổi.
+_NOT_FOUND_HEAD, _NOT_FOUND_TAIL = ORDER_NOT_FOUND_TEMPLATE.split("{code}")
+_NOT_FOUND_RE = re.compile(re.escape(_NOT_FOUND_HEAD) + r"(\S+)" + re.escape(_NOT_FOUND_TAIL))
+
+
 async def _failed_lookups_before(
     history: list[dict[str, Any]] | None, owner_id: uuid.UUID | None
 ) -> int:
-    """Đếm số mã đơn KHÁC NHAU khách đã đưa TRONG CÙNG CA mà tra không ra (dựa trên `history`).
+    """Đếm số mã đơn KHÁC NHAU TRONG CÙNG CA mà khách ĐÃ ĐƯỢC BÁO "không tìm thấy" và tra lại vẫn không ra.
 
-    Suy lại từ LỜI KHÁCH + sự thật DB, KHÔNG dò chữ trong câu trả lời của bot (đúng cái bug handoff cũ):
-    lấy `order_id` bằng chính regex của Agent 1 — và cả mã TRƠ (câu khách đáp lượt hỏi mã) — rồi tra lại
-    scoped. `history` chỉ chứa các lượt TRƯỚC (WS nạp history trước khi lưu tin hiện tại) nên không đếm nhầm
-    lượt đang xử lý.
+    Một lần hỏng = một lượt Agent 4 THẬT SỰ phát câu cố định `ORDER_NOT_FOUND_TEMPLATE` — so KHỚP NGUYÊN VĂN với
+    hằng (chỉ chỗ mã thay đổi), KHÔNG dò chữ mờ trong câu bot (bug handoff cũ). KHÔNG suy từ con số trong lời
+    khách nữa: số tiền ở câu hỏi ship ("đơn 500000 có được freeship không" — lượt đó không báo "không tìm thấy")
+    hay số điện thoại gửi trơ từng bị đếm thành mã hỏng → mã gõ nhầm ĐẦU TIÊN bị chuyển người oan (AGENT-01.2).
+    Mã trong câu báo chính là mã Agent 2 đã tra (cả mã LLM tách từ "mã đơn DH865277" lẫn mã TRƠ ở lượt resume),
+    nên "không tìm thấy" → AWAITING_CUSTOMER → mã sai lần hai vẫn dừng ở `order_unresolved` (AGENT-02.3). Tra lại
+    scoped để vẫn bám sự thật DB. `history` chỉ chứa các lượt TRƯỚC (WS nạp history trước khi lưu tin hiện tại)
+    nên không đếm nhầm lượt đang xử lý.
     """
     codes = {
-        code
-        for m in history or []
-        if m.get("sender") == "customer"
-        for content in [str(m.get("content") or "")]
-        # Mã TRƠ cũng tính: không thì "không tìm thấy" → AWAITING_CUSTOMER → mã trơ sai → "không tìm thấy"… lặp
-        # mãi, không bao giờ tới order_unresolved (AGENT-02.3).
-        for code in [extract_entities_rule(content).get("order_id") or bare_order_code(content)]
-        if code
+        m.group(1)
+        for msg in history or []
+        if msg.get("sender") == "ai"
+        for m in [_NOT_FOUND_RE.fullmatch(str(msg.get("content") or "").strip())]
+        if m
     }
     if not codes:
         return 0
@@ -145,16 +153,18 @@ async def resolve_order(
       Chỉ khi đây là lần **thứ hai** vẫn không ra trong CÙNG ca mới bật `order_unresolved` (chuyển người):
       hỏi lại một lần là hợp lý, hỏi lại mãi là đang làm khó khách.
     - KHÔNG mã → không tín hiệu gì: để Agent 4 hỏi mã đơn (auto_reply bình thường).
-    - `shipping` + KHÔNG thấy → không tín hiệu gì: câu hỏi ship hay kèm SỐ TIỀN ("đơn 500000 có được freeship
-      không") — trả lời chính sách, đừng đáp "không tìm thấy đơn 500000" (AGENT-01.2).
+    - `shipping` + KHÔNG thấy (hoặc thiếu danh tính nên chưa tra được) → không tín hiệu gì: câu hỏi ship hay kèm
+      SỐ TIỀN ("đơn 500000 có được freeship không") — trả lời chính sách, đừng đáp "không tìm thấy đơn 500000"
+      (AGENT-01.2).
 
     Lưu ý đa lượt: `order_id` có thể do Agent 1 GIẢI THAM CHIẾU từ lịch sử ("đơn của mình" ngay sau lượt hỏi
     "đơn 716449") — khi đó lượt này vẫn TRA LẠI đơn, nên dữ liệu là MỚI chứ không phải chép lại lời cũ.
     Nhánh "không mã" vì vậy chỉ xảy ra khi thật sự không có đơn nào đang được nói tới.
 
-    Degrade AN TOÀN: DB lỗi HOẶC thiếu/hỏng danh tính khách → `order_unresolved` (chuyển người), KHÔNG hạ xuống
-    `order_not_found`: lookup HỎNG / KHÔNG THỰC HIỆN ĐƯỢC khác lookup TRẢ RỖNG — nói "không thấy đơn trong tài
-    khoản của bạn" khi chưa tra được là nói sai (AGENT-01.4).
+    Degrade AN TOÀN: DB lỗi HOẶC thiếu/hỏng danh tính khách → `order_unresolved` (chuyển người; riêng `shipping`
+    thiếu danh tính → trả lời chính sách như trên), KHÔNG hạ xuống `order_not_found`: lookup HỎNG / KHÔNG THỰC
+    HIỆN ĐƯỢC khác lookup TRẢ RỖNG — nói "không thấy đơn trong tài khoản của bạn" khi chưa tra được là nói sai
+    (AGENT-01.4).
     """
     empty = {"order_context": None, "order_not_found": None, "uncertainty_flags": []}
     unresolved = {"order_context": None, "order_not_found": None, "uncertainty_flags": ["order_unresolved"]}
@@ -169,8 +179,9 @@ async def resolve_order(
         owner_id = uuid.UUID(customer_id) if customer_id else None
     except (ValueError, TypeError):
         owner_id = None
-    if owner_id is None:  # không có danh tính → CHƯA tra được gì (vd nhánh WS AI-only) → chuyển người.
-        return unresolved
+    if owner_id is None:  # không có danh tính → CHƯA tra được gì (vd nhánh WS AI-only) → chuyển người,
+        # trừ shipping: số trong câu hỏi ship thường là TIỀN → trả lời chính sách như nhánh "không thấy" bên dưới.
+        return empty if intent == "shipping" else unresolved
 
     try:
         order = await order_service.lookup(order_code, owner_id)

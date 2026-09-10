@@ -165,15 +165,15 @@ async def test_resolve_order_not_found_informs_instead_of_escalating(
 
 
 async def test_resolve_order_second_failure_in_case_escalates(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Lần THỨ HAI vẫn không ra trong CÙNG ca → chuyển người. Suy từ LỜI KHÁCH trong history + sự thật DB,
-    # KHÔNG dò chữ trong câu trả lời của bot.
+    # Lần THỨ HAI vẫn không ra trong CÙNG ca → chuyển người. Lần hỏng trước = lượt Agent 4 đã PHÁT câu "không tìm
+    # thấy" CỐ ĐỊNH (khớp nguyên văn hằng, không dò chữ mờ) + tra lại vẫn không ra.
     async def fake_lookup(code: str, customer_id: object) -> None:
         return None
 
     monkeypatch.setattr(kn.order_service, "lookup", fake_lookup)
     history = [
         {"sender": "customer", "content": "đơn 111222 của mình đâu rồi"},
-        {"sender": "ai", "content": "Dạ em không tìm thấy đơn 111222…"},
+        {"sender": "ai", "content": kn.ORDER_NOT_FOUND_TEMPLATE.format(code="111222")},
     ]
     r = await kn.resolve_order("order_status", {"order_id": "9999"}, _CUSTOMER, history)
     assert r["order_not_found"] is None
@@ -237,6 +237,17 @@ async def test_resolve_order_without_identity_never_leaks(monkeypatch: pytest.Mo
         assert r["order_context"] is None
         assert r["order_not_found"] is None  # KHÔNG phát câu "không tìm thấy đơn"
         assert r["uncertainty_flags"] == ["order_unresolved"]
+
+
+async def test_shipping_without_identity_answers_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Không danh tính (nhánh WS AI-only): số trong câu hỏi ship thường là TIỀN → trả lời chính sách như nhánh
+    # "không thấy", KHÔNG order_unresolved (review AGENT-01.4). Intent đơn khác vẫn order_unresolved (test trên).
+    async def boom(*args: object, **kwargs: object) -> None:
+        raise AssertionError("không danh tính → không được tra đơn")
+
+    monkeypatch.setattr(kn.order_service, "lookup", boom)
+    r = await kn.resolve_order("shipping", {"order_id": "500000"}, None)
+    assert r == {"order_context": None, "order_not_found": None, "uncertainty_flags": []}
 
 
 # ── refund/exchange/complaint cũng tra đơn scoped (AGENT-01.1) + shipping không báo "không thấy" (AGENT-01.2) ──
@@ -305,6 +316,33 @@ async def test_knowledge_node_shipping_amount_question_answers_policy(monkeypatc
     assert out["order_not_found"] is None
     assert out["order_context"] is None
     assert out["uncertainty_flags"] == []
+
+
+# ── Chỉ lượt ĐÃ BÁO "không tìm thấy" mới là một lần hỏng (review AGENT-01.2) ──────────────────────────────
+@pytest.mark.parametrize(
+    "earlier",
+    [
+        "đơn 500000 có được freeship không shop",  # số TIỀN ở lượt hỏi ship (regex vẫn ra 500000)
+        "0901234567",  # số điện thoại gửi trơ
+    ],
+)
+async def test_numbers_never_reported_not_found_do_not_count(monkeypatch: pytest.MonkeyPatch, earlier: str) -> None:
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({}))
+    history = [{"sender": "customer", "content": earlier}, {"sender": "ai", "content": "Dạ vâng ạ."}]
+    r = await kn.resolve_order("order_status", {"order_id": "716448"}, _CUSTOMER, history)
+    # Mã gõ nhầm LẦN ĐẦU → báo "không tìm thấy", KHÔNG chuyển người vì một con số chưa từng được tra như mã.
+    assert r == {"order_context": None, "order_not_found": "716448", "uncertainty_flags": []}
+
+
+async def test_prefixed_code_reported_not_found_counts(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Mã LLM tách từ "mã đơn DH716448" đã được báo "không tìm thấy" → mã sai lần hai chuyển người, không lặp mãi.
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({}))
+    history = [
+        {"sender": "customer", "content": "mã đơn DH716448 tới đâu rồi shop"},
+        {"sender": "ai", "content": kn.ORDER_NOT_FOUND_TEMPLATE.format(code="716448")},
+    ]
+    r = await kn.resolve_order("order_status", {"order_id": "716447"}, _CUSTOMER, history)
+    assert r["uncertainty_flags"] == ["order_unresolved"]
 
 
 # ── Lượt resume mã trơ + miễn cờ grounding khi đã có đơn (AGENT-02.1) + số đo con (PERF-01.2) ───────────
