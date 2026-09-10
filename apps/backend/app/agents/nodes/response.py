@@ -30,7 +30,7 @@ from ...core import tracing
 from ...core.config import settings
 from ...core.embeddings import get_openai
 from ...core.logging import get_logger
-from ...core.sanitize import as_data_block
+from ...core.sanitize import as_data_block, neutralize_tags
 from ...models.enums import AgentAction, ConversationStatus
 from ...services.business_hours import is_within_support_hours
 from ..state import ConversationState
@@ -245,7 +245,8 @@ async def generate_reply(
     user_msg = (
         f"{format_history(history, settings.history_window)}"
         f"Câu hỏi của khách:\n{as_data_block('tin_nhan_khach', repr(query))}\n"
-        f"(intent: {intent}; entities: {entities or {}})\n\n"
+        # Entity do LLM Agent 1 tách TỪ LỜI KHÁCH = văn bản không tin cậy nằm NGOÀI khối dữ liệu → vô hiệu thẻ (Lớp B).
+        f"(intent: {intent}; entities: {neutralize_tags(str(entities or {}))})\n\n"
         f"ĐOẠN TRI THỨC:\n{_context_block(contexts)}"
         f"{_order_block(order_context)}"
     )
