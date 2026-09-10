@@ -606,6 +606,61 @@ async def test_resend_after_registry_loss_is_caught_by_the_db_index(env: Any) ->
     assert len(ws.frames("typing")) == 1
 
 
+def _customer_msgs(store: FakeStore, customer: uuid.UUID) -> list[Any]:
+    return [m for c in _customer_convs(store, customer) for m in store.msgs(c["id"], "customer")]
+
+
+@pytest.mark.parametrize("blip", ["insert", "open_case"])
+async def test_resend_of_never_persisted_message_is_not_swallowed(
+    env: Any, monkeypatch: pytest.MonkeyPatch, blip: str
+) -> None:
+    """Registry (`_remember` lúc nhận) × FE gửi lại khi nối lại: lần lưu đầu hỏng ("unsaved" — DB lỗi, hoặc mở ca lỗi
+    nên chưa có ca), socket rớt, FE nối lại, /me/thread thiếu id → gửi lại CÙNG id → phải được xử lý + lưu."""
+    customer = uuid.uuid4()
+    first = {"on": True}
+    if blip == "insert":
+        env.store.add_conv(customer_id=customer, status=S.REPLIED)
+        real_insert = conversation_service.insert_message
+
+        async def flaky_insert(
+            session: Any, conversation_id: Any, *, sender: str, content: str,
+            client_msg_id: str | None = None, bump_activity: bool = True,
+        ) -> Any:
+            if first["on"] and sender == "customer":
+                first["on"] = False
+                raise RuntimeError("connection was closed in the middle of operation")  # Neon rớt đúng lúc lưu tin
+            return await real_insert(
+                session, conversation_id, sender=sender, content=content,
+                client_msg_id=client_msg_id, bump_activity=bump_activity,
+            )
+
+        monkeypatch.setattr(conversation_service, "insert_message", flaky_insert)
+    else:
+        real_open = conversation_service.open_case_for_customer
+
+        async def flaky_open(session: Any, customer_id: uuid.UUID, *, display: str | None = None) -> Any:
+            if first["on"]:
+                first["on"] = False
+                raise RuntimeError("Neon cold start")  # khách mới: lần mở ca đầu lỗi → lượt chạy mà không có ca
+            return await real_open(session, customer_id, display=display)
+
+        monkeypatch.setattr(conversation_service, "open_case_for_customer", flaky_open)
+
+    ws, task = await _open(env, customer, name="old")
+    ws.push(_msg("đơn 716449 tới đâu rồi", "u-1"))
+    await until(lambda: len(env.pipe.calls) == 1)
+    await _settle((ws, task))  # socket chết; lượt đã xong
+    assert _customer_msgs(env.store, customer) == []  # lần đầu KHÔNG lưu được
+
+    ws2, task2 = await _open(env, customer, name="new")  # nối lại → FE gửi lại tin của mình chưa có trong /me/thread
+    ws2.push(_msg("đơn 716449 tới đâu rồi", "u-1"))
+    await until(lambda: len(ws2.frames("ack")) == 1)
+    await _settle((ws2, task2))
+
+    assert ws2.frames("ack")[0]["duplicate"] is False  # KHÔNG bị nuốt thành bản trùng (mất tin âm thầm)
+    assert [m.client_msg_id for m in _customer_msgs(env.store, customer)] == ["u-1"] and len(env.pipe.calls) == 2
+
+
 async def test_rate_limited_message_gets_error_frame_and_is_not_processed(
     env: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

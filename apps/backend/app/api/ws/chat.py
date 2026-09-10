@@ -159,6 +159,13 @@ def _remember(customer_id: uuid.UUID, client_msg_id: str) -> None:
         ids.popitem(last=False)
 
 
+def _forget(customer_id: uuid.UUID, client_msg_id: str) -> None:
+    """Bỏ id khỏi registry — tin KHÔNG lưu được: bản gửi lại khi FE nối lại phải được XỬ LÝ, không bị nuốt (IDEM-XC.1)."""
+    ids = _recent_client_ids.get(customer_id)
+    if ids is not None:
+        ids.pop(client_msg_id, None)
+
+
 def _customer_lock(customer_id: uuid.UUID) -> asyncio.Lock:
     lock = _customer_locks.get(customer_id)
     if lock is None:
@@ -589,6 +596,11 @@ async def _turn(
         # Ca vừa bị đóng dưới chân (giữa lúc đọc status và lúc lưu tin): tin KHÔNG vào ca đã đóng — vòng sau
         # `_resolve_case` thấy ca đóng → ca đang mở / ca MỚI (PRD §15). Đóng lần hai liền (gần như không thể) → chạy
         # tiếp như DB lỗi (không persist).
+    if client_msg_id is not None and saved in ("unsaved", "closed"):
+        # Tin khách KHÔNG nằm trong DB (DB lỗi / chưa có ca / ca bị đóng hai lần liền) → quên id đã ghi nhận lúc nhận:
+        # FE nối lại sẽ gửi lại tin chưa thấy trong /me/thread, bản đó phải được XỬ LÝ chứ không bị ack duplicate rồi
+        # mất hẳn (IDEM-XC.1). Lượt này vẫn chạy tiếp như cũ (DB lỗi KHÔNG chặn chat).
+        _forget(st.customer_id, client_msg_id)
     if saved == "duplicate":
         # Tin gửi lại đã có trong DB (registry in-process không còn nhớ — vd tiến trình vừa khởi động lại):
         # KHÔNG chạy lại pipeline; báo client đây là bản trùng.
@@ -777,6 +789,8 @@ async def _customer_ai_only(websocket: WebSocket, customer_id: uuid.UUID) -> Non
                 continue
             msg = sanitize_customer_message(frame.content)  # Lớp A (slice 13)
             if cid is not None:
+                # KHÔNG `_forget` như `_turn`: nhánh degrade trả lời nhưng KHÔNG BAO GIỜ lưu (cố ý) → nhớ id để tin gửi
+                # lại trong tiến trình này không chạy pipeline lần hai.
                 _remember(customer_id, cid)
             await _send(websocket, {"type": "ack", "client_msg_id": cid, "message_id": None, "duplicate": False})
             await websocket.send_json({"type": "typing"})
