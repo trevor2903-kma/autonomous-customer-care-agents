@@ -4,7 +4,8 @@
   trả lời CSKH tiếng Việt GROUNDED từ **`facts.md` (luôn-bật) + `rag_contexts` + `order_context`** (dữ liệu đơn
   Agent 2 tra scoped, khi có). Phanh anti-hallucination (PRD §5 trụ cột 3, §14 FR-PIPE-5): KHÔNG nguồn nào
   **hoặc** thiếu `settings.llm_api_key` → KHÔNG gọi LLM bịa → câu fallback lịch sự + cờ `hallucination_risk`.
-  (Phanh này TẠM gánh vai an toàn thay Decision Engine/Agent 3 — ROADMAP 05.)
+  (Phanh này TẠM gánh vai an toàn thay Decision Engine/Agent 3 — ROADMAP 05.) `response_node` KHÔNG gửi câu
+  fallback cho khách: cờ `hallucination_risk` → chuyển người (PRD FR-PIPE-5 — AGENT-03.1).
 - **Grounding cả HÀNH ĐỘNG**: chỉ được hứa/khẳng định việc hệ thống LÀM ĐƯỢC. Tra trạng thái đơn thì LÀM ĐƯỢC
   (khi có `order_context`); huỷ/hoàn/đổi đơn thì KHÔNG — đừng nói "đã hoàn tiền/đã huỷ đơn cho bạn".
 - **Grounding HAI CHIỀU**: cấm bịa *có* (đã có) VÀ cấm suy diễn *không có* từ chỗ nguồn im lặng. KB không nhắc
@@ -13,8 +14,8 @@
 - `greeting` = lượt xã giao, KHÔNG phát biểu sự thật nào → câu chào mẫu, KHÔNG gọi LLM, KHÔNG cờ. Nhánh này
   chạy **TRƯỚC** phanh "rag_contexts rỗng → FALLBACK" (Agent 2 đã cố ý không retrieve — plan §3-P4/P5).
 - `response_node` là **NODE DUY NHẤT** được ghi tin nhắn AI vào `state["messages"]` (PRD §7.4).
-- Degrade AN TOÀN: thiếu key / LLM lỗi / LLM trả rỗng → fallback (KHÔNG ném lỗi) → pipeline không rớt,
-  `make test` chạy offline.
+- Degrade AN TOÀN: thiếu key / LLM lỗi / LLM trả rỗng → fallback + cờ (KHÔNG ném lỗi) → `response_node` chuyển
+  người; pipeline không rớt, `make test` chạy offline.
 """
 
 from __future__ import annotations
@@ -34,13 +35,14 @@ from ...models.enums import AgentAction, ConversationStatus
 from ...services.business_hours import is_within_support_hours
 from ..state import ConversationState
 from ._history import format_history
+from .intent import CLARIFY_RESUME_INTENTS
 
 log = get_logger("agent.response")
 
-# Câu fallback lịch sự khi KHÔNG đủ tri thức để trả lời chắc chắn (KHÔNG bịa — PRD §14 FR-PIPE-5).
-# KHÔNG hứa chuyển nhân viên: câu này chỉ phát ở nhánh auto_reply (LLM lỗi/rỗng/thiếu key) — status vẫn
-# REPLIED, KHÔNG ai được chuyển ca. Ca "thật sự không trả lời được" đã bị Agent 3 chặn từ trước bằng cờ và
-# nhận HANDOFF_NOTICE. Hứa chuyển ở đây là hứa suông (grounding HÀNH ĐỘNG).
+# Câu fallback của hàm thuần `generate_reply` khi phanh (KHÔNG đủ tri thức / LLM lỗi-rỗng / thiếu key), luôn đi
+# KÈM cờ `hallucination_risk` (KHÔNG bịa — PRD §14 FR-PIPE-5). `response_node` KHÔNG phát câu này tới khách:
+# FR-PIPE-5 đòi "hallucination_risk → chuyển human_handoff", nên lượt đó nhận HANDOFF_NOTICE + IN_HUMAN_QUEUE
+# (AGENT-03.1). Bản thân câu vẫn KHÔNG hứa chuyển nhân viên — nó chỉ nói đúng việc hàm này làm được.
 FALLBACK_REPLY = (
     "Dạ câu hỏi này em chưa tra được thông tin để trả lời chính xác ạ. "
     "Anh/chị nhắn giúp em cụ thể hơn hoặc thử lại sau ít phút để em hỗ trợ tiếp ạ."
@@ -109,11 +111,18 @@ _TYPE_LABEL = {
 
 
 def load_facts() -> str:
-    """Đọc `knowledge/facts.md` MỘT LẦN rồi cache (đọc lúc khởi động qua `warmup_facts`)."""
+    """Đọc `knowledge/facts.md` MỘT LẦN rồi cache (đọc lúc khởi động qua `warmup_facts`).
+
+    Bỏ các dòng blockquote markdown (`>`) = ghi chú cho người BIÊN TẬP (vd "Giá trị dưới đây là MẪU"), không phải
+    sự thật cửa hàng — để nguyên thì chúng vào khối "SỰ THẬT CỬA HÀNG (luôn đúng)" của prompt (AGENT-03.2).
+    """
     global _facts_cache
     if _facts_cache is None:
         try:
-            _facts_cache = frontmatter.load(_FACTS_PATH).content.strip()
+            content = frontmatter.load(_FACTS_PATH).content
+            _facts_cache = "\n".join(
+                line for line in content.splitlines() if not line.lstrip().startswith(">")
+            ).strip()
         except OSError as exc:  # thiếu file → chạy không facts, đừng làm rớt app
             log.warning("facts.md không đọc được (%s) — bỏ qua khối SỰ THẬT CỬA HÀNG", exc)
             _facts_cache = ""
@@ -266,17 +275,27 @@ async def generate_reply(
     return {"reply": reply, "uncertainty_flags": []}
 
 
+def _handoff_notice() -> str:
+    """Thông báo chuyển người. 09c offline: trong giờ → notice thường; ngoài giờ → "nhân viên sẽ phản hồi sớm".
+    AI không đổi hành vi khác (ca vẫn IN_HUMAN_QUEUE + EscalationCard); chỉ câu thông báo tới khách khác."""
+    within = is_within_support_hours(datetime.now(timezone.utc))
+    return HANDOFF_NOTICE if within else HANDOFF_NOTICE_AFTER_HOURS
+
+
 async def response_node(state: ConversationState) -> dict[str, Any]:
     """Node 4 — SOLE-EGRESS: branch theo `state["action"]` (Agent 3). NODE DUY NHẤT ghi tin AI (PRD §7.4).
 
     - `human_handoff` → phát `HANDOFF_NOTICE` (KHÔNG gọi LLM) → status IN_HUMAN_QUEUE.
-    - `auto_reply` → `generate_reply` grounded → status REPLIED.
-    - clarify → phát câu hỏi CỐ ĐỊNH (CLARIFY_QUESTION) → status AWAITING_CUSTOMER (KHÔNG gọi LLM). Field lạ → fallback FALLBACK_REPLY + REPLIED.
+    - `auto_reply` → `generate_reply` grounded → status REPLIED. Riêng câu "không tìm thấy đơn" cho intent hỏi-mã
+      được (CLARIFY_RESUME_INTENTS) → AWAITING_CUSTOMER: khách gửi lại mã TRƠ thì resume tất định (AGENT-02.3).
+    - clarify → phát câu hỏi CỐ ĐỊNH (CLARIFY_QUESTION) → status AWAITING_CUSTOMER (KHÔNG gọi LLM).
+    - `generate_reply` phải fallback (cờ `hallucination_risk`) hoặc clarify field lạ → KHÔNG gửi câu fallback mà
+      CHUYỂN NGƯỜI như nhánh human_handoff, kèm `escalation_reason` cho EscalationCard (PRD FR-PIPE-5, §7.3).
     Các nhánh đều set `result.reply` → WS/khách nhận qua CÙNG một đường (không phải sửa WS).
     """
     action = state.get("action")
     if action == AgentAction.CLARIFY:
-        # 09b: hỏi lại tất định + AWAITING_CUSTOMER. Nếu field lạ (map lệch, không nên xảy ra) → degrade an toàn.
+        # 09b: hỏi lại tất định + AWAITING_CUSTOMER. Field lạ (map lệch, không nên xảy ra) → chuyển người bên dưới.
         question = CLARIFY_QUESTION.get(state.get("clarify_field") or "")
         if question is not None:
             reply = question
@@ -289,10 +308,7 @@ async def response_node(state: ConversationState) -> dict[str, Any]:
             branch = "response"
             flags = ["hallucination_risk"]
     elif action == AgentAction.HUMAN_HANDOFF:
-        # 09c offline: trong giờ → notice thường; ngoài giờ → "nhân viên sẽ phản hồi sớm". AI không đổi hành vi
-        # khác (ca vẫn IN_HUMAN_QUEUE + EscalationCard); chỉ câu thông báo tới khách khác.
-        within = is_within_support_hours(datetime.now(timezone.utc))
-        reply = HANDOFF_NOTICE if within else HANDOFF_NOTICE_AFTER_HOURS
+        reply = _handoff_notice()
         status = ConversationStatus.IN_HUMAN_QUEUE
         branch = "human_handoff"
         flags = []
@@ -310,6 +326,29 @@ async def response_node(state: ConversationState) -> dict[str, Any]:
         status = ConversationStatus.REPLIED
         branch = "response"
         flags = result["uncertainty_flags"]
+        # Câu mời gửi lại mã = một lượt HỎI MÃ như clarify → chờ khách, để WS lưu intent gốc và mã TRƠ lượt sau
+        # được khôi phục tất định thay vì phó mặc LLM (hay xếp số trơ thành `other` → escalate oan). complaint
+        # không thuộc tập hỏi-mã → giữ REPLIED.
+        not_found = state.get("order_not_found")
+        if (
+            not_found
+            and reply == ORDER_NOT_FOUND_TEMPLATE.format(code=not_found)
+            and state.get("intent") in CLARIFY_RESUME_INTENTS
+        ):
+            status = ConversationStatus.AWAITING_CUSTOMER
+
+    # FR-PIPE-5 (+ §7.3): hallucination_risk → KHÔNG bịa, chuyển human_handoff. Cờ này phát SAU Agent 3 nên chính
+    # Agent 4 (sole-egress) chuyển: thông báo chuyển người thay câu fallback, và mang `escalation_reason` cùng định
+    # dạng Agent 3 để EscalationCard (dựng từ final state) nói đúng lý do (AGENT-03.1).
+    escalation: dict[str, Any] = {}
+    if "hallucination_risk" in flags:
+        reply = _handoff_notice()
+        status = ConversationStatus.IN_HUMAN_QUEUE
+        branch = "human_handoff"
+        escalation = {
+            "escalation_reason": f"blocking_flags={['hallucination_risk']}",
+            "require_human_handoff": True,
+        }
 
     return {
         "status": status,
@@ -318,8 +357,9 @@ async def response_node(state: ConversationState) -> dict[str, Any]:
             "branch": branch,
             "action": str(action) if action else None,
             "reply": reply,
-            "escalation_reason": state.get("escalation_reason"),
+            "escalation_reason": escalation.get("escalation_reason", state.get("escalation_reason")),
         },
+        **escalation,
         # Reducer `add`: CHỈ cờ MỚI của node này (hallucination_risk khi auto_reply phải fallback).
         "uncertainty_flags": flags,
         "trace": [

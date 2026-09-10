@@ -56,7 +56,8 @@ _NEUTRALIZED = "[đã loại bỏ một câu chỉ dẫn trong tài liệu tải
 DATA_TAGS = ("tin_nhan_khach", "tri_thuc")
 # Thẻ do CHÍNH nội dung không tin cậy viết ra: khách gõ '</tin_nhan_khach>' là thoát được ranh giới và
 # phần sau bị LLM đọc như chỉ dẫn. Vô hiệu bằng cách bỏ dấu ngoặc nhọn (giữ chữ để người đọc log vẫn thấy).
-_TAG_RE = re.compile(r"</?\s*(?:%s)\s*/?>" % "|".join(DATA_TAGS), re.IGNORECASE)
+# Kể cả thẻ có THUỘC TÍNH (`<tri_thuc source="…">`): với LLM đó vẫn là thẻ mở (RAG-02.1).
+_TAG_RE = re.compile(r"</?\s*(?:%s)\b[^>]*>" % "|".join(DATA_TAGS), re.IGNORECASE)
 
 
 def _strip_invisible(text: str) -> str:
@@ -116,6 +117,14 @@ def _neutralize_sentences(line: str) -> list[str]:
     return [*kept, _NEUTRALIZED]
 
 
+def neutralize_tags(content: str) -> str:
+    """Vô hiệu mọi thẻ ranh giới DỮ LIỆU (`<tin_nhan_khach>`/`<tri_thuc>`, mở lẫn đóng) do nội dung KHÔNG TIN
+    CẬY tự viết ra: bỏ ngoặc nhọn, giữ chữ để người đọc log vẫn thấy. MỘT cửa cho mọi đường đưa văn bản không
+    tin cậy vào prompt — `as_data_block` và khối lịch sử hội thoại (`_history.format_history`, RAG-02.1).
+    Bỏ MỌI ngoặc nhọn trong thẻ khớp (không chỉ hai đầu): thẻ lồng `<tri_thuc <tri_thuc>` không để lại thẻ mở dở."""
+    return _TAG_RE.sub(lambda m: f"({m.group(0).replace('<', '').replace('>', '')})", content)
+
+
 def as_data_block(tag: str, content: str) -> str:
     """Bọc nội dung KHÔNG TIN CẬY trong thẻ DỮ LIỆU (Lớp B) — `<tag>…</tag>`.
 
@@ -123,5 +132,4 @@ def as_data_block(tag: str, content: str) -> str:
     có nghĩa khi nội dung bên trong KHÔNG tự đóng được thẻ, nên mọi thẻ ranh giới xuất hiện trong
     `content` đều bị vô hiệu trước.
     """
-    inner = _TAG_RE.sub(lambda m: f"({m.group(0).strip('<>')})", content)
-    return f"<{tag}>\n{inner}\n</{tag}>"
+    return f"<{tag}>\n{neutralize_tags(content)}\n</{tag}>"

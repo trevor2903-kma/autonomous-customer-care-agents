@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.agents.nodes import intent as intent_mod
-from app.agents.nodes._entities import extract_entities_rule
+from app.agents.nodes._entities import appears_only_as_amount, extract_entities_rule
 
 
 def test_extract_order_id_keyword_anchored() -> None:
@@ -41,6 +41,102 @@ def test_wants_human_no_false_positive() -> None:
 def test_extract_no_false_positive_order_id() -> None:
     # Số không neo từ khoá đơn/mã -> KHÔNG nhận nhầm là order_id.
     assert "order_id" not in extract_entities_rule("áo này giá 250000 đồng phải không shop")
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Số TIỀN / mã khác bị "đơn"/"mã" đứng trước — KHÔNG phải mã đơn (AGENT-01.2, tái hiện live).
+        ("Áo này đơn giá 250000 thì ship về Đà Nẵng bao nhiêu?", None),
+        ("đơn trên 500k có freeship không", None),
+        ("đơn từ 500.000đ", None),
+        ("đơn dưới 300k", None),
+        ("đơn 500000đ", None),
+        ("mã vận đơn GHN123456", None),
+        ("mã vận đơn 123456789", None),
+        ("mã giảm giá 123456 dùng được không", None),
+        ("mã otp 123456", None),
+        # Mã đơn thật: chỉ khoảng trắng + từ nối giữa từ khoá và số.
+        ("Đơn hàng 6578 của tôi", "6578"),
+        ("mã đơn: 716449", "716449"),
+        ("order #716449", "716449"),
+        ("đơn hàng số 716449", "716449"),
+        ("đơn của em 716449 tới đâu", "716449"),
+        ("đơn em 716449 k thấy giao", "716449"),  # "k" = "không" (viết tắt chat), không phải "nghìn"
+        ("đơn 500k, mã đơn 716449", "716449"),  # bỏ số tiền, lấy mã thật phía sau
+        # Cách khách hay viết mã THẬT (review AGENT-01.2): tiền tố "DH" dính số (mã trong DB đều là số —
+        # AGENT-01.5), từ đệm khẩu ngữ; "đồng thời/ý" sau mã KHÔNG phải đơn vị tiền.
+        ("mã đơn DH865277", "865277"),
+        ("đơn hàng DH865277 của em", "865277"),
+        ("đơn nè 716449", "716449"),
+        ("order no. 716449", "716449"),
+        ("đơn hàng bên em 716449", "716449"),
+        ("đơn của anh 716449 giao chưa em", "716449"),
+        ("tra đơn giúp mình: 716449", "716449"),
+        ("đơn 716449 đồng thời cho mình hỏi phí ship", "716449"),
+        ("đơn 716449 đồng ý đổi size", "716449"),
+        # …nhưng vẫn KHÔNG nhận: tiền tố lạ sau "mã", "đồng" là đơn vị tiền.
+        ("mã otp123456", None),
+        ("đơn 500000 đồng", None),
+        ("đơn 500000 đồng có freeship không", None),
+    ],
+)
+def test_extract_order_id_ignores_amounts(text: str, expected: str | None) -> None:
+    assert extract_entities_rule(text).get("order_id") == expected
+
+
+def test_appears_only_as_amount() -> None:
+    assert appears_only_as_amount("Áo này đơn giá 250000 thì ship về Đà Nẵng bao nhiêu?", "250000")
+    assert appears_only_as_amount("đơn trên 500000 có freeship không", "500000")
+    assert not appears_only_as_amount("đơn 716449 giá 250000", "716449")
+    # Mã KHÔNG có trong câu hiện tại → giữ (Agent 1 có thể lấy mã từ lịch sử).
+    assert not appears_only_as_amount("đơn đó của mình tới đâu rồi", "716449")
+    assert not appears_only_as_amount("bất kỳ", None)
+    # "đồng" trong từ ghép KHÔNG phải đơn vị tiền → mã LLM trả đúng thì giữ; "đồng" đứng một mình vẫn là tiền.
+    assert not appears_only_as_amount("đơn 716449 đồng thời cho mình hỏi phí ship", "716449")
+    assert appears_only_as_amount("đơn 500000 đồng có freeship không", "500000")
+
+
+class _FakeLLM:
+    """Client OpenAI giả cho Agent 1 — trả đúng JSON cho trước (offline)."""
+
+    def __init__(self, content: str) -> None:
+        async def create(*args: object, **kwargs: object) -> object:
+            msg = type("Msg", (), {"content": content})
+            return type("Resp", (), {"choices": [type("Choice", (), {"message": msg})]})
+
+        self.chat = type("Chat", (), {"completions": type("C", (), {"create": staticmethod(create)})})
+
+
+def _llm_returns(monkeypatch: pytest.MonkeyPatch, content: str) -> None:
+    monkeypatch.setattr(intent_mod.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(intent_mod.settings, "enable_llm", True)
+    monkeypatch.setattr(intent_mod, "get_openai", lambda: _FakeLLM(content))
+
+
+async def test_classify_drops_amount_order_id_from_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    # LLM cũng lấy số tiền làm order_id (tái hiện live) → CÙNG luật số tiền với regex bỏ nó đi.
+    _llm_returns(monkeypatch, '{"intent":"shipping","entities":{"order_id":"250000"},"confidence":0.9,"flags":[]}')
+    r = await intent_mod.classify_intent("Áo này đơn giá 250000 thì ship về Đà Nẵng bao nhiêu?")
+    assert r["intent"] == "shipping"
+    assert "order_id" not in r["entities"]
+
+
+async def test_classify_falls_back_to_regex_code_when_llm_picks_amount(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _llm_returns(monkeypatch, '{"intent":"order_status","entities":{"order_id":"250000"},"confidence":0.9,"flags":[]}')
+    r = await intent_mod.classify_intent("đơn 716449 giá 250000 giao chưa")
+    assert r["entities"]["order_id"] == "716449"
+
+
+async def test_classify_keeps_code_resolved_from_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Mã không có trong câu hiện tại (Agent 1 giải tham chiếu từ lịch sử) → KHÔNG bị luật số tiền xoá.
+    _llm_returns(monkeypatch, '{"intent":"order_status","entities":{"order_id":"716449"},"confidence":0.9,"flags":[]}')
+    r = await intent_mod.classify_intent(
+        "đơn đó của mình tới đâu rồi", [{"sender": "customer", "content": "đơn 716449 tới đâu"}]
+    )
+    assert r["entities"]["order_id"] == "716449"
 
 
 def test_extract_size_height_weight() -> None:

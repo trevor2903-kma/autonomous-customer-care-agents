@@ -26,7 +26,7 @@ from ...core.logging import get_logger
 from ...core.sanitize import as_data_block
 from ...models.enums import INTENT_CATEGORY, ConversationStatus, Intent
 from ..state import ConversationState
-from ._entities import extract_entities_rule
+from ._entities import appears_only_as_amount, bare_order_code, extract_entities_rule
 from ._history import format_history
 from .decision import CLARIFY_MISSING_ENTITY
 from .taxonomy import render_taxonomy
@@ -39,9 +39,8 @@ log = get_logger("agent.intent")
 CLARIFY_RESUME_INTENTS = frozenset(
     name for name, field in CLARIFY_MISSING_ENTITY.items() if field == "order_id"
 )
-# Mã đơn TRƠ = CẢ tin nhắn chỉ là con số (cho phép '#' và một dấu câu cuối). `_ORDER_ID_RE` thường neo TỪ KHOÁ
-# để không nhận nhầm giá/số lượng; ở lượt resume thì số trơ CHÍNH LÀ câu trả lời, nên mới nới — và CHỈ ở đó.
-_BARE_ORDER_CODE_RE = re.compile(r"^\s*#?\s*(\d{3,})\s*[.!,]?\s*$")
+# Mã đơn TRƠ (`_entities.bare_order_code`): `_ORDER_ID_RE` thường neo TỪ KHOÁ để không nhận nhầm giá/số lượng; ở
+# lượt resume thì số trơ CHÍNH LÀ câu trả lời, nên mới nới — và CHỈ ở đó.
 
 _VALID_INTENTS = {i.value for i in Intent}
 _AGENT1_FLAGS = {"ambiguous_intent", "multi_intent"}  # cờ hợp lệ Agent 1 (ngoài out_of_domain)
@@ -75,8 +74,7 @@ def resume_order_code(text: str, prior_status: str | None, prior_intent: str | N
         return None
     if prior_intent not in CLARIFY_RESUME_INTENTS:
         return None
-    m = _BARE_ORDER_CODE_RE.match(text or "")
-    return m.group(1) if m else None
+    return bare_order_code(text)
 
 
 def _resume_clarify(intent: str, code: str, rule: dict[str, str]) -> dict[str, Any]:
@@ -186,6 +184,12 @@ async def _classify_llm(
         else {}
     )
     entities = {**rule, **llm_entities}  # LLM đè trùng key; regex bù key thiếu
+    # CÙNG luật số tiền với regex (AGENT-01.2): LLM cũng trả "250000" từ "đơn giá 250000" → bỏ, rơi về mã regex
+    # (nếu có). Mã KHÔNG có trong câu hiện tại thì giữ — Agent 1 có thể giải mã đơn từ lịch sử.
+    if appears_only_as_amount(text, entities.get("order_id")):
+        del entities["order_id"]
+        if rule.get("order_id"):
+            entities["order_id"] = rule["order_id"]
 
     try:
         confidence = max(0.0, min(1.0, float(data.get("confidence"))))

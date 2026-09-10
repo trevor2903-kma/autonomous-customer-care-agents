@@ -182,6 +182,30 @@ def test_facts_not_indexed_but_available_to_agent4() -> None:
     assert "miễn phí cho đơn từ 500.000đ" in resp.load_facts().lower()
 
 
+def test_load_facts_drops_editor_blockquote_notes(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    # Dòng blockquote (`>`) = ghi chú BIÊN TẬP ("Giá trị dưới đây là MẪU") — KHÔNG vào khối SỰ THẬT CỬA HÀNG
+    # "luôn đúng" của prompt (AGENT-03.2). Nội dung sự thật xung quanh giữ nguyên.
+    facts = tmp_path / "facts.md"
+    facts.write_text(
+        "---\ntitle: x\n---\n# Thông tin\n\n> ⚠️ Giá trị dưới đây là MẪU.\n  > dòng ghi chú thụt lề\n\n"
+        "- **Giờ hỗ trợ**: 9:00–21:00.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(resp, "_FACTS_PATH", facts)
+    monkeypatch.setattr(resp, "_facts_cache", None)
+    out = resp.load_facts()
+    assert "MẪU" not in out and "ghi chú thụt lề" not in out
+    assert "# Thông tin" in out and "- **Giờ hỗ trợ**: 9:00–21:00." in out
+    assert "MẪU" not in resp._system_prompt()
+
+
+def test_real_facts_editor_note_not_in_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    # facts.md thật vẫn còn dòng "> ⚠️ … MẪU" (giá trị thật phải do chủ shop cung cấp) — prompt không được mang nó.
+    monkeypatch.setattr(resp, "_facts_cache", None)
+    assert "MẪU" not in resp.load_facts()
+    assert "miễn phí cho đơn từ 500.000đ" in resp.load_facts().lower()
+
+
 def test_context_block_labels_case_as_process() -> None:
     block = resp._context_block(
         [
@@ -259,3 +283,74 @@ async def test_response_node_clarify_asks_for_order_code(monkeypatch: pytest.Mon
     assert out["result"]["reply"] == resp.CLARIFY_QUESTION["order_id"]
     assert out["messages"] == [{"sender": "ai", "content": resp.CLARIFY_QUESTION["order_id"]}]
     assert out["uncertainty_flags"] == []
+
+
+# ── AGENT-03.1: fallback (hallucination_risk) → chuyển người, KHÔNG gửi câu fallback ────────────────────────
+async def _fallback(*args: object, **kwargs: object) -> dict:
+    return {"reply": resp.FALLBACK_REPLY, "uncertainty_flags": ["hallucination_risk"]}
+
+
+@pytest.mark.parametrize(
+    ("within", "notice"), [(True, resp.HANDOFF_NOTICE), (False, resp.HANDOFF_NOTICE_AFTER_HOURS)]
+)
+async def test_response_node_fallback_hands_off_to_human(
+    monkeypatch: pytest.MonkeyPatch, within: bool, notice: str
+) -> None:
+    # PRD FR-PIPE-5: hallucination_risk → KHÔNG bịa, chuyển human_handoff. Agent 4 (sole-egress) phát thông báo
+    # chuyển người + IN_HUMAN_QUEUE + escalation_reason (cùng định dạng Agent 3) để EscalationCard có lý do.
+    monkeypatch.setattr(resp, "generate_reply", _fallback)
+    monkeypatch.setattr(resp, "is_within_support_hours", lambda now: within)
+    out = await resp.response_node(
+        {"input": "phí ship?", "intent": "shipping", "action": "auto_reply",
+         "escalation_reason": None, "require_human_handoff": False}
+    )
+    assert out["status"] == "IN_HUMAN_QUEUE"
+    assert out["result"]["branch"] == "human_handoff"
+    assert out["result"]["reply"] == notice
+    assert out["messages"] == [{"sender": "ai", "content": notice}]
+    assert out["escalation_reason"] == "blocking_flags=['hallucination_risk']"
+    assert out["result"]["escalation_reason"] == out["escalation_reason"]
+    assert out["require_human_handoff"] is True
+    assert out["uncertainty_flags"] == ["hallucination_risk"]  # cờ vẫn quy về Agent 4 (báo cáo fallback_pct)
+
+
+async def test_response_node_unknown_clarify_field_hands_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(resp, "is_within_support_hours", lambda now: True)
+    out = await resp.response_node({"action": "clarify", "clarify_field": "size"})  # field ngoài CLARIFY_QUESTION
+    assert out["status"] == "IN_HUMAN_QUEUE"
+    assert out["result"]["branch"] == "human_handoff"
+    assert out["result"]["reply"] == resp.HANDOFF_NOTICE
+    assert out["escalation_reason"] == "blocking_flags=['hallucination_risk']"
+    assert out["require_human_handoff"] is True
+
+
+async def test_response_node_agent3_handoff_keeps_agent3_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Handoff do Agent 3 quyết: Agent 4 KHÔNG ghi đè escalation_reason / require_human_handoff của Agent 3.
+    monkeypatch.setattr(resp, "is_within_support_hours", lambda now: True)
+    out = await resp.response_node(
+        {"action": "human_handoff", "escalation_reason": "blocking_flags=['out_of_domain']"}
+    )
+    assert "escalation_reason" not in out and "require_human_handoff" not in out
+    assert out["result"]["escalation_reason"] == "blocking_flags=['out_of_domain']"
+
+
+# ── AGENT-02.3: "không tìm thấy đơn" cho intent hỏi-mã được → AWAITING_CUSTOMER ────────────────────────────
+@pytest.mark.parametrize("intent", ["order_status", "refund", "exchange"])
+async def test_order_not_found_awaits_customer_for_resumable_intent(intent: str) -> None:
+    out = await resp.response_node(
+        {"input": "đơn 716448 tới đâu", "intent": intent, "entities": {"order_id": "716448"},
+         "action": "auto_reply", "order_not_found": "716448"}
+    )
+    assert out["result"]["reply"] == resp.ORDER_NOT_FOUND_TEMPLATE.format(code="716448")
+    assert out["status"] == "AWAITING_CUSTOMER"  # WS lưu intent gốc → mã trơ lượt sau resume tất định
+    assert out["uncertainty_flags"] == []
+
+
+async def test_order_not_found_complaint_stays_replied() -> None:
+    # complaint KHÔNG thuộc tập hỏi-mã (không clarify mã) → giữ REPLIED.
+    out = await resp.response_node(
+        {"input": "đơn 716448 giao thiếu áo", "intent": "complaint", "entities": {"order_id": "716448"},
+         "action": "auto_reply", "order_not_found": "716448"}
+    )
+    assert out["result"]["reply"] == resp.ORDER_NOT_FOUND_TEMPLATE.format(code="716448")
+    assert out["status"] == "REPLIED"
