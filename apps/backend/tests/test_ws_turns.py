@@ -15,13 +15,14 @@ from typing import Any
 
 import pytest
 
+from app.agents.nodes.response import FALLBACK_REPLY
 from app.api.ws import chat
 from app.api.ws.hub import INBOX_KEY, ConnectionHub
 from app.core.rate_limit import SlidingWindowLimiter
 from app.models.enums import ConversationStatus as S
 from app.models.enums import TurnOutcome
 from app.services import audit_service, conversation_service
-from tests.test_state_support import FakeStore, FakeWebSocket, drain, install_service_fakes, until
+from tests.test_state_support import FakeSession, FakeStore, FakeWebSocket, drain, install_service_fakes, until
 
 REPLY = "Dạ phí ship về Đà Nẵng là 30.000đ ạ."
 NOTICE = "Yêu cầu của bạn đã được chuyển tới nhân viên hỗ trợ."
@@ -277,6 +278,120 @@ async def test_pipeline_exception_goes_to_human_queue_with_error_card(env: Any) 
     assert card["summary"] == "đơn của em đâu" and card["escalation_reason"].startswith("[error]")
     assert card["priority"] == "high"
     assert env.audits[0]["outcome"] == TurnOutcome.ERROR
+
+
+# ── Bước ghi của lượt HỎNG (DB lỗi) — KHÔNG hứa suông (GRAPH-02.1) ───────────
+def _plan_kind(env: Any, monkeypatch: pytest.MonkeyPatch, kind: str) -> None:
+    """Kết cục của lượt: handoff (Agent 3 chuyển người) / pending (gate giữ nháp) / error (pipeline ném → [error])."""
+    if kind == "handoff":
+        env.pipe.final = _final(
+            S.IN_HUMAN_QUEUE, reply=NOTICE, intent="complaint",
+            reason="blocking_flags=['low_retrieval_score']", priority="high",
+        )
+    elif kind == "pending":
+        async def hold(status_out: str | None, intent: str | None) -> bool:
+            return True
+
+        monkeypatch.setattr(chat, "gate_holds", hold)
+        env.pipe.final = _final(S.REPLIED, reply="Nháp hoàn tiền", intent="refund")
+    else:
+        env.pipe.error = RuntimeError("boom")
+
+
+@pytest.mark.parametrize("kind", ["handoff", "pending", "error"])
+async def test_failed_turn_write_never_promises_a_human_or_a_review(
+    env: Any, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    customer = uuid.uuid4()
+    cid = env.store.add_conv(customer_id=customer, status=S.REPLIED)
+    _plan_kind(env, monkeypatch, kind)
+    env.pipe.gate = asyncio.Event()
+    ws, task = await _open(env, customer)
+    ws.push(_msg("áo bị rách, shop xử lý sao", "w-1"))
+    await until(lambda: len(env.pipe.calls) == 1)  # tin khách ĐÃ commit
+    env.store.fail_commit = True  # Neon rớt trước bước ghi của lượt — lần thử lại cũng hỏng
+    env.pipe.gate.set()
+    await until(lambda: bool(ws.frames("reply")))
+    env.store.fail_commit = False
+    await _settle((ws, task))
+
+    # Ca KHÔNG nằm trong hàng đợi admin / không có nháp chờ duyệt → khách KHÔNG được báo "đã chuyển nhân viên" hay
+    # "nhân viên đang kiểm tra"; nhận câu không hứa hẹn gì (message_id null — không lưu được).
+    assert ws.frames("handoff") == [] and ws.frames("pending") == []
+    assert ws.frames("reply") == [{"type": "reply", "content": FALLBACK_REPLY, "message_id": None}]
+    conv = env.store.convs[cid]
+    assert (conv["status"], conv["escalation_card"]) == (S.REPLIED, None) and env.store.msgs(cid, "ai") == []
+    audit = env.audits[0]
+    assert audit["outcome"] == TurnOutcome.ERROR and audit["delivery_detail"]["persist_failed"] is True
+
+
+async def test_handoff_without_a_case_gets_the_non_promising_reply(
+    env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def open_fails(session: Any, customer_id: uuid.UUID, *, display: str | None = None) -> Any:
+        raise RuntimeError("Neon cold start")
+
+    monkeypatch.setattr(conversation_service, "open_case_for_customer", open_fails)
+    _plan_kind(env, monkeypatch, "handoff")
+    customer = uuid.uuid4()  # khách mới: chưa có ca, mở ca lỗi → lượt chạy mà không có ca (st.conv_id None)
+    ws, task = await _open(env, customer)
+    ws.push(_msg("áo bị rách, shop xử lý sao", "w-4"))
+    await until(lambda: bool(ws.frames("reply")))
+    await _settle((ws, task))
+
+    assert ws.frames("handoff") == []
+    assert ws.frames("reply") == [{"type": "reply", "content": FALLBACK_REPLY, "message_id": None}]
+    assert env.store.convs == {} and env.audits[0]["delivery_detail"]["persist_failed"] is True
+
+
+async def test_turn_write_is_retried_once_before_the_customer_is_told(
+    env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    customer = uuid.uuid4()
+    cid = env.store.add_conv(customer_id=customer, status=S.REPLIED)
+    _plan_kind(env, monkeypatch, "handoff")
+    env.pipe.gate = asyncio.Event()
+    ws, task = await _open(env, customer, snap=True)
+    ws.push(_msg("áo bị rách, shop xử lý sao", "w-2"))
+    await until(lambda: len(env.pipe.calls) == 1)
+    real_commit = FakeSession.commit
+    drops = {"left": 1}
+
+    async def drop_once(self: FakeSession) -> None:
+        if drops["left"]:
+            drops["left"] -= 1
+            raise RuntimeError("connection was closed in the middle of operation")
+        await real_commit(self)
+
+    monkeypatch.setattr(FakeSession, "commit", drop_once)  # kết nối rớt ĐÚNG MỘT lần ở bước ghi của lượt
+    env.pipe.gate.set()
+    await until(lambda: bool(ws.frames("handoff")))
+    await _settle((ws, task))
+
+    ai = env.store.msgs(cid, "ai")
+    assert drops["left"] == 0 and ws.snaps["handoff"]["statuses"] == [S.IN_HUMAN_QUEUE]  # lần thử lại commit TRƯỚC frame
+    assert ws.frames("handoff") == [{"type": "handoff", "content": NOTICE, "message_id": str(ai[0].id)}]
+    assert env.store.convs[cid]["escalation_card"] is not None
+    assert env.audits[0]["outcome"] == TurnOutcome.QUEUED_FOR_HUMAN
+    assert "persist_failed" not in env.audits[0]["delivery_detail"]
+
+
+async def test_plain_reply_is_still_sent_when_the_turn_write_fails(env: Any) -> None:
+    customer = uuid.uuid4()
+    cid = env.store.add_conv(customer_id=customer, status=S.REPLIED)
+    env.pipe.gate = asyncio.Event()
+    ws, task = await _open(env, customer)
+    ws.push(_msg("ship về Đà Nẵng bao nhiêu", "w-3"))
+    await until(lambda: len(env.pipe.calls) == 1)
+    env.store.fail_commit = True
+    env.pipe.gate.set()
+    await until(lambda: bool(ws.frames("reply")))
+    env.store.fail_commit = False
+    await _settle((ws, task))
+
+    # DB lỗi KHÔNG chặn chat (bất biến §1): câu trả lời tự động vẫn tới khách, chỉ không lưu được.
+    assert ws.frames("reply") == [{"type": "reply", "content": REPLY, "message_id": None}]
+    assert env.store.msgs(cid, "ai") == [] and env.audits[0]["outcome"] == TurnOutcome.SENT
 
 
 # ── CAS: admin tiếp quản / đóng ca trong lúc pipeline chạy (GRAPH-02.2) ──────

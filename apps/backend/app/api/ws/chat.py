@@ -24,7 +24,9 @@ TRẠNG THÁI THẬT thay vì dò chữ trong câu trả lời.
 Ca sinh LƯỜI: lúc `accept()` chỉ TÌM ca đang mở; chưa có thì để trống và chỉ mở ca ở tin nhắn ĐẦU TIÊN —
 mở /chat rồi thoát KHÔNG để lại ca rỗng trong hàng đợi admin.
 
-Persist guarded (DB lỗi KHÔNG chặn chat). `db_conversation_id` = khoá hub (TÁCH khỏi thread_id checkpointer).
+Persist guarded (DB lỗi KHÔNG chặn chat — `reply` vẫn gửi). Riêng `handoff`/`pending` hứa một trạng thái ĐÃ commit:
+bước ghi của lượt hỏng cả sau 1 lần thử lại → khách nhận `FALLBACK_REPLY` (không hứa gì) thay cho hai frame đó
+(GRAPH-02.1). `db_conversation_id` = khoá hub (TÁCH khỏi thread_id checkpointer).
 Hub, khoá khách, registry chống trùng, rate limiter đều IN-PROCESS (1 worker; đa-worker = Redis, FR-ASYNC-7).
 """
 
@@ -42,6 +44,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.exc import IntegrityError
 
 from ...agents.graph import run_pipeline
+from ...agents.nodes.response import FALLBACK_REPLY
 from ...core import tracing
 from ...core.config import settings
 from ...core.database import AsyncSessionLocal
@@ -368,8 +371,9 @@ async def _persist_turn(conv_id: uuid.UUID | None, plan: TurnPlan) -> _PersistRe
     """MỘT transaction cho kết quả lượt: CAS status + tin AI + EscalationCard (GRAPH-02.1). Caller bọc `shield`.
 
     CAS thua (admin tiếp quản / đóng ca trong lúc pipeline chạy) → rollback, trả status HIỆN TẠI để báo khách (đọc lại
-    lỗi → status không rõ, lượt VẪN bị bỏ). Chưa có ca / DB lỗi khi GHI → không lưu được: vẫn báo khách như cũ (DB lỗi
-    KHÔNG chặn chat — bất biến §1).
+    lỗi → status không rõ, lượt VẪN bị bỏ). Chưa có ca / DB lỗi khi GHI → `_PersistResult()` (không applied, không
+    discarded): caller thử lại MỘT lần; vẫn hỏng thì `reply` vẫn gửi (DB lỗi KHÔNG chặn chat — bất biến §1) nhưng
+    `handoff`/`pending` thì KHÔNG — xem `_turn`.
     """
     if conv_id is None:
         return _PersistResult()
@@ -406,13 +410,14 @@ async def _persist_turn(conv_id: uuid.UUID | None, plan: TurnPlan) -> _PersistRe
                 )
             await s.commit()
             return _PersistResult(applied=True, message_id=message_id)
-    except Exception as exc:  # noqa: BLE001 — DB lỗi: vẫn báo khách, đừng để kẹt chat.
+    except Exception as exc:  # noqa: BLE001 — DB lỗi: caller thử lại / quyết frame, đừng để kẹt chat.
         if lost_cas:
-            # CAS ĐÃ thua (status đổi dưới chân) mà đọc lại status lỗi → lượt VẪN bị bỏ: nhánh "DB lỗi → vẫn báo khách"
-            # chỉ dành cho GHI hỏng, không bao giờ cho CAS thua (GRAPH-02.2 — AI không nói chen vào ca người đã nhận).
+            # CAS ĐÃ thua (status đổi dưới chân) mà đọc lại status lỗi → lượt VẪN bị bỏ: nhánh "ghi hỏng" (thử lại rồi
+            # báo khách) chỉ dành cho GHI hỏng, không bao giờ cho CAS thua (GRAPH-02.2 — AI không nói chen vào ca người
+            # đã nhận).
             log.warning("read status after lost CAS failed (bỏ lượt, conv=%s): %s", conv_id, exc)
             return _PersistResult(discarded=True)
-        log.warning("persist turn failed (vẫn báo khách, không lưu): %s", exc)
+        log.warning("persist turn failed (không lưu, conv=%s): %s", conv_id, exc)
         return _PersistResult()
 
 
@@ -616,6 +621,15 @@ async def _turn(
     # Ghi TRƯỚC, báo khách SAU: khách không bao giờ được hứa "đã chuyển nhân viên" cho một ca vắng mặt trong hàng
     # đợi admin (GRAPH-02.1). Shield: không gì cắt ngang được bước ghi này.
     result = await asyncio.shield(_persist_turn(st.conv_id, plan))
+    if not (result.applied or result.discarded):
+        # Ghi hỏng (DB lỗi / chưa có ca): thử lại MỘT lần trên session MỚI (pool_pre_ping lấy kết nối mới sau khi Neon
+        # rớt kết nối).
+        result = await asyncio.shield(_persist_turn(st.conv_id, plan))
+    # Vẫn chưa commit mà kết cục là `handoff`/`pending` (kể cả [error]) → KHÔNG gửi hai frame đó: chúng hứa một trạng
+    # thái (ca trong hàng đợi admin / nháp chờ duyệt) không có thật. Khách nhận `FALLBACK_REPLY` — không hứa gì.
+    # `reply` thường vẫn gửi như cũ (DB lỗi KHÔNG chặn chat).
+    persist_failed = plan.frame != "reply" and not (result.applied or result.discarded)
+    delivered = FALLBACK_REPLY if persist_failed else plan.ai_message
     t_send = time.perf_counter()
     if result.discarded:
         # Admin tiếp quản / đóng ca trong lúc pipeline chạy → AI KHÔNG nói chen; báo status hiện tại (FE gỡ typing).
@@ -623,6 +637,9 @@ async def _turn(
             websocket,
             {"type": "status", "status": _sid(result.status_now), "assigned_admin_id": _sid(result.assigned_admin_id)},
         )
+    elif persist_failed:
+        log.error("persist turn failed twice (conv=%s) → %s thay bằng câu không hứa hẹn", st.conv_id, plan.frame)
+        await _send(websocket, {"type": "reply", "content": FALLBACK_REPLY, "message_id": None})
     elif plan.frame == "pending":
         await _send(websocket, {"type": "pending"})  # gỡ typing ở FE (KHÔNG gửi nội dung — sole-egress)
     else:
@@ -637,8 +654,8 @@ async def _turn(
     # Sau khi báo khách (không tính vào total_ms): phát cho admin đang theo dõi + tab khác của khách.
     t_fan2 = time.perf_counter()
     if not result.discarded:
-        if plan.ai_message is not None:
-            await _notify_message(st, MessageSender.AI, plan.ai_message, result.message_id)
+        if delivered is not None:
+            await _notify_message(st, MessageSender.AI, delivered, result.message_id)
         if result.applied and plan.status_to != status and st.conv_key is not None:
             await hub.notify_status(st.conv_key, status=plan.status_to, assigned_admin_id=None, exclude=st.queue)
     t_fan3 = time.perf_counter()
@@ -660,6 +677,10 @@ async def _turn(
         # QUEUED_FOR_HUMAN; `discarded` trong detail phân biệt với handoff thật của Agent 3.
         delivery_detail.update(discarded=True, reason="status_changed", status_now=_sid(result.status_now))
         outcome = TurnOutcome.QUEUED_FOR_HUMAN
+    elif persist_failed:
+        # Ca KHÔNG vào hàng đợi / nháp mất theo rollback → kết cục thật là lỗi kỹ thuật (khách nhận câu không hứa hẹn).
+        delivery_detail["persist_failed"] = True
+        outcome = TurnOutcome.ERROR
     await _audit_turn(
         st,
         turn_id,
