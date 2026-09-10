@@ -136,8 +136,11 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
   (registry in-process + unique index `message(conversation_id, client_msg_id)`), ack biên nhận ngay. Lượt khách TUẦN TỰ
   theo khách (asyncio.Lock, mọi tab), chạy trong task KHÔNG bị huỷ khi khách đóng tab; kết quả lượt ghi MỘT transaction
   (CAS status + tin AI + EscalationCard) **TRƯỚC** khi báo khách; thua CAS (admin vừa tiếp quản/đóng) → không gửi trả
-  lời, gửi frame `status`. Dashboard tự nối lại (backoff + heartbeat) rồi ghép lại lịch sử; inbox admin thay polling
-  (refetch 60 s chỉ là lưới an toàn). `ENABLE_LLM=true`.
+  lời, gửi frame `status`; ghi hỏng cả sau 1 lần thử lại → KHÔNG gửi `handoff`/`pending` (khách nhận câu không hứa
+  hẹn). Socket nối lúc chưa có ca được gắn vào ca do lượt tab khác mở (registry socket đang sống); frame tới khách
+  không mang id nhân viên. Dashboard tự nối lại (backoff + heartbeat, URL dựng từ token hiện tại) rồi ghép lại lịch sử
+  khi server báo `system` (đã gắn hub); inbox admin thay polling (gom 3 s; refetch 60 s chỉ là lưới an toàn).
+  `ENABLE_LLM=true`.
 - **HITL đầy đủ (08a/08b/08c):** EscalationCard + hàng đợi admin (`GET /admin/escalations`); gate §9 hai van
   (`/admin/gate-config` + `gate_service.holds_auto_reply`) với ba kết cục gửi thẳng / `PENDING_APPROVAL` /
   `IN_HUMAN_QUEUE`; admin takeover/resolve/approve/reject + chat admin↔khách qua hub in-process (status-gate:
@@ -171,24 +174,28 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
   giờ → `HANDOFF_NOTICE_AFTER_HOURS` ("nhân viên sẽ phản hồi sớm") thay `HANDOFF_NOTICE`; ca vẫn `IN_HUMAN_QUEUE` +
   EscalationCard. AI auto-reply 24/7 không đổi. **Chưa có:** admin-presence thật (nay chỉ theo giờ).
 - **Auth (11):** JWT HS256 + RBAC; admin routes qua `require_admin`; mọi WS xác thực `?token=` và đọc role TỪ DB
-  (token hỏng / sai role / user bị xoá → 4401; DB lỗi → 1011, client nối lại). Rate limit in-process
-  (`core/rate_limit.py`): login theo IP + email, register theo IP (429 + `Retry-After`), tin `/ws/chat` theo khách;
-  bcrypt chạy threadpool + hash giả khi email không tồn tại. `/api/health` không trả nguyên văn lỗi hạ tầng.
+  (token hỏng / sai role / user bị xoá → 4401; DB lỗi → 1011, client nối lại); WS admin đọc lại role MỖI tin (bị hạ
+  quyền giữa chừng → `not_assigned`). Rate limit in-process (`core/rate_limit.py`): login theo IP + email, register
+  theo IP (429 + `Retry-After`), tin `/ws/chat` theo khách; bcrypt chạy threadpool + hash giả khi email không tồn tại.
+  `/api/health` không trả nguyên văn lỗi hạ tầng; lỗi SQL không in tham số ra log (`hide_parameters`).
 - **Đơn hàng (16):** `order_service.lookup(order_code, customer_id)` — tra **SCOPED theo khách**; mã người khác
   và mã không tồn tại trả CÙNG một kết quả (không lộ sự tồn tại).
 - **Tri thức (RAG):** reindex **blue/green qua ALIAS Qdrant** — tên phục vụ (`qdrant_collection`) là alias trỏ
   collection vật lý; dựng xong mới đổi alias nguyên tử (không gián đoạn; lần reindex ĐẦU chuyển collection thật → alias,
   gián đoạn < 1 s) rồi dọn bản mồ côi. Upload ad-hoc có phiên bản (upload lại = THAY; ghi sổ hỏng → gỡ đúng bản vừa
   ghi), bỏ `## Internal Note`, tên file chỉ lấy phần cuối, không đè dòng canonical. Khoá ghi in-process cho
-  reindex/upload/xoá/reset.
+  reindex/upload/xoá/reset; reset xoá sổ TRONG transaction rồi mới reset Qdrant (Qdrant hỏng → sổ không mất).
 - **Observability:** mỗi lượt khách ghi 6 dòng `audit_log` (cùng `turn_id` + `message_id`; dòng `delivery` có
-  `timings` tách pre-pipeline / pipeline / ghi DB / gửi socket / fan-out — số đo phía SERVER); mỗi hành động admin ghi 1
-  dòng `node="admin"`. Tab **Báo cáo** (`/admin/reports`): trung vị/p95/p99, % ≤ NFR-1, lý do chuyển người. Langfuse
-  **bổ trợ** (trace LLM), no-op khi thiếu key. Client OpenAI có timeout + `max_retries` từ env.
+  `timings` tách pre-pipeline / pipeline / ghi DB / gửi socket / fan-out — số đo phía SERVER; dòng `knowledge` tách
+  embed / Qdrant / tra đơn); dòng `decision` chỉ mang lý do CỦA Agent 3, lý do của LƯỢT (kể cả Agent 4 fallback) ở dòng
+  `delivery`. Mỗi hành động admin ghi 1 dòng `node="admin"`. Tab **Báo cáo** (`/admin/reports`): trung vị/p95/p99,
+  % ≤ NFR-1, lý do chuyển người. Langfuse **bổ trợ** (trace LLM), no-op khi thiếu key. Client OpenAI có timeout +
+  `max_retries` từ env.
 - **Chống prompt-injection (13, NFR-7):** `core/sanitize.py` — Lớp A chuẩn hoá + cap `max_message_chars` tại
-  biên WS; Lớp B `as_data_block` bọc tin khách `<tin_nhan_khach>` + chunk RAG `<tri_thuc>` (vô hiệu thẻ giả
-  mạo, kể cả thẻ có thuộc tính) — áp cho CẢ lịch sử hội thoại (`neutralize_tags` + repr); Lớp C 5 luật chống-injection
-  trong system prompt Agent 1 + Agent 4; Lớp D sanitize upload RAG ad-hoc.
+  biên WS (cắt thô trước khi chuẩn hoá; frame WS ≤ 64 KiB qua uvicorn `--ws-max-size`); Lớp B `as_data_block` bọc tin
+  khách `<tin_nhan_khach>` + chunk RAG `<tri_thuc>` (vô hiệu thẻ giả mạo, kể cả thẻ có thuộc tính) — áp cho CẢ lịch sử
+  hội thoại (`neutralize_tags` + repr) và dòng entities trong prompt Agent 4; Lớp C 5 luật chống-injection trong system
+  prompt Agent 1 + Agent 4; Lớp D sanitize upload RAG ad-hoc.
   **KHÔNG có cờ/detector injection** — phòng thủ là cấu trúc + 4 lớp, cố ý.
 
 **KHÔNG (giữ ranh giới — CHƯA tới lượt, xem ROADMAP):**
@@ -197,7 +204,8 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
 - **durable checkpointer + `interrupt()`** (09b — nay vẫn `MemorySaver` in-memory, `graph.py`; **lượt clarification
   AWAITING_CUSTOMER ĐÃ XONG** trên DB+status, checkpointer chưa); **admin-presence offline** (09c — **offline theo giờ
   hỗ trợ ĐÃ XONG**, presence thật chưa); Redis pub/sub đa-worker (nay hub, khoá lượt theo khách, registry chống trùng,
-  rate limiter, khoá ghi RAG đều IN-PROCESS → GIỮ 1 uvicorn worker); deploy (14); vòng học (15).
+  registry socket đang sống, rate limiter, khoá ghi RAG đều IN-PROCESS → GIỮ 1 uvicorn worker); deploy (14); vòng
+  học (15).
 - KHÔNG worker queue polling Redis — dùng BackgroundTasks/session ngắn (giữ free-tier).
 
 **Slice tiếp theo:** **14 — Deploy** (backend → Render/Railway, FE → Vercel; hạ tầng cloud, secret theo env,

@@ -48,6 +48,10 @@
   the customer, realtime protocol v2 (ack/ping/status/inbox, `client_msg_id` idempotency), security (analyze admin-only,
   rate limits, WS role from DB, health leak), order lookup for refund/exchange/complaint, fallback → handoff
   (FR-PIPE-5), alias-based blue/green reindex, resilient chat UI (reconnect, send states, multiline, sticky scroll).
+  Fix round 2 (review of the merged branch): a failed turn write never promises a handoff/review, an unsaved message's
+  resend is processed, a socket opened before the case exists gets that case's frames, WS frames ≤ 64 KiB, admin role
+  re-checked per message, staff ids hidden from customers, escalation reasons attributed to the right agent, embed vs
+  Qdrant timings, reset keeps ledger and vectors in step, reconnect reconciles on the server's `system` frame.
   **Waiting on a user decision:** cancel-order intent (AGENT-01.3, PRD gap); whether the fixed "không tìm thấy đơn"
   reply bypasses the auto-reply gate (now: treated like a clarification); a case held by an absent admin (no
   force-release); AI-only chat when Postgres is down (WS auth now fails closed). Client-side RTT not measured.
@@ -150,8 +154,9 @@
   defense is the structure (deterministic Agent 3, scoped lookup, grounding) plus these layers.
 - **UI redesign.** End-phase visual pass, incremental, no-backend-touched, plain Tailwind.
 - **14 — Deploy ← NEXT.** Backend → Render/Railway; frontend → Vercel; cloud infra; env secrets; personal-data care (NFR-6).
-  Constraints from audit v2: keep ONE uvicorn worker (hub, per-customer turn lock, dedupe registry, rate limiters and
-  the RAG write lock are in-process) until Redis pub/sub + locks (FR-ASYNC-7); run uvicorn with `--proxy-headers
+  Constraints from audit v2: keep ONE uvicorn worker (hub, per-customer turn lock, dedupe registry, live-socket
+  registry, rate limiters and the RAG write lock are in-process) until Redis pub/sub + locks (FR-ASYNC-7); run uvicorn
+  with `--ws-max-size 65536` (the Dockerfile does; a custom start command must too) and `--proxy-headers
   --forwarded-allow-ips` or every client shares the proxy IP's login/register rate limit; `alembic upgrade head`
   (7c4e2a9f1b3d adds `message.client_msg_id`); the first reindex turns the real `knowledge` collection into an alias
   (sub-second gap — do it off-peak). DB round trips now sit inside the measured latency (commit before replying), so
