@@ -289,3 +289,21 @@ async def test_me_route_with_cookie_access_token(client: httpx.AsyncClient) -> N
     assert r.status_code == 200
     assert r.json()["email"] == EXISTING.email
 
+
+async def test_logout_in_production_includes_secure_and_samesite_none(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "env", "production")
+    r = await client.post("/api/auth/logout")
+    assert r.status_code == 200
+    set_cookies = r.headers.get_list("set-cookie")
+    for cookie_name in ("access_token=", "refresh_token="):
+        matching = [c for c in set_cookies if cookie_name in c]
+        assert len(matching) == 1
+        c = matching[0].lower()
+        assert "secure" in c
+        assert "samesite=none" in c
+        assert "httponly" in c
+        assert "max-age=0" in c or "expires=" in c
+
+

@@ -124,5 +124,20 @@ class Settings(BaseSettings):
             return r"https?://.*"
         return None
 
+    @property
+    def effective_cookie_samesite(self) -> str:
+        # Nếu env là production (Render) và chưa đổi thủ công -> tự chuyển sang "none" để hỗ trợ cross-domain
+        if self.env.lower() == "production" and self.cookie_samesite.lower() == "lax":
+            return "none"
+        return self.cookie_samesite.lower()
+
+    @property
+    def effective_cookie_secure(self) -> bool:
+        # Nếu là production hoặc samesite là "none" -> bắt buộc secure=True
+        if self.env.lower() == "production" or self.effective_cookie_samesite == "none":
+            return True
+        return self.cookie_secure
+
+
 
 settings = Settings()  # type: ignore[call-arg]

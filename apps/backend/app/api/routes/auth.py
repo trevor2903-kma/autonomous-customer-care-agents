@@ -50,12 +50,14 @@ REFRESH_TOKEN_COOKIE = "refresh_token"
 
 def _set_auth_cookies(response: Response, access_token: str, refresh_token: str) -> None:
     """Ghi access_token và refresh_token vào httpOnly cookies."""
+    secure = settings.effective_cookie_secure
+    samesite = settings.effective_cookie_samesite
     response.set_cookie(
         key=ACCESS_TOKEN_COOKIE,
         value=access_token,
         httponly=True,
-        secure=settings.cookie_secure,
-        samesite=settings.cookie_samesite,
+        secure=secure,
+        samesite=samesite,
         domain=settings.cookie_domain,
         max_age=settings.jwt_access_expire_minutes * 60,
         path="/",
@@ -64,8 +66,8 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
         key=REFRESH_TOKEN_COOKIE,
         value=refresh_token,
         httponly=True,
-        secure=settings.cookie_secure,
-        samesite=settings.cookie_samesite,
+        secure=secure,
+        samesite=samesite,
         domain=settings.cookie_domain,
         max_age=settings.jwt_refresh_expire_days * 86400,
         path="/",
@@ -74,17 +76,23 @@ def _set_auth_cookies(response: Response, access_token: str, refresh_token: str)
 
 def _clear_auth_cookies(response: Response) -> None:
     """Xoá access_token và refresh_token cookies."""
+    secure = settings.effective_cookie_secure
+    samesite = settings.effective_cookie_samesite
     response.delete_cookie(
         key=ACCESS_TOKEN_COOKIE,
         path="/",
         domain=settings.cookie_domain,
-        samesite=settings.cookie_samesite,
+        secure=secure,
+        httponly=True,
+        samesite=samesite,
     )
     response.delete_cookie(
         key=REFRESH_TOKEN_COOKIE,
         path="/",
         domain=settings.cookie_domain,
-        samesite=settings.cookie_samesite,
+        secure=secure,
+        httponly=True,
+        samesite=samesite,
     )
 
 # Hash giả cho nhánh email không tồn tại: tốn đúng một lần bcrypt như email có thật. Mật khẩu ngẫu nhiên theo
