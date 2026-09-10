@@ -62,7 +62,7 @@ export const FLAG_LABEL: Record<string, string> = {
   out_of_domain: "Ngoài phạm vi shop",
   multi_intent: "Khách hỏi nhiều việc",
   llm_unavailable: "Không gọi được mô hình",
-  search_error: "Lỗi truy hồi",
+  search_error: "Lỗi tra cứu tri thức (hạ tầng)", // Qdrant/embedding hỏng — KHÁC "không có tri thức liên quan"
   ambiguous_intent: "Ý định mơ hồ",
   hallucination_risk: "Thiếu căn cứ để trả lời",
   order_unresolved: "Không tra cứu được đơn hàng",

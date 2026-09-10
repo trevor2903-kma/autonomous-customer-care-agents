@@ -28,6 +28,23 @@ function num(v: unknown): number | null {
   return typeof v === "number" ? v : null;
 }
 
+// Số đo dưới cấp node (PERF-01.2) — `detail.timings` do chính node ghi (vd bước knowledge: embed/Qdrant/tra đơn).
+// Đọc chung mọi khoá có giá trị số; khoá chưa có nhãn hiện bằng tên gốc (bỏ đuôi `_ms`).
+const TIMING_LABEL: Record<string, string> = {
+  embed_ms: "embedding",
+  qdrant_ms: "Qdrant",
+  order_ms: "tra đơn",
+};
+
+function timingLine(detail: Record<string, unknown>): string | null {
+  const t = detail.timings;
+  if (!t || typeof t !== "object") return null;
+  const parts = Object.entries(t as Record<string, unknown>)
+    .filter((e): e is [string, number] => typeof e[1] === "number")
+    .map(([k, v]) => `${TIMING_LABEL[k] ?? k.replace(/_ms$/, "")} ${fmtMs(Math.round(v))}`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 /** Tóm tắt một bước cho thẻ tác tử — đọc từ `detail` mà chính node đó đã ghi. */
 function stepSummary(step: TurnStep, d: TurnDetail): { line: string; sub: string } {
   const detail = step.detail ?? {};
@@ -75,6 +92,7 @@ function stepSummary(step: TurnStep, d: TurnDetail): { line: string; sub: string
 
 function AgentCard({ step, detail, index }: { step: TurnStep; detail: TurnDetail; index: number }) {
   const { line, sub } = stepSummary(step, detail);
+  const timing = timingLine(step.detail ?? {});
   const bad = step.flags.length > 0 || step.node === "decision" && step.action === "human_handoff";
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-[12px] border border-line bg-white p-[15px] shadow-soft">
@@ -85,6 +103,7 @@ function AgentCard({ step, detail, index }: { step: TurnStep; detail: TurnDetail
       <div className="text-[13.5px] font-semibold text-ink">{NODE_SHORT[step.node] ?? step.node}</div>
       <div className={`text-[12.5px] leading-[1.5] ${bad ? "text-terracotta" : "text-muted"}`}>{line}</div>
       <div className="text-[11.5px] text-faint">{sub}</div>
+      {timing && <div className="text-[11px] text-dim">{timing}</div>}
     </div>
   );
 }

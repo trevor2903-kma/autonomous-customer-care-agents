@@ -307,6 +307,7 @@ export interface ReportLatency {
   avg_ms: number | null;
   p50_ms: number | null;
   p95_ms: number | null;
+  p99_ms: number | null; // đuôi nặng (PERF-01.4) — backend cũ chưa trả thì FE ẩn
   nfr_threshold_ms: number;
   within_nfr_pct: number;
   measured: number;

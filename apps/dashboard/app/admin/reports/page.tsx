@@ -96,13 +96,28 @@ function KpiRow({ s }: { s: ReportSummary }) {
           )
         }
       />
+      {/* PERF-01.4: số lớn là TRUNG VỊ (ghi rõ), kèm đuôi p95/p99 và % lượt đạt ngưỡng NFR-1 — một con số
+          p50 đứng một mình dễ bị đọc nhầm là "độ trễ chung". */}
       <KpiCard
-        label="Độ trễ phản hồi"
+        label="Độ trễ phản hồi · trung vị (p50)"
         value={fmtMs(lat.p50_ms)}
         note={
-          <>
-            Từ khi nhận tin đến khi phản hồi.
-          </>
+          lat.measured > 0 ? (
+            <>
+              p95 <span className="text-muted">{fmtMs(lat.p95_ms)}</span>
+              {lat.p99_ms != null && (
+                <>
+                  {" "}
+                  · p99 <span className="text-muted">{fmtMs(lat.p99_ms)}</span>
+                </>
+              )}{" "}
+              · <span className="text-muted">{within}%</span> lượt ≤ {fmtMs(lat.nfr_threshold_ms)}
+              <br />
+              Từ khi nhận tin đến khi phản hồi.
+            </>
+          ) : (
+            "Chưa có lượt nào được đo trong khoảng này."
+          )
         }
       />
     </div>
