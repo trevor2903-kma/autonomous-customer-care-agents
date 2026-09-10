@@ -1,12 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { probeSession } from "@/lib/api";
 import {
+  AUTH_PROBE_TIMEOUT_MS,
   HEARTBEAT_MS,
   STALE_AFTER_MS,
   WS_AUTH_CLOSE_CODE,
   backoffDelay,
   parseFrame,
+  stopAfterAuthClose,
   type Frame,
 } from "@/lib/realtime";
 
@@ -14,13 +17,16 @@ import {
 // - Rớt → nối lại khi còn mounted, backoff 1 s → 2 s → 4 s → 8 s → trần 15 s.
 // - Heartbeat `{"type":"ping"}` mỗi 25 s; 60 s không nhận được frame nào (pong hay frame bất kỳ) = half-open
 //   (TCP chết nhưng trình duyệt chưa bắn `close`) → bỏ socket NGAY và nối lại, không chờ close handshake.
-// - Đóng 4401 (token hỏng / hết hạn / sai vai) → KHÔNG nối lại: để vòng đăng nhập hiện có lo.
+// - Đóng 4401 → hỏi lại `/api/auth/me`: chỉ khi hết phiên thật (401 / sai vai) mới KHÔNG nối lại (để vòng đăng nhập
+//   hiện có lo). Backend cũng đóng 4401 khi DB lỗi lúc đọc role → khi đó nối lại như mọi lần rớt khác.
 // - Handler luôn là bản MỚI NHẤT (ref) → không gắn trùng listener qua các lần re-render; unmount = đóng sạch.
 
-/** "offline" = đã dừng hẳn (đóng 4401 / không có token) — khác "reconnecting" (đang thử lại). */
+/** "offline" = đã dừng hẳn (hết phiên thật sau đóng 4401 / không có token) — khác "reconnecting" (đang thử lại). */
 export type ConnState = "connecting" | "online" | "reconnecting" | "offline";
 
 export type SocketHandlers = {
+  /** Vai socket này đòi (khớp `required_role` backend) — đóng 4401 mà `/api/auth/me` báo vai khác → dừng hẳn. */
+  authRole?: string;
   /** Mọi frame JSON hợp lệ, trừ `pong` (hook tự nuốt). */
   onFrame: (frame: Frame) => void;
   /** Socket mở. `isReconnect` = không phải lần mở đầu tiên → caller đối soát lại (nạp lại lịch sử…). */
@@ -67,19 +73,24 @@ export function useReconnectingSocket(url: string | null, handlers: SocketHandle
       }
     };
 
-    const scheduleReconnect = () => {
-      if (disposed) return;
-      setState("reconnecting");
-      handlersRef.current.onDown?.();
+    const armRetry = () => {
       if (retryTimer !== undefined) clearTimeout(retryTimer);
       retryTimer = setTimeout(connect, backoffDelay(attempt));
       attempt += 1;
     };
 
-    // Bỏ socket đang "mở" (nghi half-open) rồi nối lại. Chưa có socket (đang chờ nối lại) → không làm gì.
+    const scheduleReconnect = () => {
+      if (disposed) return;
+      setState("reconnecting");
+      handlersRef.current.onDown?.();
+      armRetry();
+    };
+
+    // Bỏ socket ĐANG MỞ (nghi half-open) rồi nối lại. Chưa có socket (đang chờ nối lại) hoặc socket còn CONNECTING
+    // (lần nối lại đang dở) → không làm gì: hẹn giờ ack sót lại của socket cũ không được giết lần nối lại đó.
     const forceReconnect = () => {
       const ws = wsRef.current;
-      if (!ws || disposed) return;
+      if (!ws || disposed || ws.readyState !== WebSocket.OPEN) return;
       wsRef.current = null;
       stopBeat();
       discard(ws);
@@ -128,8 +139,15 @@ export function useReconnectingSocket(url: string | null, handlers: SocketHandle
         if (wsRef.current === ws) wsRef.current = null;
         if (disposed) return;
         if (ev.code === WS_AUTH_CLOSE_CODE) {
-          setState("offline");
+          // 4401 chưa chắc là hết phiên (backend đóng 4401 cả khi DB lỗi lúc đọc role): hỏi REST rồi mới quyết —
+          // hết phiên thật → dừng hẳn; còn lại nối lại với backoff như mọi lần rớt.
+          setState("reconnecting");
           handlersRef.current.onDown?.();
+          void probeSession(AUTH_PROBE_TIMEOUT_MS).then((me) => {
+            if (disposed) return;
+            if (stopAfterAuthClose(me, handlersRef.current.authRole)) setState("offline");
+            else armRetry();
+          });
           return;
         }
         scheduleReconnect();

@@ -22,7 +22,7 @@ import {
   markSent,
   mergeAdminMessages,
 } from "@/lib/messageMerge";
-import { ACK_TIMEOUT_MS, type Frame, asString, newClientMsgId } from "@/lib/realtime";
+import { ACK_TIMEOUT_MS, type Frame, asString, convStateOf, newClientMsgId } from "@/lib/realtime";
 import { useReconnectingSocket } from "@/lib/useReconnectingSocket";
 import { ApprovalPanel } from "@/components/admin/ApprovalPanel";
 import { EscalationCardPanel } from "@/components/admin/EscalationCardPanel";
@@ -205,17 +205,22 @@ export default function AdminConversationPage({
 
   function onFrame(f: Frame) {
     switch (f.type) {
-      case "system":
-        // Mỗi lần socket (nối lại) mở: trạng thái + người giữ ca TẠI THỜI ĐIỂM đó.
-        setWsStatus(asString(f.status));
-        if ("assigned_admin_id" in f) setWsAssigned(asString(f.assigned_admin_id));
+      case "system": {
+        // Mỗi lần socket (nối lại) mở: trạng thái + người giữ ca TẠI THỜI ĐIỂM đó. Server đọc lỗi (status null) →
+        // người giữ ca "chưa biết" → dùng số liệu REST, không coi là "không ai giữ" (FE-03.2).
+        const s = convStateOf(f);
+        setWsStatus(s.status);
+        setWsAssigned(s.assigned);
         break;
-      case "status":
+      }
+      case "status": {
         // FE-01.3: ca đổi trạng thái khi đang mở → pill + EscalationCard / ApprovalPanel theo ngay (nạp lại card).
-        setWsStatus(asString(f.status));
-        if ("assigned_admin_id" in f) setWsAssigned(asString(f.assigned_admin_id));
+        const s = convStateOf(f);
+        setWsStatus(s.status);
+        setWsAssigned(s.assigned);
         refresh();
         break;
+      }
       case "message": {
         const messageId = asString(f.message_id);
         const item: AdminMsg = {
@@ -244,6 +249,10 @@ export default function AdminConversationPage({
         }
         if (f.code === "not_assigned") {
           setReplyError(NOT_ASSIGNED_NOTICE);
+          // Server là chuẩn: bỏ trạng thái socket có thể đã cũ (như nhánh lỗi của `act`) để số liệu vừa nạp lại quyết
+          // định — không thì ô trả lời vẫn mở và tin nào cũng bị từ chối lại (FE-03.2).
+          setWsStatus(null);
+          setWsAssigned(undefined);
           refresh(); // nạp lại trạng thái / người giữ ca thật
         }
         break;
@@ -252,6 +261,7 @@ export default function AdminConversationPage({
   }
 
   const socket = useReconnectingSocket(wsUrl, {
+    authRole: "admin",
     onFrame,
     // Mỗi lần (nối lại) mở: nạp lại hội thoại — tin đến lúc rớt / lúc không xem không bị mất (FE-01.1).
     onOpen: () => {

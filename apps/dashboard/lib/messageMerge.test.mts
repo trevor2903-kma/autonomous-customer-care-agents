@@ -2,13 +2,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  absorbOwnEcho,
   appendUnique,
+  markEchoPending,
   markFailed,
   markSending,
   markSent,
   mergeAdminMessages,
   reconcileThread,
   senderToFrom,
+  unconfirmedOwn,
 } from "./messageMerge.ts";
 
 function ids() {
@@ -122,6 +125,52 @@ test("admin: tin realtime/ack đã có trong bản REST vừa nạp lại → kh
     ["hỏi", "đáp", "mới", "lỗi"],
   );
   assert.equal(out[1].sendState, undefined, "tin admin đã lưu hiện bằng bản REST (đã gửi)");
+});
+
+const you = (id: number, text: string, cid: string, sendState: "sending" | "sent" | "failed") => ({
+  id,
+  from: "you" as const,
+  text,
+  time: "t",
+  clientMsgId: cid,
+  sendState,
+});
+
+test("FE-01.4: nối lại → gửi lại tin 'đang gửi' LẪN 'đã gửi' mà lịch sử chưa có; tin đã lưu / chưa gửi được thì không", () => {
+  const local = [
+    you(1, "đã lưu", "c1", "sent"),
+    you(2, "đã ack nhưng chưa lưu", "c2", "sent"),
+    you(3, "chưa ack", "c3", "sending"),
+    you(4, "lỗi", "c4", "failed"),
+    { id: 5, from: "ai" as const, text: "trả lời", time: "t", messageId: "m9" },
+  ];
+  assert.deepEqual(unconfirmedOwn(local, [th("m1", "customer", "đã lưu", "c1")]), [
+    { cid: "c2", text: "đã ack nhưng chưa lưu" },
+    { cid: "c3", text: "chưa ack" },
+  ]);
+});
+
+test("FE-01.6: tiếng vọng tin mình gửi trước lúc nối lại (from customer qua hub) gắn vào CHÍNH bong bóng đó", () => {
+  const list = markEchoPending([you(1, "Kiểm tra   đơn hàng…", "c1", "sent")], new Set(["c1"]));
+  assert.equal(list[0].echoPending, true);
+  // Server lưu/phát bản đã chuẩn hoá (NFKC: "…" → "...", gộp khoảng trắng).
+  const out = absorbOwnEcho(list, "Kiểm tra đơn hàng...", "m1");
+  assert.ok(out);
+  assert.equal(out.length, 1, "không thêm bong bóng 'bạn' thứ hai");
+  assert.equal(out[0].messageId, "m1");
+  assert.equal(out[0].echoPending, false);
+  assert.equal(absorbOwnEcho(out, "Kiểm tra đơn hàng...", "m2"), null, "đã nhận rồi → tin trùng chữ sau là tin mới");
+});
+
+test("FE-01.6: tab khác gửi đúng câu mình từng gửi (bong bóng KHÔNG chờ tiếng vọng) → không nuốt, thêm như thường", () => {
+  const list = [you(1, "Kiểm tra đơn hàng của mình", "c1", "sent")];
+  assert.equal(absorbOwnEcho(list, "Kiểm tra đơn hàng của mình", "m7"), null);
+  assert.equal(absorbOwnEcho(markEchoPending(list, new Set(["c1"])), "câu khác", "m8"), null);
+});
+
+test("FE-01.6: tin gửi lại bị hết hạn ack ('chưa gửi được') mà tiếng vọng tới → đã lưu, tức 'đã gửi'", () => {
+  const list = markEchoPending([you(1, "a", "c1", "failed")], new Set(["c1"]));
+  assert.equal(absorbOwnEcho(list, "a", "m1")?.[0].sendState, "sent");
 });
 
 test("senderToFrom: khách → you, admin → admin, còn lại → ai", () => {

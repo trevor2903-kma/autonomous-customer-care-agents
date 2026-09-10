@@ -131,6 +131,23 @@ export async function getMe(): Promise<AuthUser> {
   return res.json();
 }
 
+// Kiểm lại phiên sau khi WS bị đóng 4401 (FE-01.2): backend đóng 4401 cả khi token hỏng/hết hạn LẪN khi DB lỗi lúc
+// đọc role → phải hỏi REST mới biết có hết phiên thật không. null = 401 (token hỏng/hết hạn/user không còn);
+// undefined = không rõ (mạng / 5xx / quá `timeoutMs`); AuthUser = token vẫn dùng được (kèm vai HIỆN TẠI trong DB).
+export async function probeSession(timeoutMs: number): Promise<AuthUser | null | undefined> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await req("/api/auth/me", { signal: ctrl.signal });
+    if (res.status === 401) return null;
+    return res.ok ? ((await res.json()) as AuthUser) : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ── RAG management (PRD §17 Module 1) ────────────────────────────────────────
 export async function uploadKnowledgeDoc(file: File): Promise<RagUploadResult> {
   const form = new FormData();

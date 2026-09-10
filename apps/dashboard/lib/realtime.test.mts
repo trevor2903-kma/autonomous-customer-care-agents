@@ -5,8 +5,10 @@ import {
   RECONNECT_MAX_MS,
   asString,
   backoffDelay,
+  convStateOf,
   newClientMsgId,
   parseFrame,
+  stopAfterAuthClose,
 } from "./realtime.ts";
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -55,4 +57,28 @@ test("asString: field frame không phải chuỗi → null", () => {
   assert.equal(asString("x"), "x");
   assert.equal(asString(null), null);
   assert.equal(asString(3), null);
+});
+
+test("FE-01.2: đóng 4401 chỉ dừng hẳn khi REST xác nhận hết phiên (401) hoặc vai trong DB đã khác", () => {
+  assert.equal(stopAfterAuthClose(null, "customer"), true, "/me 401 → token hỏng / hết hạn");
+  assert.equal(stopAfterAuthClose(undefined, "customer"), false, "DB lỗi (5xx) / mạng / quá hạn → nối lại");
+  assert.equal(stopAfterAuthClose({ role: "customer" }, "customer"), false, "token còn dùng được → 4401 thoáng qua");
+  assert.equal(stopAfterAuthClose({ role: "customer" }, "admin"), true, "admin đã bị hạ quyền");
+  assert.equal(stopAfterAuthClose({ role: "admin" }), false);
+});
+
+test("FE-03.2: frame system/status — server đọc lỗi (status null) → người giữ ca 'chưa biết', không phải 'không ai'", () => {
+  assert.deepEqual(convStateOf({ type: "system", status: null, assigned_admin_id: null }), {
+    status: null,
+    assigned: undefined,
+  });
+  assert.deepEqual(convStateOf({ type: "status", status: "HUMAN_HANDLING", assigned_admin_id: "a1" }), {
+    status: "HUMAN_HANDLING",
+    assigned: "a1",
+  });
+  assert.deepEqual(convStateOf({ type: "status", status: "IN_HUMAN_QUEUE", assigned_admin_id: null }), {
+    status: "IN_HUMAN_QUEUE",
+    assigned: null,
+  });
+  assert.deepEqual(convStateOf({ type: "system", status: "REPLIED" }), { status: "REPLIED", assigned: undefined });
 });

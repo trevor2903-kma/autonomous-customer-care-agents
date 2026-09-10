@@ -10,12 +10,27 @@ export const HEARTBEAT_MS = 25000;
 export const STALE_AFTER_MS = 60000;
 /** Tin đã gửi mà quá 10 s chưa có `ack` → "Chưa gửi được" (FE-01.4). */
 export const ACK_TIMEOUT_MS = 10000;
-/** Mã đóng WS khi token hỏng / hết hạn / sai vai (backend `ws/auth.py`) — KHÔNG nối lại. */
+/** Tin đã nhận (ack) mà 20 s không có tiến triển nào (typing / kết quả) → coi như lượt đã xong: gỡ khoá gợi ý
+ *  nhanh, không để kẹt (vd lượt bị status-gate trong khi FE chưa biết ca đã sang tay người). */
+export const TURN_STALL_MS = 20000;
+/** Mã đóng WS khi xác thực WS thất bại (backend `ws/auth.py`): token hỏng / hết hạn / sai vai — NHƯNG cũng cả khi DB
+ *  lỗi lúc đọc role (fail closed). Vì vậy 4401 KHÔNG tự nó là hết phiên: xem `stopAfterAuthClose`. */
 export const WS_AUTH_CLOSE_CODE = 4401;
+/** Trần chờ `/api/auth/me` khi kiểm lại phiên sau đóng 4401 — quá hạn = "không rõ" → nối lại như thường. */
+export const AUTH_PROBE_TIMEOUT_MS = 5000;
 
 /** Trễ trước lần nối lại thứ `attempt` (đếm từ 0). */
 export function backoffDelay(attempt: number): number {
   return Math.min(RECONNECT_BASE_MS * 2 ** Math.max(0, attempt), RECONNECT_MAX_MS);
+}
+
+/** WS bị đóng 4401 → dừng hẳn (không nối lại) CHỈ khi REST xác nhận phiên hết thật (FE-01.2): `/api/auth/me` trả 401
+ *  (`null`) hoặc vai hiện tại trong DB không còn là vai socket này đòi. Không rõ (`undefined`: mạng / 5xx / quá hạn —
+ *  vd DB chập làm backend đóng 4401 dù token còn hạn) hoặc phiên vẫn đúng → nối lại như mọi lần rớt khác. */
+export function stopAfterAuthClose(probe: { role: string } | null | undefined, role?: string): boolean {
+  if (probe === undefined) return false;
+  if (probe === null) return true;
+  return role !== undefined && probe.role !== role;
 }
 
 type CryptoLike = {
@@ -55,4 +70,13 @@ export function parseFrame(raw: unknown): Frame | null {
 
 export function asString(v: unknown): string | null {
   return typeof v === "string" ? v : null;
+}
+
+/** Trạng thái ca trong frame `system` (lúc (nối lại) mở) / `status` của màn ca admin (FE-03.2). `status` null = server
+ *  không đọc được (DB lỗi) → người giữ ca đi kèm cũng KHÔNG đáng tin: `assigned` undefined = "chưa biết, dùng số liệu
+ *  REST" — không được hiểu là "không ai giữ" (admin đang giữ ca sẽ bị khoá ô trả lời oan). */
+export function convStateOf(f: Frame): { status: string | null; assigned: string | null | undefined } {
+  const status = asString(f.status);
+  if (status === null || !("assigned_admin_id" in f)) return { status, assigned: undefined };
+  return { status, assigned: asString(f.assigned_admin_id) };
 }

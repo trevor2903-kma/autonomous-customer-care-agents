@@ -6,12 +6,27 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatWindow, type ChatMessage } from "@/components/chat/ChatWindow";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { QuickReplies } from "@/components/chat/QuickReplies";
-import { CUST_PLACEHOLDER, custStatusFrom, type CustStatus } from "@/components/chat/custStatus";
+import {
+  CUST_PLACEHOLDER,
+  CUST_TURN_IDLE,
+  type CustTurn,
+  custStatusFrom,
+  custTurnAfter,
+} from "@/components/chat/custStatus";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { type CustomerThread, chatWsUrl, getMyThread, getToken } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { appendUnique, markFailed, markSending, markSent, reconcileThread } from "@/lib/messageMerge";
-import { ACK_TIMEOUT_MS, type Frame, asString, newClientMsgId } from "@/lib/realtime";
+import {
+  absorbOwnEcho,
+  appendUnique,
+  markEchoPending,
+  markFailed,
+  markSending,
+  markSent,
+  reconcileThread,
+  unconfirmedOwn,
+} from "@/lib/messageMerge";
+import { ACK_TIMEOUT_MS, TURN_STALL_MS, type Frame, asString, newClientMsgId } from "@/lib/realtime";
 import { useReconnectingSocket } from "@/lib/useReconnectingSocket";
 
 // Cổng chat khách (PRD §6, §16). Câu trả lời tự động CHỈ đến từ Response Generator (§7.4);
@@ -34,8 +49,10 @@ const RATE_LIMIT_NOTICE = "Bạn đang gửi hơi nhanh — vui lòng đợi gi�
 function ChatInner() {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [typing, setTyping] = useState(false);
-  const [status, setStatus] = useState<CustStatus>("ai");
+  // Header (status) + "đang trả lời…" (typing) + số tin mà lượt CHƯA xong (inFlight) — suy từ frame server qua
+  // `custTurnAfter` (thuần, có test).
+  const [turn, setTurn] = useState<CustTurn>(CUST_TURN_IDLE);
+  const { status, typing } = turn;
   const idRef = useRef(0);
   const seededRef = useRef(false);
   const messagesRef = useRef(messages);
@@ -66,13 +83,20 @@ function ChatInner() {
   function applyThread(t: CustomerThread) {
     seededRef.current = true;
     setMessages((prev) => reconcileThread(prev, t.messages, nextId, timeOf));
-    setStatus(custStatusFrom(t.active_status));
+    setTurn((s) => ({ ...s, status: custStatusFrom(t.active_status) }));
   }
 
   useEffect(() => {
     if (!thread || seededRef.current) return;
     applyThread(thread);
   }, [thread]);
+
+  // Khoá gợi ý nhanh không được kẹt: tin đã gửi mà quá TURN_STALL_MS không có tiến triển nào (typing / kết quả).
+  useEffect(() => {
+    if (turn.inFlight === 0 || turn.typing) return;
+    const timer = setTimeout(() => setTurn((s) => ({ ...s, inFlight: 0 })), TURN_STALL_MS);
+    return () => clearTimeout(timer);
+  }, [turn]);
 
   const clearAck = (cid: string) => {
     const t = ackTimers.current.get(cid);
@@ -93,6 +117,7 @@ function ChatInner() {
       setMessages((prev) => markFailed(prev, cid));
       return;
     }
+    setTurn((s) => ({ ...s, inFlight: s.inFlight + 1 })); // lượt của tin này chưa xong → khoá gợi ý nhanh
     const gen = genRef.current;
     ackTimers.current.set(
       cid,
@@ -117,6 +142,9 @@ function ChatInner() {
     const cid = asString(f.client_msg_id);
     const text = asString(f.content) ?? "";
     const messageId = asString(f.message_id);
+    // Header / "đang trả lời…" / lượt đang chạy: MỘT reducer thuần cho mọi frame (UX-02.3, IDEM-XC.1) — `typing`,
+    // `pending`, `status` chỉ đổi trạng thái đó, không có bong bóng.
+    setTurn((s) => custTurnAfter(s, f));
     switch (f.type) {
       case "ack":
         if (cid) {
@@ -132,45 +160,24 @@ function ChatInner() {
         }
         if (f.code === "rate_limited") notice(RATE_LIMIT_NOTICE);
         break;
-      case "typing":
-        setTyping(true);
-        break;
       case "reply":
         // Trả lời tự động — LUÔN là bong bóng AI, kể cả khi câu chữ có nhắc tới nhân viên.
-        setTyping(false);
         push({ from: "ai", text, messageId });
-        setStatus("ai");
         break;
       case "handoff":
         // Agent 3 đã chuyển người THẬT (ca vào hàng đợi, AI dừng cho hội thoại này).
-        setTyping(false);
         push({ from: "system", text, messageId });
-        setStatus("waiting");
-        break;
-      case "pending":
-        // Ca nhạy cảm: nháp đang chờ nhân viên duyệt (08a) — gỡ typing, đổi trạng thái, KHÔNG kẹt chờ.
-        setTyping(false);
-        setStatus("review");
-        break;
-      case "status":
-        // Trạng thái ca đổi do người khác (admin tiếp quản/đóng/duyệt/từ chối, tự đóng, tab khác) HOẶC lượt
-        // của chính tab này bị huỷ vì trạng thái đổi giữa chừng → không còn reply nào theo sau: gỡ typing.
-        setTyping(false);
-        setStatus(custStatusFrom(asString(f.status)));
         break;
       case "message":
         if (f.from === "customer") {
-          // Tin của CHÍNH khách gõ ở tab/thiết bị khác (FE-01.6) → bong bóng "bạn", KHÔNG phải AI.
-          push({ from: "you", text, messageId });
-        } else if (f.from === "admin") {
-          setTyping(false);
-          push({ from: "admin", text, messageId });
-          setStatus("human");
+          // Tin của CHÍNH khách: tiếng vọng tin mình gửi trước lúc nối lại → gắn vào bong bóng sẵn có; còn lại là tin
+          // gõ ở tab/thiết bị khác (FE-01.6) → bong bóng "bạn", KHÔNG phải AI.
+          const item: ChatMessage = { id: nextId(), from: "you", text, time: now(), messageId };
+          setMessages((prev) => absorbOwnEcho(prev, text, messageId) ?? appendUnique(prev, item));
         } else {
-          // AI qua hub: nháp vừa được duyệt, tin nhắc/đóng tự động, trả lời của lượt mà socket cũ đã rớt.
-          setTyping(false);
-          push({ from: "ai", text, messageId });
-          setStatus((s) => (s === "review" ? "ai" : s)); // nháp đã tới khách → hết "đang kiểm tra" (UX-02.3)
+          // Nhân viên, hoặc AI qua hub: nháp vừa được duyệt, tin nhắc/đóng tự động, trả lời của lượt mà socket cũ
+          // đã rớt.
+          push({ from: f.from === "admin" ? "admin" : "ai", text, messageId });
         }
         break;
     }
@@ -179,28 +186,29 @@ function ChatInner() {
   function onOpen(isReconnect: boolean) {
     genRef.current += 1;
     if (!isReconnect) return;
-    // Nối lại: nạp lại mạch từ DB rồi dựng lại danh sách — tin mình đã lưu thành "đã gửi", tin còn "đang gửi"
-    // gửi lại MỘT lần (cùng client_msg_id → server không chạy lại lượt), tin "chưa gửi được" chờ khách bấm.
+    // Nối lại: nạp lại mạch từ DB rồi dựng lại danh sách — tin mình đã lưu thành "đã gửi"; tin chưa thấy trong lịch
+    // sử ("đang gửi" LẪN "đã gửi" — ack chỉ là biên nhận trước khi lưu) gửi lại MỘT lần cùng client_msg_id (server
+    // không chạy lại lượt) và chờ tiếng vọng qua hub; tin "chưa gửi được" chờ khách bấm.
     void refetch().then(({ data }) => {
       if (!data) return;
-      const saved = new Set(data.messages.map((m) => m.client_msg_id).filter(Boolean));
+      const resend = unconfirmedOwn(messagesRef.current, data.messages);
       applyThread(data);
-      for (const m of messagesRef.current) {
-        if (m.from === "you" && m.sendState === "sending" && m.clientMsgId && !saved.has(m.clientMsgId)) {
-          transmit(m.clientMsgId, m.text);
-        }
-      }
+      setMessages((prev) => markEchoPending(prev, new Set(resend.map((r) => r.cid))));
+      for (const r of resend) transmit(r.cid, r.text);
     });
   }
 
   const socket = useReconnectingSocket(wsUrl, {
+    authRole: "customer",
     onFrame,
     onOpen,
-    onDown: () => setTyping(false), // rớt kết nối giữa typing→reply → không kẹt "đang trả lời…"
+    // Rớt kết nối giữa typing→reply → không kẹt "đang trả lời…"; lượt đang chạy tính lại từ các tin gửi lại.
+    onDown: () => setTurn((s) => ({ ...s, typing: false, inFlight: 0 })),
   });
   const online = socket.state === "online";
-  // Lượt đang chạy (đang trả lời / tin chưa có ack) → khoá gợi ý nhanh: bấm liên tiếp không đẻ lượt trùng.
-  const busy = typing || messages.some((m) => m.sendState === "sending");
+  // Lượt đang chạy (tin đã gửi mà lượt chưa xong — kể cả khe ack→typing / đang trả lời / tin chưa có ack) → khoá gợi
+  // ý nhanh: bấm liên tiếp không đẻ lượt trùng (IDEM-XC.1).
+  const busy = typing || turn.inFlight > 0 || messages.some((m) => m.sendState === "sending");
 
   /** true = tin đã vào danh sách (đang gửi / chưa gửi được có "Gửi lại") → ô nhập được phép xoá chữ. */
   function send(text: string): boolean {

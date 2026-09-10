@@ -2,15 +2,20 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { MAX_MESSAGE_CHARS } from "shared-types";
-import { isSendKey, showCharCounter } from "@/lib/chatInput";
+import { effectiveLength, isSendKey, showCharCounter } from "@/lib/chatInput";
 
 // ~5 dòng (15px × leading 1.5) + padding dọc → vượt thì ô tự cuộn thay vì nở tiếp.
 const MAX_INPUT_HEIGHT_PX = 128;
 
+// Máy cảm ứng (con trỏ chính "thô"): bàn phím ảo không có Shift+Enter → Enter để xuống dòng (UX-01.1).
+const isCoarsePointer = () =>
+  typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
+
 // Ô nhập màn khách (design): hộp trắng bo 14px + nút "Gửi" olive + dòng ghi chú dưới.
-// Nhiều dòng (UX-01.1): textarea tự nở tới ~5 dòng; Enter gửi, Shift+Enter xuống dòng, KHÔNG gửi khi bộ gõ đang
-// ghép chữ; dán văn bản giữ nguyên xuống dòng. Trần MAX_MESSAGE_CHARS (UX-01.2) = đúng trần backend cắt ở biên
-// WS → chữ khách thấy chính là chữ hệ thống nhận; gần trần thì hiện bộ đếm.
+// Nhiều dòng (UX-01.1): textarea tự nở tới ~5 dòng; Enter gửi, Shift+Enter xuống dòng (máy cảm ứng: Enter xuống
+// dòng, gửi bằng nút), KHÔNG gửi khi bộ gõ đang ghép chữ; dán văn bản giữ nguyên xuống dòng. Trần MAX_MESSAGE_CHARS
+// (UX-01.2) = đúng trần backend cắt ở biên WS, đếm như backend (sau NFKC) → chữ khách thấy chính là chữ hệ thống
+// nhận; gần trần thì hiện bộ đếm, vượt trần thì không gửi.
 export function MessageInput({
   disabled,
   placeholder,
@@ -34,15 +39,19 @@ export function MessageInput({
     el.style.overflowY = full > MAX_INPUT_HEIGHT_PX ? "auto" : "hidden";
   }, [text]);
 
+  const length = effectiveLength(text);
+  const overLimit = length > MAX_MESSAGE_CHARS;
+
   function submit() {
-    // Chặn NGAY trong submit (không chỉ nhờ nút bị khoá): mất kết nối thì chữ PHẢI còn nguyên trong ô (UX-02.2).
-    if (disabled) return;
+    // Chặn NGAY trong submit (không chỉ nhờ nút bị khoá): mất kết nối thì chữ PHẢI còn nguyên trong ô (UX-02.2);
+    // vượt trần (sau NFKC) thì server sẽ cắt → không gửi, để khách tự rút gọn.
+    if (disabled || overLimit) return;
     const t = text.trim();
     if (!t) return;
     if (onSend(t)) setText("");
   }
 
-  const showCounter = showCharCounter(text.length, MAX_MESSAGE_CHARS);
+  const showCounter = showCharCounter(length, MAX_MESSAGE_CHARS);
   return (
     <div className="flex-none px-1 pb-[22px]">
       <form
@@ -58,7 +67,7 @@ export function MessageInput({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (isSendKey(e.nativeEvent)) {
+            if (isSendKey(e.nativeEvent, isCoarsePointer())) {
               e.preventDefault();
               submit();
             }
@@ -73,15 +82,15 @@ export function MessageInput({
           <span
             aria-live="polite"
             className={`flex-none pb-[11px] text-[11px] ${
-              text.length >= MAX_MESSAGE_CHARS ? "text-terracotta" : "text-dim"
+              length >= MAX_MESSAGE_CHARS ? "text-terracotta" : "text-dim"
             }`}
           >
-            {text.length}/{MAX_MESSAGE_CHARS}
+            {length}/{MAX_MESSAGE_CHARS}
           </span>
         )}
         <button
           type="submit"
-          disabled={disabled || !text.trim()}
+          disabled={disabled || !text.trim() || overLimit}
           className="rounded-[9px] bg-olive px-5 py-2.5 text-sm font-semibold text-white hover:bg-olive-dark disabled:opacity-50"
         >
           Gửi

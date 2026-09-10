@@ -18,6 +18,9 @@ export type ChatMessage = {
   sendState?: SendState;
   /** Bong bóng dựng từ /me/thread — bị thay toàn bộ ở lần ghép lịch sử kế tiếp. */
   fromHistory?: boolean;
+  /** Tin mình gửi mà lúc nối lại chưa thấy trong lịch sử: server có thể phát lại nó qua hub (from:"customer") →
+   *  nhận làm CHÍNH bong bóng này, không thêm bong bóng thứ hai (FE-01.6). */
+  echoPending?: boolean;
 };
 
 // Còn cách đáy ≤ 80px coi như "đang ở đáy" → tin mới tự cuộn theo (UX-02.1).

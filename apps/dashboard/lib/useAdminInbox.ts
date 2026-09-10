@@ -31,6 +31,7 @@ export function useAdminInbox(): void {
   }
 
   useReconnectingSocket(url, {
+    authRole: "admin",
     onFrame: (f) => {
       if (f.type !== "inbox") return;
       const id = asString(f.conversation_id);

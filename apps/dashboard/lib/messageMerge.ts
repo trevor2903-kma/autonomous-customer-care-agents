@@ -88,6 +88,52 @@ export function reconcileThread(
   return [...history, ...rest];
 }
 
+/** Nối lại (FE-01.4): tin mình gửi mà lịch sử vừa nạp CHƯA có — "đang gửi" LẪN "đã gửi". `ack` chỉ là biên nhận
+ *  TRƯỚC khi lưu: server khởi động lại lúc lượt còn xếp hàng thì tin "đã gửi" mất mà UI vẫn báo đã gửi. Gửi lại cùng
+ *  client_msg_id là an toàn (server còn nhớ id / unique index ở DB → `duplicate`, không chạy lại lượt). Tin "chưa gửi
+ *  được" chờ khách bấm "Gửi lại". */
+export function unconfirmedOwn(
+  local: ChatMessage[],
+  thread: ThreadMessage[],
+): { cid: string; text: string }[] {
+  const saved = new Set(thread.map((m) => m.client_msg_id).filter((c): c is string => !!c));
+  const out: { cid: string; text: string }[] = [];
+  for (const m of local) {
+    const cid = m.clientMsgId;
+    if (m.from !== "you" || !cid || saved.has(cid)) continue;
+    if (m.sendState === "sending" || m.sendState === "sent") out.push({ cid, text: m.text });
+  }
+  return out;
+}
+
+/** Đánh dấu các tin vừa gửi lại lúc nối lại: lượt gốc (của socket CŨ) có thể vẫn lưu rồi phát lại tin qua hub
+ *  (from:"customer") tới socket mới — xem `absorbOwnEcho`. */
+export function markEchoPending(list: ChatMessage[], cids: ReadonlySet<string>): ChatMessage[] {
+  return list.map((m) => (m.clientMsgId && cids.has(m.clientMsgId) ? { ...m, echoPending: true } : m));
+}
+
+// So nội dung như server thấy: backend chuẩn hoá tin khách (NFKC + gộp khoảng trắng — core/sanitize.py) rồi mới
+// lưu/phát, nên chuẩn hoá tương tự ở cả hai phía.
+const normText = (s: string) => s.normalize("NFKC").replace(/\s+/g, " ").trim();
+
+/** Frame hub from:"customer" (FE-01.6). Khớp một bong bóng `echoPending` của tab này (chưa có message_id, cùng nội
+ *  dung) → đó là tiếng vọng tin mình gửi trước lúc nối lại: gắn message_id vào CHÍNH bong bóng đó (đã lưu = đã gửi)
+ *  thay vì thêm bong bóng "bạn" thứ hai. null = không khớp → tin gõ ở tab/thiết bị khác, thêm như thường. Chỉ xét
+ *  bong bóng `echoPending` (không phải mọi tin chưa có message_id): tab khác bấm đúng câu gợi ý nhanh mình từng gửi
+ *  vẫn phải hiện. */
+export function absorbOwnEcho(
+  list: ChatMessage[],
+  text: string,
+  messageId: string | null,
+): ChatMessage[] | null {
+  const want = normText(text);
+  const i = list.findIndex((m) => m.echoPending && !m.messageId && normText(m.text) === want);
+  if (i < 0) return null;
+  const out = list.slice();
+  out[i] = { ...list[i], messageId, echoPending: false, sendState: "sent" };
+  return out;
+}
+
 /** Một dòng trong màn ca admin: bản đã lưu (REST) hoặc bản realtime / đang gửi. `at` = ISO thời điểm. */
 export type AdminMsg = Trackable & { key: string; sender: string; content: string; at: string };
 
