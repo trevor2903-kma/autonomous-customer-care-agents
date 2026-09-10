@@ -7,11 +7,13 @@
   cờ `order_unresolved` (chuyển người). KB không thể trả lời về MỘT đơn cụ thể — trước đây RAG vận chuyển
   trúng nên lượt vẫn auto_reply mà chẳng có dữ liệu đơn nào.
 - Cờ Agent 2: `no_relevant_knowledge` (không tri thức) / `low_retrieval_score` (điểm thấp) /
-  `order_unresolved` (tra đơn HỎNG, hoặc lần thứ hai vẫn không ra trong cùng ca).
+  `search_error` (Qdrant/embed LỖI — sự cố hạ tầng, khác "KB không phủ") /
+  `order_unresolved` (tra đơn HỎNG / thiếu danh tính khách, hoặc lần thứ hai vẫn không ra trong cùng ca).
 - Grounding (PRD §5 trụ cột 3, FR-PIPE-5): Agent 2 chỉ PHÁT cờ; Decision Engine (sau) đọc cờ → human_handoff
   nếu không có tri thức. Agent 2 KHÔNG tự quyết.
-- Degrade AN TOÀN offline: thiếu key / Qdrant lỗi / collection trống / không hits → `rag_contexts=[]`,
-  `retrieval_confidence=0.0`, `["no_relevant_knowledge"]` (KHÔNG network vô ích, KHÔNG ném lỗi) → `make test` offline.
+- Degrade AN TOÀN offline: thiếu key / collection trống / không hits → `rag_contexts=[]`,
+  `retrieval_confidence=0.0`, `["no_relevant_knowledge"]`; Qdrant/embed lỗi → như trên nhưng cờ `["search_error"]`
+  (KHÔNG network vô ích, KHÔNG ném lỗi) → `make test` offline.
 """
 
 from __future__ import annotations
@@ -35,7 +37,10 @@ NO_RETRIEVAL_INTENTS: frozenset[str] = frozenset({"greeting"})
 
 # Intent gắn với MỘT đơn cụ thể → tra đơn (song song RAG: dữ liệu đơn + chính sách bổ trợ nhau).
 # `shipping` chỉ tra khi khách có đưa mã ("đơn 1234 ship tới đâu"); hỏi phí/thời gian ship chung thì KB đủ.
-ORDER_INTENTS: frozenset[str] = frozenset({"order_status", "shipping"})
+# refund/exchange/complaint (AGENT-01.1): đã bắt khách đưa mã đơn thì phải TRA thật — mã lạ / của người khác được
+# báo lại như order_status, thay vì soạn nháp hoàn/đổi cho một đơn chưa ai kiểm tra. complaint KHÔNG bị hỏi mã
+# (không thuộc CLARIFY_MISSING_ENTITY — khiếu nại có thể không về đơn nào), chỉ tra khi khách tự đưa mã.
+ORDER_INTENTS: frozenset[str] = frozenset({"order_status", "shipping", "refund", "exchange", "complaint"})
 
 
 def _degrade(flags: list[str]) -> dict[str, Any]:
@@ -55,8 +60,10 @@ async def retrieve_knowledge(query: str, top_k: int = 4, intent: str | None = No
     try:
         hits = await rag_service.search(query, top_k, intent=intent)
     except Exception as exc:  # noqa: BLE001 — Qdrant/embed lỗi / collection chưa có -> degrade, KHÔNG ném.
-        log.warning("knowledge.search failed -> degrade no_relevant_knowledge: %s", exc)
-        return _degrade(["no_relevant_knowledge"])
+        # `search_error` đã ∈ BLOCKING_FLAGS nên định tuyến KHÔNG đổi; chỉ NHÃN đúng lại: audit/báo cáo không quy
+        # đợt sự cố hạ tầng vào "KB không phủ" (AGENT-02.2). Thiếu key vẫn là no_relevant_knowledge (cấu hình).
+        log.warning("knowledge.search failed -> degrade search_error: %s", exc)
+        return _degrade(["search_error"])
 
     if not hits:
         return _degrade(["no_relevant_knowledge"])
@@ -126,15 +133,19 @@ async def resolve_order(
       Chỉ khi đây là lần **thứ hai** vẫn không ra trong CÙNG ca mới bật `order_unresolved` (chuyển người):
       hỏi lại một lần là hợp lý, hỏi lại mãi là đang làm khó khách.
     - KHÔNG mã → không tín hiệu gì: để Agent 4 hỏi mã đơn (auto_reply bình thường).
+    - `shipping` + KHÔNG thấy → không tín hiệu gì: câu hỏi ship hay kèm SỐ TIỀN ("đơn 500000 có được freeship
+      không") — trả lời chính sách, đừng đáp "không tìm thấy đơn 500000" (AGENT-01.2).
 
     Lưu ý đa lượt: `order_id` có thể do Agent 1 GIẢI THAM CHIẾU từ lịch sử ("đơn của mình" ngay sau lượt hỏi
     "đơn 716449") — khi đó lượt này vẫn TRA LẠI đơn, nên dữ liệu là MỚI chứ không phải chép lại lời cũ.
     Nhánh "không mã" vì vậy chỉ xảy ra khi thật sự không có đơn nào đang được nói tới.
 
-    Degrade AN TOÀN: DB lỗi → `order_unresolved` (chuyển người), KHÔNG hạ xuống `order_not_found`: lookup
-    HỎNG khác lookup TRẢ RỖNG — nói "không thấy đơn trong tài khoản của bạn" khi chưa tra được là nói sai.
+    Degrade AN TOÀN: DB lỗi HOẶC thiếu/hỏng danh tính khách → `order_unresolved` (chuyển người), KHÔNG hạ xuống
+    `order_not_found`: lookup HỎNG / KHÔNG THỰC HIỆN ĐƯỢC khác lookup TRẢ RỖNG — nói "không thấy đơn trong tài
+    khoản của bạn" khi chưa tra được là nói sai (AGENT-01.4).
     """
     empty = {"order_context": None, "order_not_found": None, "uncertainty_flags": []}
+    unresolved = {"order_context": None, "order_not_found": None, "uncertainty_flags": ["order_unresolved"]}
     if intent not in ORDER_INTENTS:
         return empty
 
@@ -146,12 +157,14 @@ async def resolve_order(
         owner_id = uuid.UUID(customer_id) if customer_id else None
     except (ValueError, TypeError):
         owner_id = None
+    if owner_id is None:  # không có danh tính → CHƯA tra được gì (vd nhánh WS AI-only) → chuyển người.
+        return unresolved
 
     try:
         order = await order_service.lookup(order_code, owner_id)
     except Exception as exc:  # noqa: BLE001 — DB lỗi → không tra được → chuyển người (đừng bịa).
         log.warning("order lookup failed -> order_unresolved: %s", exc)
-        return {"order_context": None, "order_not_found": None, "uncertainty_flags": ["order_unresolved"]}
+        return unresolved
 
     if order is not None:
         return {
@@ -160,9 +173,12 @@ async def resolve_order(
             "uncertainty_flags": [],
         }
 
+    if intent == "shipping":  # số trong câu hỏi ship thường là tiền, không phải mã → trả lời chính sách.
+        return empty
+
     # Không thấy: lần đầu → BÁO cho khách kiểm tra lại mã; đã hỏng ít nhất một lần trước đó → chuyển người.
     if await _failed_lookups_before(history, owner_id) >= 1:
-        return {"order_context": None, "order_not_found": None, "uncertainty_flags": ["order_unresolved"]}
+        return unresolved
     return {"order_context": None, "order_not_found": order_code, "uncertainty_flags": []}
 
 

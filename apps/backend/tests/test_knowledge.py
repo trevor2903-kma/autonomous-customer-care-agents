@@ -5,6 +5,8 @@ from __future__ import annotations
 import pytest
 
 from app.agents.nodes import knowledge as kn
+from app.agents.nodes._entities import extract_entities_rule
+from app.agents.nodes.decision import BLOCKING_FLAGS
 
 
 async def test_retrieve_degrades_without_key() -> None:
@@ -18,6 +20,8 @@ async def test_retrieve_degrades_without_key() -> None:
 
 
 async def test_retrieve_degrades_on_search_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Qdrant/embed LỖI → `search_error`, KHÔNG `no_relevant_knowledge`: sự cố hạ tầng không được dán nhãn
+    # "KB không phủ" trong audit/báo cáo (AGENT-02.2). Cờ vẫn chặn → định tuyến không đổi.
     monkeypatch.setattr(kn.settings, "llm_api_key", "sk-test")
 
     async def boom(*args: object, **kwargs: object) -> list[dict]:
@@ -26,7 +30,9 @@ async def test_retrieve_degrades_on_search_error(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(kn.rag_service, "search", boom)
     r = await kn.retrieve_knowledge("x")
     assert r["rag_contexts"] == []
-    assert "no_relevant_knowledge" in r["uncertainty_flags"]
+    assert r["retrieval_confidence"] == 0.0
+    assert r["uncertainty_flags"] == ["search_error"]
+    assert "search_error" in BLOCKING_FLAGS
 
 
 async def test_retrieve_no_hits_flags_no_relevant(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -219,11 +225,83 @@ async def test_resolve_order_db_error_escalates(monkeypatch: pytest.MonkeyPatch)
 
 
 async def test_resolve_order_without_identity_never_leaks(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Chưa có danh tính khách → lookup luôn scoped theo None → KHÔNG trả đơn của bất kỳ ai.
+    # Chưa có (hoặc hỏng) danh tính khách → KHÔNG trả đơn của bất kỳ ai, VÀ cũng KHÔNG nói "không thấy đơn trong
+    # tài khoản của anh/chị": chưa tra được ≠ tra rỗng (AGENT-01.4) → order_unresolved (chuyển người).
     async def fake_lookup(code: str, customer_id: object) -> None:
         assert customer_id is None
         return None
 
     monkeypatch.setattr(kn.order_service, "lookup", fake_lookup)
-    r = await kn.resolve_order("order_status", {"order_id": "865276"}, None)
-    assert r["order_context"] is None
+    for customer_id in (None, "khong-phai-uuid"):
+        r = await kn.resolve_order("order_status", {"order_id": "865276"}, customer_id)
+        assert r["order_context"] is None
+        assert r["order_not_found"] is None  # KHÔNG phát câu "không tìm thấy đơn"
+        assert r["uncertainty_flags"] == ["order_unresolved"]
+
+
+# ── refund/exchange/complaint cũng tra đơn scoped (AGENT-01.1) + shipping không báo "không thấy" (AGENT-01.2) ──
+_OTHER = "22222222-2222-2222-2222-222222222222"
+
+
+def _scoped_db(owners: dict[str, str]):  # type: ignore[no-untyped-def]
+    """`order_service.lookup` giả: trả đơn CHỈ khi mã có VÀ thuộc đúng khách (như truy vấn scoped thật)."""
+
+    async def lookup(code: str, customer_id: object) -> _FakeOrder | None:
+        if owners.get(code) != str(customer_id):
+            return None
+        order = _FakeOrder()
+        order.order_code = code
+        return order
+
+    return lookup
+
+
+@pytest.mark.parametrize("intent", ["refund", "exchange", "complaint"])
+async def test_after_sale_intents_look_the_order_up(monkeypatch: pytest.MonkeyPatch, intent: str) -> None:
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({"716449": _CUSTOMER}))
+    r = await kn.resolve_order(intent, {"order_id": "716449"}, _CUSTOMER)
+    assert r["order_context"]["Mã đơn"] == "716449"
+    assert r["uncertainty_flags"] == []
+
+
+async def test_refund_other_customers_code_same_as_nonexistent(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Mã của KHÁCH KHÁC và mã KHÔNG tồn tại → CÙNG kết quả: không lộ sự tồn tại của đơn người khác.
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({"794798": _OTHER}))
+    of_other = await kn.resolve_order("refund", {"order_id": "794798"}, _CUSTOMER)
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({}))
+    missing = await kn.resolve_order("refund", {"order_id": "794798"}, _CUSTOMER)
+    assert of_other == missing == {"order_context": None, "order_not_found": "794798", "uncertainty_flags": []}
+
+
+async def test_shipping_not_found_gives_no_order_signal(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Số trong câu hỏi ship thường là TIỀN → tra không ra thì KHÔNG "không tìm thấy đơn", KHÔNG cờ — kể cả
+    # khi ca đã từng có mã hỏng (không escalate một câu hỏi phí ship).
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({}))
+    history = [{"sender": "customer", "content": "đơn 111222 của mình đâu rồi"}]
+    r = await kn.resolve_order("shipping", {"order_id": "500000"}, _CUSTOMER, history)
+    assert r == {"order_context": None, "order_not_found": None, "uncertainty_flags": []}
+
+
+async def test_shipping_found_order_still_gives_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({"716449": _CUSTOMER}))
+    r = await kn.resolve_order("shipping", {"order_id": "716449"}, _CUSTOMER)
+    assert r["order_context"]["Mã đơn"] == "716449"
+
+
+async def test_knowledge_node_shipping_amount_question_answers_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tái hiện live: "đơn 500000 có được freeship không" → regex vẫn ra 500000 (không có đơn vị tiền), nhưng
+    # shipping tra không ra → KHÔNG order_not_found, KHÔNG cờ đơn → Agent 4 trả lời chính sách freeship.
+    text = "đơn 500000 có được freeship không"
+
+    async def hits(*args: object, **kwargs: object) -> list[dict]:
+        return [{"text": "Miễn phí ship cho đơn từ 500.000đ.", "source": "facts", "score": 0.82}]
+
+    monkeypatch.setattr(kn.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(kn.rag_service, "search", hits)
+    monkeypatch.setattr(kn.order_service, "lookup", _scoped_db({}))
+    out = await kn.knowledge_node(
+        {"input": text, "intent": "shipping", "entities": extract_entities_rule(text), "customer_id": _CUSTOMER}
+    )
+    assert out["order_not_found"] is None
+    assert out["order_context"] is None
+    assert out["uncertainty_flags"] == []
