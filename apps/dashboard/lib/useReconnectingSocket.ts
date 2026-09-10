@@ -34,7 +34,8 @@ export type SocketHandlers = {
   resolveUrl?: () => string | null;
   /** Mọi frame JSON hợp lệ, trừ `pong` (hook tự nuốt). */
   onFrame: (frame: Frame) => void;
-  /** Socket mở. `isReconnect` = không phải lần mở đầu tiên → caller đối soát lại (nạp lại lịch sử…). */
+  /** Socket mở (bắt tay xong). `isReconnect` = không phải lần mở đầu tiên. Đối soát lịch sử nên chờ frame xác nhận
+   *  của server (vd `system` — đã gắn hub) chứ không phải mốc này: sự kiện phát giữa hai mốc sẽ lọt khe. */
   onOpen?: (isReconnect: boolean) => void;
   /** Socket vừa rớt (trước khi thử lại) — vd gỡ "đang trả lời…" để không kẹt. */
   onDown?: () => void;

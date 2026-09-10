@@ -38,8 +38,9 @@ import { useReconnectingSocket } from "@/lib/useReconnectingSocket";
 // khách thấy "đang chờ nhân viên" trong khi AI vẫn đang trả lời bình thường.
 //
 // Bền kết nối (protocol v2 — contract §4.1): socket tự nối lại; mỗi tin mang `client_msg_id` với vòng đời
-// đang gửi → đã gửi (ack) → chưa gửi được (quá 10 s / frame error) + "Gửi lại" cùng id. Nối lại → nạp lại
-// /me/thread rồi ghép theo message_id / client_msg_id: không mất tin, không trùng tin.
+// đang gửi → đã gửi (ack) → chưa gửi được (quá 10 s / frame error) + "Gửi lại" cùng id. Mỗi lần server báo `system`
+// (socket đã gắn hub — cả lần nối đầu) → nạp lại /me/thread rồi ghép theo message_id / client_msg_id: không mất tin,
+// không trùng tin.
 const now = () => new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 const timeOf = (iso: string) =>
   new Date(iso).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
@@ -151,6 +152,12 @@ function ChatInner() {
     // `pending`, `status` chỉ đổi trạng thái đó, không có bong bóng.
     setTurn((s) => custTurnAfter(s, f));
     switch (f.type) {
+      case "system":
+        // Server gửi `system` SAU khi đã gắn socket vào hub → đối soát TỪ ĐÂY, không phải lúc bắt tay (`onOpen`): sự
+        // kiện phát trước mốc này đã nằm trong /me/thread, sau mốc này tới qua socket — không lọt khe (FE-01.2). Chạy ở
+        // MỌI lần nối, kể cả lần đầu (tải lại trang giữa lượt).
+        reconcile();
+        break;
       case "ack":
         if (cid) {
           clearAck(cid);
@@ -198,12 +205,14 @@ function ChatInner() {
     }
   }
 
-  function onOpen(isReconnect: boolean) {
-    genRef.current += 1;
-    if (!isReconnect) return;
-    // Nối lại: nạp lại mạch từ DB rồi dựng lại danh sách — tin mình đã lưu thành "đã gửi"; tin chưa thấy trong lịch
-    // sử ("đang gửi" LẪN "đã gửi" — ack chỉ là biên nhận trước khi lưu) gửi lại MỘT lần cùng client_msg_id (server
-    // không chạy lại lượt) và chờ tiếng vọng qua hub; tin "chưa gửi được" chờ khách bấm.
+  function onOpen() {
+    genRef.current += 1; // thế hệ socket; đối soát chờ frame `system` (server đã gắn hub) — xem `reconcile`
+  }
+
+  // Đối soát khi server báo `system`: nạp lại mạch từ DB rồi dựng lại danh sách — tin mình đã lưu thành "đã gửi"; tin
+  // chưa thấy trong lịch sử ("đang gửi" LẪN "đã gửi" — ack chỉ là biên nhận trước khi lưu) gửi lại MỘT lần cùng
+  // client_msg_id (server không chạy lại lượt) và chờ tiếng vọng qua hub; tin "chưa gửi được" chờ khách bấm.
+  function reconcile() {
     void refetch().then(({ data }) => {
       if (!data) return;
       const resend = unconfirmedOwn(messagesRef.current, data.messages);

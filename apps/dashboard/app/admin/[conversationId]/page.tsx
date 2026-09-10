@@ -52,9 +52,9 @@ function CloseCaseIcon() {
 // Màn chi tiết admin (08b/08c/08a): EscalationCard + lịch sử + tiếp quản TƯỜNG MINH + trả lời + duyệt nháp.
 // MỞ = CHỈ XEM (fix 08c): ca vẫn nằm trong hàng đợi cho tới khi bấm "Tiếp quản".
 //
-// Làm tươi (FE-01.1 / FE-01.3): hội thoại nạp lại mỗi lần mở trang và mỗi lần socket (nối lại) mở; tin realtime
-// ghép theo message_id nên không mất, không trùng. Frame `status` (ca đổi trạng thái khi đang mở) → pill +
-// EscalationCard / ApprovalPanel theo ngay. "Đang xử lý" chỉ khi CHÍNH mình giữ ca (assigned_admin_id).
+// Làm tươi (FE-01.1 / FE-01.3): hội thoại nạp lại mỗi lần mở trang và mỗi lần socket nhận `system` (server đã gắn
+// hub); tin realtime ghép theo message_id nên không mất, không trùng. Frame `status` (ca đổi trạng thái khi đang
+// mở) → pill + EscalationCard / ApprovalPanel theo ngay. "Đang xử lý" chỉ khi CHÍNH mình giữ ca (assigned_admin_id).
 
 const hhmm = (iso?: string) =>
   new Date(iso ?? Date.now()).toLocaleTimeString("vi-VN", {
@@ -214,6 +214,9 @@ export default function AdminConversationPage({
         const s = convStateOf(f);
         setWsStatus(s.status);
         setWsAssigned(s.assigned);
+        // Server gửi `system` SAU khi đã gắn socket vào hub → nạp lại hội thoại TỪ ĐÂY, không phải lúc bắt tay: tin phát
+        // trước mốc này đã có trong REST, sau mốc này tới qua socket — không lọt khe (FE-01.1/FE-01.2).
+        qc.invalidateQueries({ queryKey: ["admin-conv", id] });
         break;
       }
       case "status": {
@@ -271,10 +274,9 @@ export default function AdminConversationPage({
     authRole: "admin",
     resolveUrl: () => currentAdminWsUrl(id),
     onFrame,
-    // Mỗi lần (nối lại) mở: nạp lại hội thoại — tin đến lúc rớt / lúc không xem không bị mất (FE-01.1).
+    // Thế hệ socket (+1 mỗi lần mở). Nạp lại hội thoại chờ frame `system` (server đã gắn hub) — xem `onFrame`.
     onOpen: () => {
       genRef.current += 1;
-      qc.invalidateQueries({ queryKey: ["admin-conv", id] });
     },
   });
   const online = socket.state === "online";

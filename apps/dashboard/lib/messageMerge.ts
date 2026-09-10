@@ -151,8 +151,8 @@ export function absorbOwnEcho(
 /** Một dòng trong màn ca admin: bản đã lưu (REST) hoặc bản realtime / đang gửi. `at` = ISO thời điểm. */
 export type AdminMsg = Trackable & { key: string; sender: string; content: string; at: string };
 
-/** Admin (FE-01.1): tin đã lưu (REST — nạp lại mỗi lần mở trang và mỗi lần socket (nối lại) mở) + phần
- *  realtime CHƯA có trong đó. Chống trùng bằng message_id (frame hub, ack) và client_msg_id (tin admin gửi). */
+/** Admin (FE-01.1): tin đã lưu (REST — nạp lại mỗi lần mở trang và mỗi lần socket nhận `system`, tức đã gắn hub) +
+ *  phần realtime CHƯA có trong đó. Chống trùng bằng message_id (frame hub, ack) và client_msg_id (tin admin gửi). */
 export function mergeAdminMessages(fetched: Message[], live: AdminMsg[]): AdminMsg[] {
   const ids = new Set(fetched.map((m) => m.id));
   const cids = new Set(fetched.map((m) => m.client_msg_id).filter((c): c is string => !!c));
