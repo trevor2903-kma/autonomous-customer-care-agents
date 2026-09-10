@@ -2,6 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  absorbAdminEcho,
   absorbOwnById,
   absorbOwnEcho,
   appendUnique,
@@ -126,6 +127,40 @@ test("admin: tin realtime/ack đã có trong bản REST vừa nạp lại → kh
     ["hỏi", "đáp", "mới", "lỗi"],
   );
   assert.equal(out[1].sendState, undefined, "tin admin đã lưu hiện bằng bản REST (đã gửi)");
+});
+
+test("FE-01.4 admin: tiếng vọng tin CHÍNH mình (client_msg_id khớp) tới socket mới → bong bóng đó 'đã gửi', không thêm bản thứ hai", () => {
+  // Tin admin lưu xong SAU khi quá hạn ack đã ép nối lại → bong bóng đã thành "chưa gửi được", tiếng vọng tới socket MỚI.
+  const live = [
+    { key: "m1", sender: "customer", content: "hỏi", at: "x", messageId: "m1" },
+    { key: "c1", sender: "admin", content: "đáp", at: "x", clientMsgId: "c1", sendState: "failed" as const },
+  ];
+  const echo = { key: "m2", sender: "admin", content: "đáp", at: "y", messageId: "m2" };
+  const out = absorbAdminEcho(live, echo, "c1");
+  assert.equal(out.length, 2, "không thêm bong bóng thứ hai cho cùng một tin");
+  assert.equal(out[1].key, "c1", "giữ key React của bong bóng đang theo dõi");
+  assert.equal(out[1].sendState, "sent");
+  assert.equal(out[1].messageId, "m2");
+  // REST nạp lại sau đó vẫn gộp đúng một bản.
+  const fetched = [
+    { id: "m1", sender: "customer", content: "hỏi", created_at: "2026-09-10T10:00:00Z" },
+    { id: "m2", sender: "admin", content: "đáp", created_at: "2026-09-10T10:01:00Z", client_msg_id: "c1" },
+  ];
+  assert.equal(mergeAdminMessages(fetched, out).length, 2);
+});
+
+test("FE-01.4 admin: frame không phải tiếng vọng của tab này → thêm như thường; frame lặp message_id → bỏ qua", () => {
+  const live = [
+    { key: "m1", sender: "customer", content: "hỏi", at: "x", messageId: "m1" },
+    { key: "c1", sender: "admin", content: "đáp", at: "x", clientMsgId: "c1", sendState: "sending" as const },
+  ];
+  const ai = { key: "m3", sender: "ai", content: "mới", at: "y", messageId: "m3" };
+  assert.equal(absorbAdminEcho(live, ai, null).length, 3, "tin khách / AI (không client_msg_id)");
+  const otherTab = { key: "m4", sender: "admin", content: "đáp", at: "y", messageId: "m4" };
+  const out = absorbAdminEcho(live, otherTab, "c-tab-khac");
+  assert.equal(out.length, 3, "tin admin gõ ở tab khác (client_msg_id khác)");
+  assert.equal(out[1].sendState, "sending", "bong bóng của tab này không bị đụng");
+  assert.equal(absorbAdminEcho(live, { ...live[0], key: "m1-lap" }, null), live);
 });
 
 const you = (id: number, text: string, cid: string, sendState: "sending" | "sent" | "failed") => ({

@@ -16,7 +16,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import {
   type AdminMsg,
-  appendUnique,
+  absorbAdminEcho,
   markFailed,
   markSending,
   markSent,
@@ -223,6 +223,7 @@ export default function AdminConversationPage({
       }
       case "message": {
         const messageId = asString(f.message_id);
+        const cid = asString(f.client_msg_id);
         const item: AdminMsg = {
           key: messageId ?? `live-${seqRef.current++}`,
           sender: asString(f.from) ?? "ai",
@@ -230,7 +231,10 @@ export default function AdminConversationPage({
           at: new Date().toISOString(),
           messageId,
         };
-        setLive((p) => appendUnique(p, item));
+        // Tiếng vọng tin CHÍNH mình gửi (client_msg_id khớp bong bóng đang theo dõi) = đã lưu → gỡ hẹn giờ ack, đánh dấu
+        // CHÍNH bong bóng đó đã gửi thay vì thêm bản thứ hai (FE-01.4). cid của tab khác → không có hẹn giờ, thêm như thường.
+        if (cid) clearAck(cid);
+        setLive((p) => absorbAdminEcho(p, item, cid));
         break;
       }
       case "ack": {

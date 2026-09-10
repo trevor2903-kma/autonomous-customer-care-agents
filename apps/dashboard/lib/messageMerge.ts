@@ -171,3 +171,13 @@ export function mergeAdminMessages(fetched: Message[], live: AdminMsg[]): AdminM
     ),
   ];
 }
+
+/** Admin (FE-01.4): frame hub `message` → danh sách live mới. Frame mang client_msg_id của một bong bóng tab này đang
+ *  theo dõi = tiếng vọng tin CHÍNH mình gửi (lưu xong SAU khi quá hạn ack đã ép nối lại → tới socket MỚI) → bong bóng
+ *  đó "đã gửi" + message_id của frame, KHÔNG thêm bong bóng thứ hai (một bản "Chưa gửi được · Gửi lại" dễ làm admin gõ
+ *  lại → khách nhận trùng). Không khớp (tin khách / AI, tin admin gõ ở tab khác) → thêm như thường, chống trùng theo
+ *  message_id. */
+export function absorbAdminEcho(list: AdminMsg[], item: AdminMsg, cid: string | null): AdminMsg[] {
+  if (cid && list.some((m) => m.clientMsgId === cid)) return markSent(list, cid, item.messageId);
+  return appendUnique(list, item);
+}
