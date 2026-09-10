@@ -102,7 +102,9 @@ def build_turn_view(rows: list[AuditLog]) -> TurnView | None:
         duration_ms=delivery.duration_ms,
         confidence=delivery.confidence,
         flags=list(delivery.uncertainty_flags or []),
-        escalation_reason=(decision.escalation_reason if decision is not None else None),
+        # Lý do của LƯỢT = final state (dòng delivery) — gồm cả lý do Agent 4 fallback → chuyển người mà dòng decision
+        # không mang (AGENT-03.1); delivery không có lý do → lý do của Agent 3.
+        escalation_reason=delivery.escalation_reason or (decision.escalation_reason if decision is not None else None),
         blocking_flags=list(((decision.detail or {}).get("blocking_flags") or []) if decision else []),
         fallback=_FALLBACK_FLAG in list((response.uncertainty_flags or []) if response else []),
         discarded=bool(detail.get("discarded")),

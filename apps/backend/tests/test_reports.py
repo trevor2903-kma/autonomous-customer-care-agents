@@ -124,6 +124,23 @@ def test_turn_view_reads_discarded_from_the_delivery_row() -> None:
     assert view is not None and view.discarded is True
 
 
+def test_turn_reason_comes_from_the_delivery_row_before_the_decision_row() -> None:
+    # AGENT-03.1: lý do của LƯỢT = final state (dòng delivery) — gồm cả lý do Agent 4 (fallback → chuyển người) mà dòng
+    # decision KHÔNG được mang. Dòng delivery không có lý do → lấy lý do của Agent 3.
+    tid = uuid.uuid4()
+    decision = _row("decision", turn_id=tid, action="auto_reply", detail={"blocking_flags": []})
+    delivery = _row("delivery", turn_id=tid, action=TurnOutcome.QUEUED_FOR_HUMAN,
+                    escalation_reason="blocking_flags=['hallucination_risk']", detail={})
+    view = rs.build_turn_view([decision, delivery])
+    assert view is not None and view.escalation_reason == "blocking_flags=['hallucination_risk']"
+
+    decision = _row("decision", turn_id=tid, action="human_handoff",
+                    escalation_reason="blocking_flags=['out_of_domain']", detail={"blocking_flags": ["out_of_domain"]})
+    delivery = _row("delivery", turn_id=tid, action=TurnOutcome.QUEUED_FOR_HUMAN, detail={})
+    view = rs.build_turn_view([decision, delivery])
+    assert view is not None and view.escalation_reason == "blocking_flags=['out_of_domain']"
+
+
 # ── Theo intent ──────────────────────────────────────────────────────────────
 def test_by_intent_rows_sorted_by_volume() -> None:
     turns = [

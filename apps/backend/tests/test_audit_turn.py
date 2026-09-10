@@ -73,12 +73,33 @@ def test_knowledge_row_carries_md_sources_not_pdf() -> None:
     assert know["detail"]["retrieval_confidence"] == 0.86
 
 
+def _final_with_decision(*, action: str, agent3_reason: str | None, final_reason: str | None) -> dict:
+    """FINAL với lý do CỦA Agent 3 trong bước trace decision; `final_reason` = final state (Agent 4 có thể ghi đè)."""
+    trace = [
+        {**s, "detail": {**s["detail"], "escalation_reason": agent3_reason}} if s["node"] == "decision" else s
+        for s in FINAL["trace"]
+    ]
+    return {**FINAL, "action": action, "escalation_reason": final_reason, "trace": trace}
+
+
 def test_decision_row_carries_agent3_action_and_reason() -> None:
-    rows = _rows(final={**FINAL, "action": "human_handoff",
-                        "escalation_reason": "blocking_flags=['low_retrieval_score']"})
+    reason = "blocking_flags=['low_retrieval_score']"
+    rows = _rows(final=_final_with_decision(action="human_handoff", agent3_reason=reason, final_reason=reason))
     dec = next(r for r in rows if r["node"] == "decision")
     assert dec["action"] == "human_handoff"
-    assert dec["escalation_reason"] == "blocking_flags=['low_retrieval_score']"
+    assert dec["escalation_reason"] == reason
+    assert "escalation_reason" not in dec["detail"]  # lý do nằm ở CỘT của dòng, không lặp lại trong detail
+
+
+def test_decision_row_never_takes_agent4s_reason() -> None:
+    # AGENT-03.1 / NFR-4: Agent 4 fallback → final state mang lý do CỦA Agent 4; dòng decision vẫn chỉ ghi quyết định
+    # của Agent 3 (auto_reply, không lý do). Lý do của lượt vẫn còn ở dòng delivery (final state).
+    rows = _rows(final=_final_with_decision(
+        action="auto_reply", agent3_reason=None, final_reason="blocking_flags=['hallucination_risk']"
+    ))
+    dec = next(r for r in rows if r["node"] == "decision")
+    assert (dec["action"], dec["escalation_reason"]) == ("auto_reply", None)
+    assert rows[-1]["escalation_reason"] == "blocking_flags=['hallucination_risk']"
 
 
 def test_delivery_row_is_the_nfr1_number() -> None:

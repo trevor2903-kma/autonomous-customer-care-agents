@@ -114,6 +114,9 @@ def decision_node(state: ConversationState) -> dict[str, Any]:
                 "branch": str(action),
                 "detail": {
                     "blocking_flags": blocking,
+                    # Lý do CỦA Agent 3 — dòng audit decision đọc từ đây, KHÔNG từ final state (Agent 4 fallback ghi đè
+                    # escalation_reason bằng lý do của mình — AGENT-03.1, NFR-4).
+                    "escalation_reason": escalation_reason,
                     "clarify_field": clarify_field,
                     "priority": str(priority),
                     "severity": str(severity),

@@ -105,7 +105,10 @@ def _step_row(step: dict[str, Any], final: dict[str, Any], reply: str) -> dict[s
     elif node == AuditNode.DECISION:
         # action ở đây = QUYẾT ĐỊNH của Agent 3 (auto_reply|human_handoff) — khác kết cục giao cuối lượt.
         action = str(final.get("action")) if final.get("action") else None
-        escalation_reason = final.get("escalation_reason")
+        # Lý do CỦA Agent 3 (bước trace của nó), KHÔNG lấy final state: Agent 4 fallback ghi đè escalation_reason bằng
+        # lý do của mình → dòng này từng quy cho Agent 3 một quyết định nó không đưa ra (AGENT-03.1, NFR-4). Lý do của
+        # LƯỢT vẫn ở dòng delivery. Chuyển lên cột của dòng, không lặp trong detail.
+        escalation_reason = detail.pop("escalation_reason", None)
     elif node == AuditNode.RESPONSE:
         action = step.get("branch")  # response | human_handoff
         detail["reply_len"] = len(reply or "")

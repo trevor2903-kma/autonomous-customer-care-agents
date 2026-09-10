@@ -145,3 +145,14 @@ def test_non_order_intent_missing_code_no_clarify() -> None:
     out = _decide(intent="product_price", uncertainty_flags=[], entities={})
     assert out["action"] == "auto_reply"
     assert out["clarify_field"] is None
+
+
+def test_decision_trace_carries_its_own_escalation_reason() -> None:
+    # Audit (AGENT-03.1, NFR-4): lý do CỦA Agent 3 nằm ngay trong bước trace của nó — dòng audit decision đọc từ đây,
+    # KHÔNG từ final state (Agent 4 ghi đè escalation_reason khi phải fallback → chuyển người).
+    out = _decide(intent="shipping", uncertainty_flags=["low_retrieval_score"])
+    reason = "blocking_flags=['low_retrieval_score']"
+    assert out["trace"][0]["detail"]["escalation_reason"] == out["escalation_reason"] == reason
+    guard = _decide(intent="order_status", uncertainty_flags=[], entities={}, prior_status="AWAITING_CUSTOMER")
+    assert guard["trace"][0]["detail"]["escalation_reason"] == "clarify_unresolved"
+    assert _decide(intent="shipping", uncertainty_flags=[])["trace"][0]["detail"]["escalation_reason"] is None

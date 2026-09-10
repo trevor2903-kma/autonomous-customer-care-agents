@@ -6,6 +6,7 @@ Stub đúng ba biên I/O: LLM (`get_openai` / `classify_intent`), Qdrant (`rag_s
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import pytest
@@ -14,6 +15,9 @@ from app.agents import graph as graph_mod
 from app.agents.nodes import intent as intent_mod
 from app.agents.nodes import knowledge as kn
 from app.agents.nodes import response as resp
+from app.models.audit_log import AuditLog
+from app.models.enums import TurnOutcome
+from app.services import audit_service, report_service
 from app.services.escalation_service import build_escalation_card
 
 _CUSTOMER = "11111111-1111-1111-1111-111111111111"
@@ -246,3 +250,23 @@ async def test_fallback_turn_is_handed_to_a_human_with_reason(monkeypatch: pytes
     assert final["require_human_handoff"] is True
     assert final["escalation_reason"] == "blocking_flags=['hallucination_risk']"
     assert build_escalation_card(final, question)["escalation_reason"] == "blocking_flags=['hallucination_risk']"
+
+
+async def test_fallback_turn_audit_gives_the_reason_to_agent4_not_agent3(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Repro review (AGENT-03.1): dòng audit decision của lượt fallback từng mang lý do CỦA Agent 4 → quy cho Agent 3 một
+    # lý do nó không phát ra (NFR-4). Báo cáo + tiêu đề lượt vẫn phải ra hallucination_risk.
+    _classify_as(monkeypatch, "product_price", {})
+    _search_returns(monkeypatch, 0.8)
+    monkeypatch.setattr(resp, "get_openai", lambda: _CapturingLLM(reply="   "))  # LLM trả rỗng → phanh fallback
+    question = "áo thun basic giá bao nhiêu"
+    final = await graph_mod.run_pipeline(input_text=question, customer_id=_CUSTOMER)
+
+    rows = audit_service.build_turn_rows(
+        turn_id=uuid.uuid4(), conversation_id=uuid.uuid4(), customer_text=question, final=final,
+        reply=final["result"]["reply"], outcome=TurnOutcome.QUEUED_FOR_HUMAN, total_ms=1200,
+    )
+    dec = next(r for r in rows if r["node"] == "decision")
+    assert (dec["action"], dec["escalation_reason"], dec["detail"]["blocking_flags"]) == ("auto_reply", None, [])
+    view = report_service.build_turn_view([AuditLog(**{**r, "created_at": None}) for r in rows])
+    assert view is not None and view.escalation_reason == "blocking_flags=['hallucination_risk']"
+    assert report_service.summarize([view])["escalation_reasons"][0]["flag"] == "hallucination_risk"
