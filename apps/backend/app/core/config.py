@@ -66,6 +66,15 @@ class Settings(BaseSettings):
     # câu hỏi thật, đủ hẹp để chặn "tường văn bản" nhồi chỉ dẫn vào prompt.
     max_message_chars: int = 2000
 
+    # ── Giới hạn tần suất (audit v2, SEC-XC.2) — IN-PROCESS như hub (1 worker) ──
+    # Mỗi con số = số lần tối đa trong `rate_limit_window_seconds`; 0 = tắt. Đa-worker → chuyển sang Redis.
+    rate_limit_window_seconds: int = 60
+    login_rate_per_ip: int = 10
+    login_rate_per_email: int = 5
+    register_rate_per_ip: int = 5
+    # Tin nhắn khách qua /ws/chat (theo customer_id, cộng dồn mọi tab) — mỗi tin là 2 lời gọi LLM + 1 embedding.
+    chat_rate_per_customer: int = 20
+
     # ── Auth (slice 11 — JWT + RBAC) ──────────────────────────────────────────
     # Secret ký JWT (HS256) — BẮT BUỘC, đọc env JWT_SECRET (KHÔNG hardcode secret).
     jwt_secret: str
@@ -93,6 +102,10 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_model: str | None = None
     embedding_model: str = "text-embedding-3-small"
+    # Timeout + số lần retry của client OpenAI dùng chung (audit v2, PERF-01.1). Mặc định SDK là 600s × 3 lần:
+    # một lời gọi treo làm treo chat của khách tới nửa giờ. Hết giờ → node tự degrade (cờ chặn / fallback).
+    llm_timeout_seconds: float = 20.0
+    llm_max_retries: int = 1
 
     @property
     def cors_origins(self) -> list[str]:
