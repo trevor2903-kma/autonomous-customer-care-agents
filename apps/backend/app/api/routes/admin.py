@@ -293,8 +293,16 @@ async def reject_draft(
     admin: User = Depends(require_admin),
 ) -> AdminConversationOut:
     """Từ chối nháp (08a) → IN_HUMAN_QUEUE (admin tự tiếp quản xử lý). Chỉ từ PENDING_APPROVAL — không kéo ngược
-    ca đang có người xử lý về hàng đợi (FE-03.3) → 409. Có `expected_draft` mà card đã sang nháp mới (ABA) → 409."""
-    state = await _state_or_404(session, conversation_id)
+    ca đang có người xử lý về hàng đợi (FE-03.3) → 409. Có `expected_draft` mà card đã sang nháp mới (ABA) → 409
+    `CONFLICT_STALE_DRAFT` như approve."""
+    conv = await conversation_service.get_conversation(session, conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    expected = (payload.expected_draft if payload else None) or None
+    # Như approve: nháp màn admin đã xem phải là nháp HIỆN TẠI — kiểm ở đây (lý do rõ) và lại trong CAS.
+    if expected is not None and expected != (conv.escalation_card or {}).get("suggested_reply"):
+        raise HTTPException(status_code=409, detail=CONFLICT_STALE_DRAFT)
+    state = (conv.status, conv.assigned_admin_id)
     await _transition(
         session,
         conversation_id,
@@ -302,7 +310,7 @@ async def reject_draft(
         action="reject",
         to=ConversationStatus.IN_HUMAN_QUEUE,
         state=state,
-        expected_draft=(payload.expected_draft if payload else None) or None,
+        expected_draft=expected,
     )
     await session.commit()
     await hub.notify_status(conversation_id, status=ConversationStatus.IN_HUMAN_QUEUE, assigned_admin_id=state[1])

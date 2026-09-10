@@ -187,7 +187,7 @@ async def test_stale_reject_of_a_newer_draft_is_409_and_bodyless_reject_still_wo
     cid = store.add_conv(status=S.PENDING_APPROVAL, card={"suggested_reply": "Dạ nháp mới ạ."})
     with pytest.raises(HTTPException) as exc:
         await routes.reject_draft(cid, RejectRequest(expected_draft=DRAFT), session=store.session(), admin=_admin())
-    assert exc.value.status_code == 409
+    assert exc.value.status_code == 409 and exc.value.detail == routes.CONFLICT_STALE_DRAFT  # lý do rõ như approve
     assert store.convs[cid]["status"] == S.PENDING_APPROVAL and store.admin_audit() == []
 
     await _act(store, "reject", cid, _admin())  # client cũ: không body → không kiểm nháp (như trước)
