@@ -13,8 +13,9 @@ export const ACK_TIMEOUT_MS = 10000;
 /** Tin đã nhận (ack) mà 20 s không có tiến triển nào (typing / kết quả) → coi như lượt đã xong: gỡ khoá gợi ý
  *  nhanh, không để kẹt (vd lượt bị status-gate trong khi FE chưa biết ca đã sang tay người). */
 export const TURN_STALL_MS = 20000;
-/** Mã đóng WS khi xác thực WS thất bại (backend `ws/auth.py`): token hỏng / hết hạn / sai vai — NHƯNG cũng cả khi DB
- *  lỗi lúc đọc role (fail closed). Vì vậy 4401 KHÔNG tự nó là hết phiên: xem `stopAfterAuthClose`. */
+/** Mã đóng WS khi xác thực WS thất bại (backend `ws/auth.py`): token của socket hỏng / hết hạn / sai vai / user không
+ *  còn (DB lỗi lúc đọc role thì backend đóng 1011, không phải 4401). 4401 vẫn KHÔNG tự nó là hết phiên — token trong
+ *  localStorage có thể đã mới hơn token của socket (đăng nhập lại ở tab khác): xem `stopAfterAuthClose`, `socketUrl`. */
 export const WS_AUTH_CLOSE_CODE = 4401;
 /** Trần chờ `/api/auth/me` khi kiểm lại phiên sau đóng 4401 — quá hạn = "không rõ" → nối lại như thường. */
 export const AUTH_PROBE_TIMEOUT_MS = 5000;
@@ -24,13 +25,21 @@ export function backoffDelay(attempt: number): number {
   return Math.min(RECONNECT_BASE_MS * 2 ** Math.max(0, attempt), RECONNECT_MAX_MS);
 }
 
-/** WS bị đóng 4401 → dừng hẳn (không nối lại) CHỈ khi REST xác nhận phiên hết thật (FE-01.2): `/api/auth/me` trả 401
- *  (`null`) hoặc vai hiện tại trong DB không còn là vai socket này đòi. Không rõ (`undefined`: mạng / 5xx / quá hạn —
- *  vd DB chập làm backend đóng 4401 dù token còn hạn) hoặc phiên vẫn đúng → nối lại như mọi lần rớt khác. */
+/** WS bị đóng 4401 → dừng hẳn (không nối lại) CHỈ khi REST xác nhận phiên hết thật (FE-01.2): `/api/auth/me` (token
+ *  HIỆN TẠI) trả 401 (`null`) hoặc vai hiện tại trong DB không còn là vai socket này đòi. Không rõ (`undefined`: mạng /
+ *  5xx / quá hạn) hoặc phiên vẫn đúng (vd vừa đăng nhập lại ở tab khác) → nối lại như mọi lần rớt khác, với URL dựng từ
+ *  token hiện tại (`socketUrl`). */
 export function stopAfterAuthClose(probe: { role: string } | null | undefined, role?: string): boolean {
   if (probe === undefined) return false;
   if (probe === null) return true;
   return role !== undefined && probe.role !== role;
+}
+
+/** URL cho MỖI lần nối (FE-01.2). Có `resolve` → luôn dựng lại từ token HIỆN TẠI: sau 4401 mà phiên vẫn còn (vừa đăng
+ *  nhập lại ở tab khác) lần thử lại mang token mới thay vì lặp mãi URL có token đã bị từ chối; `resolve` trả null
+ *  (token đã bị xoá — đăng xuất) → null = dừng hẳn, KHÔNG quay về URL cũ. Không có `resolve` → URL cố định `fixed`. */
+export function socketUrl(fixed: string | null, resolve?: () => string | null): string | null {
+  return resolve ? resolve() : fixed;
 }
 
 type CryptoLike = {

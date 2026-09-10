@@ -47,6 +47,13 @@ const timeOf = (iso: string) =>
 // Server từ chối vì gửi quá nhanh (`error/rate_limited`) — thông báo TẠM phía khách, không lưu DB.
 const RATE_LIMIT_NOTICE = "Bạn đang gửi hơi nhanh — vui lòng đợi giây lát rồi bấm “Gửi lại”.";
 
+// URL socket kèm token HIỆN TẠI trong localStorage — dựng lại ở MỖI lần nối (`resolveUrl`, FE-01.2): sau 4401 mà phiên
+// vẫn còn (đăng nhập lại ở tab khác) lần thử lại dùng token mới.
+function currentChatWsUrl(): string | null {
+  const token = getToken();
+  return token ? chatWsUrl(token) : null;
+}
+
 function ChatInner() {
   const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -62,10 +69,7 @@ function ChatInner() {
   // socket CŨ chỉ đánh dấu "chưa gửi được", KHÔNG ép nối lại socket MỚI.
   const ackTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const genRef = useRef(0);
-  const wsUrl = useMemo(() => {
-    const token = getToken();
-    return token ? chatWsUrl(token) : null;
-  }, []);
+  const wsUrl = useMemo(currentChatWsUrl, []);
 
   const nextId = () => idRef.current++;
   const push = (m: Omit<ChatMessage, "id" | "time">) => {
@@ -211,6 +215,7 @@ function ChatInner() {
 
   const socket = useReconnectingSocket(wsUrl, {
     authRole: "customer",
+    resolveUrl: currentChatWsUrl,
     onFrame,
     onOpen,
     // Rớt kết nối giữa typing→reply → không kẹt "đang trả lời…"; lượt đang chạy tính lại từ các tin gửi lại.

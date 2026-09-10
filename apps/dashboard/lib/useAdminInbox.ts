@@ -13,12 +13,15 @@ import { useReconnectingSocket } from "@/lib/useReconnectingSocket";
 // lưu lượng khách không được quyết định tần suất nạp. `refetchInterval` 60 s ở các query chỉ còn là lưới an toàn
 // khi socket rớt lâu.
 
+// URL kênh inbox kèm token HIỆN TẠI — dựng lại ở MỖI lần nối (`resolveUrl`, FE-01.2).
+function currentInboxWsUrl(): string | null {
+  const token = getToken();
+  return token ? adminInboxWsUrl(token) : null;
+}
+
 export function useAdminInbox(): void {
   const qc = useQueryClient();
-  const url = useMemo(() => {
-    const token = getToken();
-    return token ? adminInboxWsUrl(token) : null;
-  }, []);
+  const url = useMemo(currentInboxWsUrl, []);
   const [batcher] = useState(() =>
     createInboxBatcher(({ escalations, changed }) => {
       qc.invalidateQueries({ queryKey: ["conversations"] });
@@ -29,6 +32,7 @@ export function useAdminInbox(): void {
 
   useReconnectingSocket(url, {
     authRole: "admin",
+    resolveUrl: currentInboxWsUrl,
     onFrame: (f) => {
       if (f.type === "inbox") batcher.push(f.event, asString(f.conversation_id));
     },

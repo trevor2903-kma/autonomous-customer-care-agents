@@ -71,6 +71,12 @@ function initials(s?: string | null): string {
 const NOT_ASSIGNED_NOTICE =
   "Tin chưa được gửi: bạn không còn giữ ca này (chưa tiếp quản, ca đã đổi trạng thái hoặc nhân viên khác đã nhận).";
 
+// URL socket ca kèm token HIỆN TẠI — dựng lại ở MỖI lần nối (`resolveUrl`, FE-01.2; xem app/chat/page.tsx).
+function currentAdminWsUrl(conversationId: string): string | null {
+  const token = getToken();
+  return token ? adminWsUrl(conversationId, token) : null;
+}
+
 function Bubble({
   msg,
   canRetry,
@@ -159,10 +165,7 @@ export default function AdminConversationPage({
   const ackTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const genRef = useRef(0);
   const seqRef = useRef(0);
-  const wsUrl = useMemo(() => {
-    const token = getToken();
-    return token ? adminWsUrl(id, token) : null;
-  }, [id]);
+  const wsUrl = useMemo(() => currentAdminWsUrl(id), [id]);
 
   const {
     data: conv,
@@ -266,6 +269,7 @@ export default function AdminConversationPage({
 
   const socket = useReconnectingSocket(wsUrl, {
     authRole: "admin",
+    resolveUrl: () => currentAdminWsUrl(id),
     onFrame,
     // Mỗi lần (nối lại) mở: nạp lại hội thoại — tin đến lúc rớt / lúc không xem không bị mất (FE-01.1).
     onOpen: () => {

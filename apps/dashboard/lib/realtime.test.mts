@@ -10,6 +10,7 @@ import {
   createInboxBatcher,
   newClientMsgId,
   parseFrame,
+  socketUrl,
   stopAfterAuthClose,
   type InboxRefresh,
 } from "./realtime.ts";
@@ -68,6 +69,21 @@ test("FE-01.2: đóng 4401 chỉ dừng hẳn khi REST xác nhận hết phiên 
   assert.equal(stopAfterAuthClose({ role: "customer" }, "customer"), false, "token còn dùng được → 4401 thoáng qua");
   assert.equal(stopAfterAuthClose({ role: "customer" }, "admin"), true, "admin đã bị hạ quyền");
   assert.equal(stopAfterAuthClose({ role: "admin" }), false);
+});
+
+test("FE-01.2: mỗi lần nối dựng lại URL từ token HIỆN TẠI — đăng nhập lại ở tab khác thì lần thử lại sau 4401 mang token mới", () => {
+  let token: string | null = "cu";
+  const resolve = () => (token ? `ws://h/ws/chat?token=${token}` : null);
+  const fixed = "ws://h/ws/chat?token=cu"; // URL memo lúc mount — trước đây dùng lại mãi, kể cả khi token đã bị từ chối
+  assert.equal(socketUrl(fixed, resolve), fixed);
+  // Socket bị đóng 4401, /api/auth/me bằng token mới vẫn đúng vai → không dừng, nối lại…
+  token = "moi";
+  assert.equal(stopAfterAuthClose({ role: "customer" }, "customer"), false);
+  assert.equal(socketUrl(fixed, resolve), "ws://h/ws/chat?token=moi", "…với token mới, không lặp mãi URL cũ");
+  token = null;
+  assert.equal(socketUrl(fixed, resolve), null, "token đã bị xoá (đăng xuất) → dừng hẳn, không quay về URL cũ");
+  assert.equal(socketUrl(fixed), fixed, "không truyền resolveUrl → URL cố định như trước");
+  assert.equal(socketUrl(null), null);
 });
 
 test("FE-03.2: frame system/status — server đọc lỗi (status null) → người giữ ca 'chưa biết', không phải 'không ai'", () => {
