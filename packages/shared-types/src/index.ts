@@ -20,6 +20,10 @@ export enum ConversationStatus {
 
 export type MessageSender = "customer" | "ai" | "admin";
 
+/** Trần độ dài một tin khách (ký tự). MIRROR của backend `settings.max_message_chars` (Lớp A cắt ở biên WS):
+ *  FE chặn ngay ở ô nhập để chữ khách thấy == chữ hệ thống nhận (UX-01.2). Đổi bên này thì đổi cả bên kia. */
+export const MAX_MESSAGE_CHARS = 2000;
+
 export interface Message {
   id: string;
   sender: MessageSender;
