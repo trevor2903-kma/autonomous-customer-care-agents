@@ -80,3 +80,43 @@ export function convStateOf(f: Frame): { status: string | null; assigned: string
   if (status === null || !("assigned_admin_id" in f)) return { status, assigned: undefined };
   return { status, assigned: asString(f.assigned_admin_id) };
 }
+
+/** Inbox admin (FE-01.5): sự kiện ĐẦU mở một cửa sổ 3 s, mọi sự kiện trong cửa sổ gộp vào MỘT lần nạp lại lúc cửa sổ
+ *  đóng → danh sách ca nạp lại TỐI ĐA một lần mỗi 3 s mỗi tab, dù khách nhắn dồn dập tới đâu. */
+export const INBOX_WINDOW_MS = 3000;
+
+/** Việc cần nạp lại sau một cửa sổ inbox (danh sách ca thì LUÔN): `escalations` = hàng đợi chuyển tiếp (badge) — chỉ khi
+ *  cửa sổ có sự kiện `status` (tin mới không đổi hàng đợi); `changed` = các ca vừa đổi status (nạp lại chi tiết ca). */
+export type InboxRefresh = { escalations: boolean; changed: string[] };
+
+/** Bộ gom sự kiện inbox (thuần — không React, hẹn giờ bằng setTimeout; test: lib/realtime.test.mts).
+ *  `flushNow` = nạp lại ĐỦ ngay (nối lại sau khi rớt: sự kiện lúc mất kết nối đã lỡ, không biết có đổi status không) và
+ *  gộp luôn cửa sổ đang chờ; `dispose` = gỡ hẹn giờ (unmount) — `push` sau đó vẫn dùng được (StrictMode mount lại). */
+export function createInboxBatcher(onFlush: (r: InboxRefresh) => void, windowMs: number = INBOX_WINDOW_MS) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let sawStatus = false;
+  const changed = new Set<string>();
+  const dispose = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  const flush = (full: boolean) => {
+    dispose();
+    const r: InboxRefresh = { escalations: full || sawStatus, changed: [...changed] };
+    sawStatus = false;
+    changed.clear();
+    onFlush(r);
+  };
+  return {
+    /** Một frame inbox: `event` "message" | "status" (dữ liệu mạng → không tin kiểu). */
+    push(event: unknown, conversationId: string | null): void {
+      if (event === "status") {
+        sawStatus = true;
+        if (conversationId) changed.add(conversationId);
+      }
+      if (timer === undefined) timer = setTimeout(() => flush(false), windowMs);
+    },
+    flushNow: () => flush(true),
+    dispose,
+  };
+}

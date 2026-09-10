@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { adminInboxWsUrl, getToken } from "@/lib/api";
-import { asString } from "@/lib/realtime";
+import { asString, createInboxBatcher } from "@/lib/realtime";
 import { useReconnectingSocket } from "@/lib/useReconnectingSocket";
 
 // Inbox admin (FE-01.5): MỘT socket `/ws/admin-inbox` cho mọi trang /admin, thay polling 10 s (quy ước
-// "Realtime KHÔNG polling"). Frame `{type:"inbox", conversation_id, event, status}` → gom trong ~800 ms rồi
-// làm tươi danh sách + badge (và chi tiết ca vừa đổi status). `refetchInterval` 60 s ở các query chỉ còn là
-// lưới an toàn khi socket rớt lâu.
-const INBOX_DEBOUNCE_MS = 800;
+// "Realtime KHÔNG polling"). Frame `{type:"inbox", conversation_id, event, status}` → gom theo cửa sổ 3 s
+// (`createInboxBatcher`): danh sách ca nạp lại TỐI ĐA một lần mỗi cửa sổ; hàng đợi (badge) + chi tiết ca chỉ khi cửa
+// sổ có sự kiện `status` (tin mới chỉ đổi thứ tự / preview của danh sách). Hai truy vấn này nặng nhất phía admin →
+// lưu lượng khách không được quyết định tần suất nạp. `refetchInterval` 60 s ở các query chỉ còn là lưới an toàn
+// khi socket rớt lâu.
 
 export function useAdminInbox(): void {
   const qc = useQueryClient();
@@ -18,37 +19,24 @@ export function useAdminInbox(): void {
     const token = getToken();
     return token ? adminInboxWsUrl(token) : null;
   }, []);
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const changed = useRef(new Set<string>());
-
-  function flush() {
-    if (timer.current !== undefined) clearTimeout(timer.current);
-    timer.current = undefined;
-    qc.invalidateQueries({ queryKey: ["conversations"] });
-    qc.invalidateQueries({ queryKey: ["escalations"] });
-    for (const id of changed.current) qc.invalidateQueries({ queryKey: ["admin-conv", id] });
-    changed.current.clear();
-  }
+  const [batcher] = useState(() =>
+    createInboxBatcher(({ escalations, changed }) => {
+      qc.invalidateQueries({ queryKey: ["conversations"] });
+      if (escalations) qc.invalidateQueries({ queryKey: ["escalations"] });
+      for (const id of changed) qc.invalidateQueries({ queryKey: ["admin-conv", id] });
+    }),
+  );
 
   useReconnectingSocket(url, {
     authRole: "admin",
     onFrame: (f) => {
-      if (f.type !== "inbox") return;
-      const id = asString(f.conversation_id);
-      if (f.event === "status" && id) changed.current.add(id);
-      // Gom theo cửa sổ (không reset mỗi frame): dồn dập sự kiện vẫn làm tươi đều, không bị bỏ đói.
-      if (timer.current === undefined) timer.current = setTimeout(flush, INBOX_DEBOUNCE_MS);
+      if (f.type === "inbox") batcher.push(f.event, asString(f.conversation_id));
     },
-    // Nối lại sau khi rớt: sự kiện trong lúc mất kết nối đã lỡ → làm tươi ngay một lần.
+    // Nối lại sau khi rớt: sự kiện trong lúc mất kết nối đã lỡ → nạp lại ĐỦ ngay một lần.
     onOpen: (isReconnect) => {
-      if (isReconnect) flush();
+      if (isReconnect) batcher.flushNow();
     },
   });
 
-  useEffect(
-    () => () => {
-      if (timer.current !== undefined) clearTimeout(timer.current);
-    },
-    [],
-  );
+  useEffect(() => () => batcher.dispose(), [batcher]);
 }
