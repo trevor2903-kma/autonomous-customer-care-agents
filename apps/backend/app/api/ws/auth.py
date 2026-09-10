@@ -5,6 +5,9 @@ Xác thực SAU `accept()` (để gửi được close-frame có mã): sai/thi�
 
 Role đọc từ DB, KHÔNG từ claim trong token (audit v2, SEC-XC.3) — cùng luật với `deps.require_admin`: admin bị
 hạ quyền / user bị xoá thì token cũ (còn hạn `jwt_expire_minutes`) không mở được WS nữa. DB lỗi → đóng (fail closed).
+Hệ quả CÓ CHỦ ĐÍCH: khi Postgres sập/cold-start, nhánh degrade AI-only của `/ws/chat` (`chat._customer_ai_only`)
+KHÔNG còn tới được lúc kết nối — khách bị đóng 4401 thay vì được AI trả lời không persist. Muốn giữ AI-only thì
+phải chấp nhận fail open cho role customer khi DB lỗi (admin vẫn đóng) — chờ người dùng quyết.
 """
 
 from __future__ import annotations

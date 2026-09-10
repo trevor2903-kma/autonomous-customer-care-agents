@@ -10,6 +10,10 @@ Chống lạm dụng (audit v2, SEC-XC.2):
 - Giới hạn tần suất in-process (`core/rate_limit`): login theo IP + theo email, register theo IP → 429 + Retry-After.
 - Email có trần độ dài ở schema (`EMAIL_MAX_LENGTH`): email là KHOÁ của bộ đếm theo email → email cỡ MB bị 422
   trước khi vào route, không găm được vào RAM của bộ đếm.
+- Đánh đổi CÓ CHỦ ĐÍCH của bộ đếm theo email: đếm MỌI lần thử (cả đúng mật khẩu) và chặn TRƯỚC khi verify → ai
+  biết email (vd admin) gõ sai `login_rate_per_email` lần/cửa sổ là chủ tài khoản bị 429 tới hết cửa sổ, kể cả từ
+  IP khác. Không bỏ được mà vẫn chặn dò mật khẩu phân tán lên MỘT tài khoản (chưa có CAPTCHA/2FA); khoá theo
+  (email, IP) thì mất tác dụng đó. Bị lợi dụng thật → `login_rate_per_email=0` tắt qua env.
 """
 
 from __future__ import annotations
