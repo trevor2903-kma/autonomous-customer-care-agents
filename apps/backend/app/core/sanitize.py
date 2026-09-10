@@ -116,6 +116,13 @@ def _neutralize_sentences(line: str) -> list[str]:
     return [*kept, _NEUTRALIZED]
 
 
+def neutralize_tags(content: str) -> str:
+    """Vô hiệu mọi thẻ ranh giới DỮ LIỆU (`<tin_nhan_khach>`/`<tri_thuc>`, mở lẫn đóng) do nội dung KHÔNG TIN
+    CẬY tự viết ra: bỏ ngoặc nhọn, giữ chữ để người đọc log vẫn thấy. MỘT cửa cho mọi đường đưa văn bản không
+    tin cậy vào prompt — `as_data_block` và khối lịch sử hội thoại (`_history.format_history`, RAG-02.1)."""
+    return _TAG_RE.sub(lambda m: f"({m.group(0).strip('<>')})", content)
+
+
 def as_data_block(tag: str, content: str) -> str:
     """Bọc nội dung KHÔNG TIN CẬY trong thẻ DỮ LIỆU (Lớp B) — `<tag>…</tag>`.
 
@@ -123,5 +130,4 @@ def as_data_block(tag: str, content: str) -> str:
     có nghĩa khi nội dung bên trong KHÔNG tự đóng được thẻ, nên mọi thẻ ranh giới xuất hiện trong
     `content` đều bị vô hiệu trước.
     """
-    inner = _TAG_RE.sub(lambda m: f"({m.group(0).strip('<>')})", content)
-    return f"<{tag}>\n{inner}\n</{tag}>"
+    return f"<{tag}>\n{neutralize_tags(content)}\n</{tag}>"
