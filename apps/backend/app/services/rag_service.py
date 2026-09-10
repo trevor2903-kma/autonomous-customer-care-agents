@@ -21,6 +21,7 @@ Lát cắt này: chỉ đẩy vector lên Qdrant, KHÔNG persist tài liệu xu�
 
 from __future__ import annotations
 
+import contextvars
 import re
 import time
 from dataclasses import dataclass
@@ -611,9 +612,11 @@ async def search(query: str, top_k: int = 4, intent: str | None = None) -> list[
     điểm. Không hard-fail khi lọc rỗng: nhãn intent sai/thiếu không được làm mất tri thức đúng.
     Ngưỡng dùng ở đây là `retrieval_threshold` sẵn có — KHÔNG thêm ngưỡng số thứ hai (bất biến §1).
 
-    TẦNG SERVICE để Knowledge Agent (PRD §7.2) tái dùng.
+    TẦNG SERVICE để Knowledge Agent (PRD §7.2) tái dùng. Số đo embed / Qdrant của lần gọi → `take_search_timings`.
     """
+    started = time.perf_counter()
     vector = await embed_text(query)
+    embedded = time.perf_counter()
     narrow = intent if intent and intent != Intent.OTHER else None
 
     points = await _query(vector, top_k, narrow) if narrow else []
@@ -622,4 +625,23 @@ async def search(query: str, top_k: int = 4, intent: str | None = None) -> list[
         points += [p for p in await _query(vector, top_k, None) if p.id not in seen]
         points.sort(key=lambda p: p.score, reverse=True)
 
+    # PERF-01.2: embed (OpenAI) tách khỏi Qdrant (một hoặc hai lượt query_points) — ghi cho task hiện tại.
+    _search_timings.set(
+        {"embed_ms": int((embedded - started) * 1000), "qdrant_ms": int((time.perf_counter() - embedded) * 1000)}
+    )
     return [_hit(p) for p in points[:top_k]]
+
+
+# Số đo của lần `search` gần nhất trong TASK hiện tại (ContextVar — các lượt khách chạy song song không lẫn số của
+# nhau). `knowledge_node` đọc qua `take_search_timings` để tách embed khỏi Qdrant mà KHÔNG phải đổi chữ ký `search`
+# (nhiều test thay nó bằng bản giả — khi đó không có số đo nào).
+_search_timings: contextvars.ContextVar[dict[str, int] | None] = contextvars.ContextVar(
+    "rag_search_timings", default=None
+)
+
+
+def take_search_timings() -> dict[str, int]:
+    """`{"embed_ms", "qdrant_ms"}` của lần `search` gần nhất trong task này; đọc xong là xoá. Không có → `{}`."""
+    timings = _search_timings.get()
+    _search_timings.set(None)
+    return dict(timings or {})

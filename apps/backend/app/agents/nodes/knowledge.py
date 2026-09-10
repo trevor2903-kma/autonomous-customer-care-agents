@@ -239,6 +239,8 @@ async def knowledge_node(state: ConversationState) -> dict[str, Any]:
     started = time.perf_counter()
     result = await retrieve_knowledge(query, intent=intent)
     retrieval_ms = _elapsed_ms(started)
+    # Tách embed khỏi Qdrant (PERF-01.2): `rag_service.search` ghi số đo của nó cho task này; trống khi không search.
+    search_ms = rag_service.take_search_timings()
     started = time.perf_counter()
     order = await resolve_order(
         intent, state.get("entities"), state.get("customer_id"), state.get("history")
@@ -275,7 +277,7 @@ async def knowledge_node(state: ConversationState) -> dict[str, Any]:
                     # retrieval yếu (không chặn), thay vì cờ biến mất không dấu vết.
                     "resumed": resumed,
                     "waived_flags": waived,
-                    "timings": {"retrieval_ms": retrieval_ms, "order_ms": order_ms},
+                    "timings": {"retrieval_ms": retrieval_ms, **search_ms, "order_ms": order_ms},
                 },
             }
         ],

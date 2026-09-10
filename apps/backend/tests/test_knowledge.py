@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from app.agents.nodes import knowledge as kn
@@ -454,3 +456,27 @@ async def test_knowledge_node_records_sub_timings(monkeypatch: pytest.MonkeyPatc
     timings = out["trace"][0]["detail"]["timings"]
     assert set(timings) == {"retrieval_ms", "order_ms"}
     assert all(isinstance(v, int) and v >= 0 for v in timings.values())
+
+
+async def test_knowledge_node_splits_embedding_from_qdrant_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    # PERF-01.2: `rag_service.search` THẬT (embed + Qdrant giả) → timings tách embed_ms / qdrant_ms, Qdrant cộng dồn CẢ
+    # HAI lượt query_points (lượt lọc theo intent rỗng → chạy thêm lượt không lọc). Đồng hồ giả của rag_service → số tất định.
+    clock = {"t": 0.0}
+    monkeypatch.setattr(kn.rag_service, "time", SimpleNamespace(perf_counter=lambda: clock["t"]))
+
+    async def embed(text: str) -> list[float]:
+        clock["t"] += 0.5
+        return [0.1, 0.2]
+
+    async def query(vector: list[float], top_k: int, intent: str | None) -> list[SimpleNamespace]:
+        clock["t"] += 0.125 if intent else 0.25
+        return [] if intent else [SimpleNamespace(id="p1", score=0.9, payload={"text": "Phí ship 30.000đ", "source": "kb.md"})]
+
+    monkeypatch.setattr(kn.settings, "llm_api_key", "sk-test")
+    monkeypatch.setattr(kn.rag_service, "embed_text", embed)
+    monkeypatch.setattr(kn.rag_service, "_query", query)
+    out = await kn.knowledge_node({"input": "phí ship bao nhiêu", "intent": "shipping"})
+    timings = out["trace"][0]["detail"]["timings"]
+    assert list(timings) == ["retrieval_ms", "embed_ms", "qdrant_ms", "order_ms"]
+    assert (timings["embed_ms"], timings["qdrant_ms"]) == (500, 375)  # 375 = 125 + 250: cộng dồn hai lượt query
+    assert kn.rag_service.take_search_timings() == {}  # đọc xong là xoá — lượt sau không mang số cũ
