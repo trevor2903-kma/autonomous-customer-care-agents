@@ -371,7 +371,6 @@ class _PersistResult:
     discarded: bool = False  # CAS thua: status đã đổi dưới chân → KHÔNG lưu gì của lượt
     message_id: uuid.UUID | None = None
     status_now: str | None = None
-    assigned_admin_id: uuid.UUID | None = None
 
 
 async def _persist_turn(conv_id: uuid.UUID | None, plan: TurnPlan) -> _PersistResult:
@@ -398,8 +397,7 @@ async def _persist_turn(conv_id: uuid.UUID | None, plan: TurnPlan) -> _PersistRe
                 lost_cas = True
                 await s.rollback()
                 state = await conversation_service.get_status_and_admin(s, conv_id)
-                status_now, holder = state if state is not None else (None, None)
-                return _PersistResult(discarded=True, status_now=status_now, assigned_admin_id=holder)
+                return _PersistResult(discarded=True, status_now=state[0] if state is not None else None)
             message_id = None
             if plan.ai_message is not None:
                 message = await conversation_service.insert_message(
@@ -519,7 +517,24 @@ async def _find_or_open_case(st: _CustomerSession) -> tuple[str | None, str | No
         return None, None
     if conv.id != st.conv_id:
         _switch_conversation(st, conv.id)
+    for other in list(_live_sessions.get(st.customer_id, ())):
+        if other is not st and other.conv_id != conv.id:
+            _switch_conversation(other, conv.id)  # socket khác của khách chưa ở ca này — xem `_live_sessions`
     return conv.status, conv.current_intent
+
+
+# Socket khách ĐANG SỐNG theo khách (in-process): lượt mở / chuyển sang ca đang mở thì gắn luôn các socket KHÁC
+# của khách chưa ở ca đó — nối lúc chưa có ca (tạo lười) hoặc còn ở ca cũ đã đóng — để chúng nhận frame hub của ca:
+# trả lời của lượt mà socket gốc đã chết, tin gõ ở tab khác (IDEM-XC.1, contract §4.1). Ghi danh lúc nối, gỡ lúc đóng.
+_live_sessions: dict[uuid.UUID, set[_CustomerSession]] = {}
+
+
+def _untrack(st: _CustomerSession) -> None:
+    sessions = _live_sessions.get(st.customer_id)
+    if sessions is not None:
+        sessions.discard(st)
+        if not sessions:
+            del _live_sessions[st.customer_id]
 
 
 async def _resolve_case(st: _CustomerSession) -> tuple[str | None, str | None]:
@@ -645,10 +660,8 @@ async def _turn(
     t_send = time.perf_counter()
     if result.discarded:
         # Admin tiếp quản / đóng ca trong lúc pipeline chạy → AI KHÔNG nói chen; báo status hiện tại (FE gỡ typing).
-        await _send(
-            websocket,
-            {"type": "status", "status": _sid(result.status_now), "assigned_admin_id": _sid(result.assigned_admin_id)},
-        )
+        # Khách KHÔNG nhận id tài khoản nhân viên (`sub` của token admin) — `assigned_admin_id` luôn null.
+        await _send(websocket, {"type": "status", "status": _sid(result.status_now), "assigned_admin_id": None})
     elif persist_failed:
         log.error("persist turn failed twice (conv=%s) → %s thay bằng câu không hứa hẹn", st.conv_id, plan.frame)
         await _send(websocket, {"type": "reply", "content": FALLBACK_REPLY, "message_id": None})
@@ -766,6 +779,10 @@ async def _hub_listener(websocket: WebSocket, st: _CustomerSession) -> None:
         payload = await queue.get()
         if payload is _SWITCH:
             continue  # ca đã chuyển → đọc st.queue mới ở vòng sau
+        if payload.get("type") == "status" and payload.get("assigned_admin_id") is not None:
+            # Khách KHÔNG nhận id tài khoản nhân viên đang giữ ca (`sub` của token admin — FE khách không dùng). Dict hub
+            # dùng CHUNG cho mọi subscriber (socket admin cần trường này) → tạo bản mới, KHÔNG sửa tại chỗ.
+            payload = {**payload, "assigned_admin_id": None}
         await websocket.send_json(payload)
 
 
@@ -816,26 +833,28 @@ async def chat_ws(websocket: WebSocket) -> None:
 
     display = await _load_customer_display(customer_id)
     st = _CustomerSession(customer_id, display)
-
-    # Mô hình hội thoại theo khách: chỉ TÌM ca đang mở. KHÔNG mở ca mới ở đây — ca sinh LƯỜI ở tin nhắn
-    # ĐẦU TIÊN (task lượt), nếu không thì mỗi lần khách mở /chat rồi thoát lại đẻ một ca rỗng.
+    # Ghi danh TRƯỚC khi tìm ca: lượt của tab khác mở ca trong lúc đọc DB bên dưới vẫn gắn được socket này.
+    _live_sessions.setdefault(customer_id, set()).add(st)
     try:
-        async with AsyncSessionLocal() as s:
-            conv = await conversation_service.get_active_conversation_for_customer(s, customer_id)
-    except Exception as exc:  # noqa: BLE001 — DB lỗi → chat AI-only (KHÔNG persist/hub/status-gate).
-        log.warning("resolve conversation failed (ai-only): %s", exc)
-        await _customer_ai_only(websocket, customer_id)
-        return
+        # Mô hình hội thoại theo khách: chỉ TÌM ca đang mở. KHÔNG mở ca mới ở đây — ca sinh LƯỜI ở tin nhắn
+        # ĐẦU TIÊN (task lượt), nếu không thì mỗi lần khách mở /chat rồi thoát lại đẻ một ca rỗng.
+        try:
+            async with AsyncSessionLocal() as s:
+                conv = await conversation_service.get_active_conversation_for_customer(s, customer_id)
+        except Exception as exc:  # noqa: BLE001 — DB lỗi → chat AI-only (KHÔNG persist/hub/status-gate).
+            log.warning("resolve conversation failed (ai-only): %s", exc)
+            _untrack(st)  # nhánh degrade không đọc hub → lượt của tab khác đừng gắn nó vào ca
+            await _customer_ai_only(websocket, customer_id)
+            return
 
-    if conv is not None:
-        _switch_conversation(st, conv.id)  # đăng ký hub cho ca đang mở (lịch sử nạp qua GET /me/thread)
-    await websocket.send_json({"type": "system", "message": "connected"})
-    log.info("customer WS connected (customer=%s conv=%s)", customer_id, st.conv_id)
+        if conv is not None and conv.id != st.conv_id:
+            _switch_conversation(st, conv.id)  # đăng ký hub cho ca đang mở (lịch sử nạp qua GET /me/thread)
+        await websocket.send_json({"type": "system", "message": "connected"})
+        log.info("customer WS connected (customer=%s conv=%s)", customer_id, st.conv_id)
 
-    # Realtime 2 chiều: reader + hub-listener song song (queue theo ca hiện tại của st).
-    reader = asyncio.create_task(_customer_reader(websocket, st))
-    listener = asyncio.create_task(_hub_listener(websocket, st))
-    try:
+        # Realtime 2 chiều: reader + hub-listener song song (queue theo ca hiện tại của st).
+        reader = asyncio.create_task(_customer_reader(websocket, st))
+        listener = asyncio.create_task(_hub_listener(websocket, st))
         _, pending = await asyncio.wait({reader, listener}, return_when=asyncio.FIRST_COMPLETED)
         for task in pending:  # một task xong (rớt kết nối) → huỷ task còn lại
             task.cancel()
@@ -843,6 +862,7 @@ async def chat_ws(websocket: WebSocket) -> None:
     finally:
         # Task lượt đang chạy KHÔNG bị huỷ — nó chạy nốt + lưu; `closed` chặn nó đăng ký queue cho socket chết.
         st.closed = True
+        _untrack(st)
         if st.conv_key is not None and st.queue is not None:
             hub.unregister(st.conv_key, st.queue)
         log.info("customer WS closed (conv=%s)", st.conv_id)

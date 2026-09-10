@@ -128,11 +128,13 @@ async def env(monkeypatch: pytest.MonkeyPatch) -> Any:
     monkeypatch.setattr(chat, "run_pipeline", pipe)
     monkeypatch.setattr(chat, "_chat_limiter", SlidingWindowLimiter(1000, 60))
     chat._recent_client_ids.clear()
+    chat._live_sessions.clear()
     yield SimpleNamespace(store=store, hub=hub, audits=audits, pipe=pipe)
     if pipe.gate is not None:
         pipe.gate.set()
     await asyncio.wait_for(asyncio.gather(*list(chat._turn_tasks), return_exceptions=True), 2)
     chat._recent_client_ids.clear()
+    chat._live_sessions.clear()
 
 
 def _msg(content: str, cid: str | None = None) -> str:
@@ -411,8 +413,8 @@ async def test_status_change_mid_pipeline_discards_the_turn(env: Any, status_now
     await until(lambda: bool(ws.frames("status")))
     await _settle((ws, task))
 
-    holder = str(admin) if status_now == S.HUMAN_HANDLING else None
-    assert ws.frames("status") == [{"type": "status", "status": status_now, "assigned_admin_id": holder}]
+    # Khách không nhận id tài khoản nhân viên đang giữ ca (luôn null) — chỉ socket admin mang nó.
+    assert ws.frames("status") == [{"type": "status", "status": status_now, "assigned_admin_id": None}]
     assert ws.frames("reply") == [] and ws.frames("handoff") == []  # AI KHÔNG nói chen vào ca người đang giữ
     assert env.store.msgs(cid, "ai") == [] and env.store.convs[cid]["status"] == status_now
     audit = env.audits[0]
@@ -659,6 +661,67 @@ async def test_resend_of_never_persisted_message_is_not_swallowed(
 
     assert ws2.frames("ack")[0]["duplicate"] is False  # KHÔNG bị nuốt thành bản trùng (mất tin âm thầm)
     assert [m.client_msg_id for m in _customer_msgs(env.store, customer)] == ["u-1"] and len(env.pipe.calls) == 2
+
+
+# ── Socket chưa có ca được gắn khi lượt của tab khác mở ca (IDEM-XC.1, contract §4.1) ──
+async def test_socket_without_a_case_is_attached_when_another_tab_opens_it(env: Any) -> None:
+    customer = uuid.uuid4()  # khách mới: cả hai socket nối lúc chưa có ca nào để gắn
+    a, task_a = await _open(env, customer, name="a")
+    b, task_b = await _open(env, customer, name="b")
+    b.push(_msg("ship về Đà Nẵng bao nhiêu", "b-1"))
+    await until(lambda: len(a.frames("message")) == 2)
+
+    [conv] = _customer_convs(env.store, customer)
+    asked, answered = env.store.msgs(conv["id"], "customer")[0], env.store.msgs(conv["id"], "ai")[0]
+    assert a.frames("message") == [
+        {"type": "message", "from": "customer", "content": "ship về Đà Nẵng bao nhiêu",
+         "message_id": str(asked.id), "client_msg_id": "b-1"},
+        {"type": "message", "from": "ai", "content": REPLY, "message_id": str(answered.id), "client_msg_id": None},
+    ]
+    await _settle((a, task_a), (b, task_b))
+
+
+async def test_reply_of_the_turn_that_opens_the_case_reaches_a_socket_opened_meanwhile(
+    env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tin ĐẦU của khách mới đang mở ca (Neon chậm) thì socket rớt; FE nối lại TRƯỚC khi ca có trong DB → socket mới
+    không có ca để gắn lúc nối. Lượt mở ca xong phải gắn luôn socket đó: tiếng vọng + trả lời tới qua hub."""
+    customer = uuid.uuid4()
+    opening = asyncio.Event()
+    real_open = conversation_service.open_case_for_customer
+
+    async def slow_open(session: Any, customer_id: uuid.UUID, *, display: str | None = None) -> Any:
+        await opening.wait()
+        return await real_open(session, customer_id, display=display)
+
+    monkeypatch.setattr(conversation_service, "open_case_for_customer", slow_open)
+    old, task_old = await _open(env, customer, name="old")
+    old.push(_msg("ship về Đà Nẵng bao nhiêu", "r-1"))
+    await until(lambda: bool(old.frames("ack")))
+    old.drop()
+    await asyncio.wait_for(task_old, 2)  # socket cũ chết; lượt vẫn đang chờ mở ca
+    new, task_new = await _open(env, customer, name="new")
+    opening.set()
+    await until(lambda: len(new.frames("message")) == 2)
+
+    [conv] = _customer_convs(env.store, customer)
+    answered = env.store.msgs(conv["id"], "ai")[0]
+    assert [(f["from"], f["client_msg_id"]) for f in new.frames("message")] == [("customer", "r-1"), ("ai", None)]
+    assert new.frames("message")[1]["message_id"] == str(answered.id)
+    await _settle((new, task_new))
+
+
+async def test_customer_socket_never_sees_the_staff_account_id(env: Any) -> None:
+    customer, admin = uuid.uuid4(), uuid.uuid4()
+    cid = env.store.add_conv(customer_id=customer, status=S.REPLIED)
+    ws, task = await _open(env, customer)
+    viewer = env.hub.register(str(cid))  # socket admin đang mở ca
+    # Route takeover phát status KÈM người giữ ca: admin cần nó, khách thì không (id tài khoản nhân viên = `sub` token).
+    await env.hub.notify_status(cid, status=S.HUMAN_HANDLING, assigned_admin_id=admin)
+    await until(lambda: bool(ws.frames("status")))
+    assert ws.frames("status") == [{"type": "status", "status": "HUMAN_HANDLING", "assigned_admin_id": None}]
+    assert drain(viewer) == [{"type": "status", "status": "HUMAN_HANDLING", "assigned_admin_id": str(admin)}]
+    await _settle((ws, task))
 
 
 async def test_rate_limited_message_gets_error_frame_and_is_not_processed(
