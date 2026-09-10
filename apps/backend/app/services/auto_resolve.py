@@ -1,7 +1,9 @@
 """Auto-resolve (09c) – tự nhắc rồi đóng ca phía-AI im lặng quá ngưỡng.
 
 Lõi `classify_idle` THUẦN (offline-testable): route trên trạng thái + hai mức thời gian.
-Sweep (I/O) thêm ở task sau. Chỉ REPLIED/AWAITING_CUSTOMER; các trạng thái khác NOOP.
+Sweep (I/O): lọc ứng viên trong MỘT session ngắn, rồi mỗi ca cần hành động chạy trong session NGẮN riêng — CAS + tin
+nhắc/đóng CÙNG một transaction, commit rồi mới phát hub (audit v2, OPS-01.1/OPS-01.3).
+Chỉ REPLIED/AWAITING_CUSTOMER; các trạng thái khác NOOP.
 """
 
 from __future__ import annotations
@@ -11,14 +13,14 @@ from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
 from sqlalchemy import or_, select, update
-from sqlalchemy.sql import Select
+from sqlalchemy.sql import Select, Update
 
 from ..api.ws.hub import hub
 from ..core.config import settings
 from ..core.database import AsyncSessionLocal
 from ..core.logging import get_logger
 from ..models.conversation import Conversation
-from ..models.enums import ConversationStatus
+from ..models.enums import ConversationStatus, MessageSender
 from ..services import conversation_service, gate_service
 
 log = get_logger("auto_resolve")
@@ -71,14 +73,6 @@ def classify_idle(
     return IdleAction.NOOP
 
 
-async def _broadcast_ai(conv_id, content: str) -> None:
-    """Dội tin hệ thống lên hub (admin/khách đang mở thấy realtime). Guarded — hub lỗi KHÔNG chặn sweep."""
-    try:
-        await hub.publish(str(conv_id), {"type": "message", "from": "ai", "content": content})
-    except Exception as exc:  # noqa: BLE001
-        log.warning("auto-resolve broadcast failed (bỏ qua): %s", exc)
-
-
 def _build_candidate_stmt(*, now: datetime, t1_minutes: int, limit: int) -> Select:
     """Ứng viên sweep: CHỈ ca có thể cần hành động — im lặng ≥ T1 (chưa nhắc) HOẶC đã nhắc (để RESOLVE),
     giới hạn `limit` (sub-project A). Thu hẹp trong SQL để KHÔNG nạp mọi ca REPLIED/AWAITING_CUSTOMER mỗi vòng;
@@ -98,6 +92,61 @@ def _build_candidate_stmt(*, now: datetime, t1_minutes: int, limit: int) -> Sele
     )
 
 
+def _remind_stmt(conv_id, *, now: datetime, t1_minutes: int) -> Update:
+    """CAS nhánh REMIND — guard: status vẫn _SWEEPABLE (chưa bị admin takeover), CHƯA nhắc, VÀ vẫn im lặng ≥ T1 đo
+    trên CHÍNH row đang ghi (OPS-01.2): khách nhắn xen giữa lúc SELECT ứng viên và lúc ghi (tin khách đẩy
+    `last_message_at`) → rowcount 0 → KHÔNG nhắc. Status + mốc đã-nhắc thôi thì không đủ: tin khách không đổi status."""
+    return (
+        update(Conversation)
+        .where(
+            Conversation.id == conv_id,
+            Conversation.status.in_(tuple(_SWEEPABLE)),
+            Conversation.auto_resolve_reminded_at.is_(None),
+            Conversation.last_message_at <= now - timedelta(minutes=t1_minutes),
+        )
+        .values(auto_resolve_reminded_at=now)
+    )
+
+
+def _resolve_stmt(conv_id) -> Update:
+    """CAS nhánh RESOLVE — guard kép: status vẫn _SWEEPABLE (chưa bị admin takeover) VÀ mốc đã-nhắc vẫn còn (chưa
+    bị tin khách reset về None khi khách nhắn lại) — cả hai race đều tự loại ở đây."""
+    return (
+        update(Conversation)
+        .where(
+            Conversation.id == conv_id,
+            Conversation.status.in_(tuple(_SWEEPABLE)),
+            Conversation.auto_resolve_reminded_at.is_not(None),
+        )
+        .values(status=ConversationStatus.RESOLVED)
+    )
+
+
+async def _act(conv: Conversation, action: IdleAction, *, now: datetime, t1_minutes: int) -> bool:
+    """Hành động trên MỘT ca, session NGẮN riêng: CAS + tin nhắc/đóng trong CÙNG một transaction (OPS-01.1) — hoặc cả
+    hai cùng landing, hoặc cả hai cùng rollback và vòng sau thử lại sạch. Chỉ phát hub SAU commit. True = đã làm."""
+    remind = action is IdleAction.REMIND
+    stmt = _remind_stmt(conv.id, now=now, t1_minutes=t1_minutes) if remind else _resolve_stmt(conv.id)
+    content = REMIND_TEMPLATE if remind else RESOLVE_TEMPLATE
+    async with AsyncSessionLocal() as s:
+        result = await s.execute(stmt)
+        if result.rowcount != 1:
+            return False  # bất biến đã đổi (admin takeover / khách vừa nhắn) → bỏ qua; đóng session = rollback
+        # Tin hệ thống KHÔNG bump last_message_at: đồng hồ im-lặng của khách giữ nguyên để T2 đo đúng.
+        message = await conversation_service.insert_message(
+            s, conv.id, sender=MessageSender.AI, content=content, bump_activity=False
+        )
+        await s.commit()
+    # Sole-egress: câu cố định (không LLM) tới khách + admin đang mở ca; hub lỗi KHÔNG chặn sweep (helper tự guard).
+    await hub.notify_message(conv.id, sender=MessageSender.AI, content=content, message_id=message.id)
+    if not remind:
+        # Khách rời "đang chờ"/"đang kiểm tra"; màn admin + inbox cập nhật trạng thái đã đóng.
+        await hub.notify_status(
+            conv.id, status=ConversationStatus.RESOLVED, assigned_admin_id=conv.assigned_admin_id
+        )
+    return True
+
+
 async def run_sweep_once(now: datetime) -> int:
     """Một vòng quét. Gate OFF → 0. Lọc ứng viên (im lặng ≥ T1 hoặc đã nhắc, LIMIT), rồi classify_idle từng ca."""
     try:
@@ -108,7 +157,6 @@ async def run_sweep_once(now: datetime) -> int:
     if not snap.auto_resolve_enabled:
         return 0
 
-    acted = 0
     async with AsyncSessionLocal() as s:
         rows = list(
             (
@@ -123,56 +171,25 @@ async def run_sweep_once(now: datetime) -> int:
             .scalars()
             .all()
         )
-        # Đọc conv.status/last_message_at/auto_resolve_reminded_at của các row SAU khi row trước đã commit —
-        # an toàn vì AsyncSessionLocal dựng với expire_on_commit=False (core/database.py), object KHÔNG bị
-        # expire giữa vòng lặp.
-        for conv in rows:
-            try:
-                action = classify_idle(
-                    status=conv.status,
-                    last_message_at=conv.last_message_at,
-                    reminded_at=conv.auto_resolve_reminded_at,
-                    now=now,
-                    t1_minutes=snap.auto_resolve_minutes,
-                    t2_minutes=snap.auto_resolve_grace_minutes,
-                )
-                if action is IdleAction.REMIND:
-                    # UPDATE có điều kiện — chặn race: admin takeover (status đổi khỏi _SWEEPABLE) hoặc
-                    # khách nhắn lại trước khi commit này chạy. rowcount == 0 → bất biến đã đổi, bỏ qua.
-                    result = await s.execute(
-                        update(Conversation)
-                        .where(
-                            Conversation.id == conv.id,
-                            Conversation.status.in_(tuple(_SWEEPABLE)),
-                            Conversation.auto_resolve_reminded_at.is_(None),
-                        )
-                        .values(auto_resolve_reminded_at=now)
-                    )
-                    await s.commit()
-                    if result.rowcount == 1:
-                        await conversation_service.send_auto_message(s, conv.id, content=REMIND_TEMPLATE)
-                        await _broadcast_ai(conv.id, REMIND_TEMPLATE)
-                        acted += 1
-                elif action is IdleAction.RESOLVE:
-                    # Guard kép: status vẫn _SWEEPABLE (chưa bị admin takeover) VÀ đã-nhắc vẫn còn (chưa bị
-                    # add_message reset về None do khách nhắn lại) — cả hai race đều tự loại ở đây.
-                    result = await s.execute(
-                        update(Conversation)
-                        .where(
-                            Conversation.id == conv.id,
-                            Conversation.status.in_(tuple(_SWEEPABLE)),
-                            Conversation.auto_resolve_reminded_at.is_not(None),
-                        )
-                        .values(status=ConversationStatus.RESOLVED)
-                    )
-                    await s.commit()
-                    if result.rowcount == 1:
-                        await conversation_service.send_auto_message(s, conv.id, content=RESOLVE_TEMPLATE)
-                        await _broadcast_ai(conv.id, RESOLVE_TEMPLATE)
-                        acted += 1
-            except Exception as exc:  # noqa: BLE001 — cô lập 1 ca lỗi, KHÔNG làm hỏng cả vòng quét.
-                await s.rollback()  # session dùng chung cả vòng — dọn PendingRollbackError để ca sau chạy tiếp.
-                log.warning("auto-resolve sweep: ca %s lỗi (bỏ qua): %s", conv.id, exc)
+    # Session ứng viên đã đóng — KHÔNG giữ một connection Neon suốt cả batch (OPS-01.3). Các cột đã nạp đủ nên đọc
+    # thuộc tính của object (đã tách khỏi session) vẫn an toàn, không lazy-load.
+    acted = 0
+    for conv in rows:
+        try:
+            action = classify_idle(
+                status=conv.status,
+                last_message_at=conv.last_message_at,
+                reminded_at=conv.auto_resolve_reminded_at,
+                now=now,
+                t1_minutes=snap.auto_resolve_minutes,
+                t2_minutes=snap.auto_resolve_grace_minutes,
+            )
+            if action is not IdleAction.NOOP and await _act(
+                conv, action, now=now, t1_minutes=snap.auto_resolve_minutes
+            ):
+                acted += 1
+        except Exception as exc:  # noqa: BLE001 — cô lập 1 ca lỗi (CAS đã rollback cùng tin), KHÔNG làm hỏng vòng quét.
+            log.warning("auto-resolve sweep: ca %s lỗi (bỏ qua): %s", conv.id, exc)
     if acted:
         log.info("auto-resolve sweep: %d ca đã xử lý", acted)
     return acted
