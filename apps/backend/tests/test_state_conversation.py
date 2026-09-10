@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 from typing import Any
 
 from sqlalchemy.dialects import postgresql
@@ -70,6 +71,29 @@ def test_transition_stmt_writes_current_intent_only_when_given() -> None:
     )
     assert "current_intent=" in sql.split("WHERE")[0]
     assert params["current_intent"] == "refund"
+
+
+def test_transition_stmt_can_require_the_reviewed_draft() -> None:
+    kwargs: dict[str, Any] = dict(to=ConversationStatus.REPLIED, allowed_from=[ConversationStatus.PENDING_APPROVAL])
+    sql, params = _sql(cs.transition_stmt(CONV, **kwargs, expected_draft="Dạ nháp D1"))
+    where = sql.split("WHERE")[1]
+    # Nháp so trên CHÍNH row đang ghi (ABA — FE-03.2): PENDING(D1) → REPLIED → PENDING(D2) không lọt màn cũ.
+    assert "conversation.escalation_card ->> " in where
+    assert "suggested_reply" in params.values() and "Dạ nháp D1" in params.values()
+    assert "escalation_card" not in _sql(cs.transition_stmt(CONV, **kwargs))[0]  # không yêu cầu → không kiểm
+
+
+async def test_get_status_and_admin_can_lock_the_row() -> None:
+    class _Rows(_Session):
+        async def execute(self, stmt: Any) -> Any:
+            self.executed.append(stmt)
+            return SimpleNamespace(first=lambda: None)
+
+    s = _Rows()
+    assert await cs.get_status_and_admin(s, CONV, for_update=True) is None
+    assert await cs.get_status_and_admin(s, CONV) is None
+    locked, plain = (_sql(stmt)[0] for stmt in s.executed)
+    assert locked.endswith("FOR UPDATE") and "FOR UPDATE" not in plain
 
 
 class _Result:

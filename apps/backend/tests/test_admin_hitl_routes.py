@@ -11,12 +11,12 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 
 from app.api.routes import admin as routes
 from app.api.ws.hub import INBOX_KEY, ConnectionHub
 from app.models.enums import ConversationStatus as S
-from app.schemas.admin import ApproveRequest
+from app.schemas.admin import ApproveRequest, RejectRequest
 from app.schemas.gate import GateConfigUpdate
 from app.services import conversation_service, gate_service
 from tests.test_state_support import FakeStore, drain, install_service_fakes
@@ -49,9 +49,14 @@ def _admin() -> SimpleNamespace:
     return SimpleNamespace(id=uuid.uuid4())
 
 
-async def _approve(store: FakeStore, cid: uuid.UUID, admin: Any = None, content: str | None = None) -> Any:
+async def _approve(
+    store: FakeStore, cid: uuid.UUID, admin: Any = None, content: str | None = None, expected: str | None = None
+) -> Any:
     return await routes.approve_draft(
-        cid, ApproveRequest(content=content), session=store.session(), admin=admin or _admin()
+        cid,
+        ApproveRequest(content=content, expected_draft=expected),
+        session=store.session(),
+        admin=admin or _admin(),
     )
 
 
@@ -137,6 +142,68 @@ async def test_approve_empty_draft_is_still_400(store: FakeStore) -> None:
     assert await _code(_approve(store, cid)) == 400  # hành vi cũ giữ nguyên: không bao giờ gửi tin rỗng
 
 
+# ── ABA: PENDING(D1) → REPLIED → PENDING(D2), màn cũ còn D1 (FE-03.1 / FE-03.2) ─
+async def test_stale_approve_after_aba_is_409_and_the_new_draft_survives(store: FakeStore) -> None:
+    a, b = _admin(), _admin()
+    d2 = "Dạ đơn 123456 được hoàn tiền trong 3-5 ngày ạ."
+    cid = store.add_conv(status=S.PENDING_APPROVAL, card={"suggested_reply": DRAFT})
+    customer_q = store.hub.register(str(cid))  # type: ignore[attr-defined]
+    await _approve(store, cid, a, expected=DRAFT)
+    # Khách hỏi tiếp, gate giữ nháp mới → ca PENDING_APPROVAL LẦN NỮA, card mang D2.
+    store.convs[cid].update(status=S.PENDING_APPROVAL, escalation_card={"suggested_reply": d2})
+    drain(customer_q)
+
+    with pytest.raises(HTTPException) as exc:  # admin B bấm duyệt trên màn cũ (ô nhập còn D1)
+        await _approve(store, cid, b, content=DRAFT, expected=DRAFT)
+    assert exc.value.status_code == 409 and exc.value.detail == routes.CONFLICT_STALE_DRAFT
+    assert drain(customer_q) == [] and [m.content for m in store.msgs(cid, "ai")] == [DRAFT]  # KHÔNG gửi trùng D1
+    assert store.convs[cid]["status"] == S.PENDING_APPROVAL  # D2 vẫn chờ duyệt, không bị nuốt
+
+    await _approve(store, cid, b, expected=d2)  # tải lại → thấy D2 → duyệt được
+    assert [m.content for m in store.msgs(cid, "ai")] == [DRAFT, d2]
+
+
+async def test_draft_replaced_between_read_and_cas_is_409(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cid = store.add_conv(status=S.PENDING_APPROVAL, card={"suggested_reply": "Dạ nháp mới ạ."})
+    real = conversation_service.get_conversation
+
+    async def stale_read(session: Any, conversation_id: uuid.UUID) -> Any:
+        conv = await real(session, conversation_id)
+        conv.escalation_card = {"suggested_reply": DRAFT}  # route đọc lúc card còn nháp cũ; nháp mới ghi ngay sau
+        return conv
+
+    monkeypatch.setattr(conversation_service, "get_conversation", stale_read)
+    customer_q = store.hub.register(str(cid))  # type: ignore[attr-defined]
+    with pytest.raises(HTTPException) as exc:
+        await _approve(store, cid, expected=DRAFT)
+    # Kiểm ở route qua, nhưng CAS so nháp trên row → thua → 409; không lưu, không gửi, không audit.
+    assert exc.value.status_code == 409 and exc.value.detail == routes.CONFLICT_CHANGED
+    assert store.msgs(cid) == [] and drain(customer_q) == [] and store.admin_audit() == []
+
+
+async def test_stale_reject_of_a_newer_draft_is_409_and_bodyless_reject_still_works(store: FakeStore) -> None:
+    cid = store.add_conv(status=S.PENDING_APPROVAL, card={"suggested_reply": "Dạ nháp mới ạ."})
+    with pytest.raises(HTTPException) as exc:
+        await routes.reject_draft(cid, RejectRequest(expected_draft=DRAFT), session=store.session(), admin=_admin())
+    assert exc.value.status_code == 409
+    assert store.convs[cid]["status"] == S.PENDING_APPROVAL and store.admin_audit() == []
+
+    await _act(store, "reject", cid, _admin())  # client cũ: không body → không kiểm nháp (như trước)
+    assert store.convs[cid]["status"] == S.IN_HUMAN_QUEUE
+
+
+def test_reject_body_is_optional_for_old_clients() -> None:
+    app = FastAPI()
+    app.include_router(routes.router)
+    paths = app.openapi()["paths"]
+    reject = paths["/admin/conversations/{conversation_id}/reject"]["post"]
+    approve = paths["/admin/conversations/{conversation_id}/approve"]["post"]
+    assert reject["requestBody"].get("required") is not True  # POST không body (client cũ) → KHÔNG 422
+    assert approve["requestBody"]["required"] is True
+
+
 # ── Tiếp quản / đóng ca / từ chối (FE-03.2, GRAPH-02.4, FE-03.3) ─────────────
 async def test_takeover_by_second_admin_is_409_same_admin_is_200(store: FakeStore) -> None:
     a, b = _admin(), _admin()
@@ -162,6 +229,18 @@ async def test_resolve_of_another_admins_case_is_409(store: FakeStore) -> None:
     # UX-02.3: resolve PHÁT frame status → khách rời "đang chờ nhân viên" ngay.
     assert drain(customer_q) == [{"type": "status", "status": "RESOLVED", "assigned_admin_id": str(a.id)}]
     assert await _code(_act(store, "resolve", cid, a)) == 409  # đã đóng
+
+
+async def test_takeover_and_reject_publish_status_frames(store: FakeStore) -> None:
+    a = _admin()
+    cid = store.add_conv(status=S.PENDING_APPROVAL, card={"suggested_reply": DRAFT})
+    viewer_q = store.hub.register(str(cid))  # type: ignore[attr-defined]
+    await _act(store, "reject", cid, a)
+    assert drain(viewer_q) == [{"type": "status", "status": "IN_HUMAN_QUEUE", "assigned_admin_id": None}]
+    await _act(store, "takeover", cid, a)
+    assert drain(viewer_q) == [{"type": "status", "status": "HUMAN_HANDLING", "assigned_admin_id": str(a.id)}]
+    await _act(store, "takeover", cid, a)  # bấm lại (idempotent) → KHÔNG phát lại
+    assert drain(viewer_q) == []
 
 
 async def test_reject_never_pulls_a_handled_case_back_to_queue(store: FakeStore) -> None:

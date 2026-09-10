@@ -24,6 +24,7 @@ from ...schemas.admin import (
     ApproveRequest,
     ConversationListItem,
     EscalationOut,
+    RejectRequest,
 )
 from ...schemas.gate import GateConfigOut, GateConfigUpdate, GateIntentRuleSchema
 from ...services import audit_service, conversation_service, escalation_service, gate_service
@@ -45,6 +46,7 @@ CONFLICT_NOT_PENDING = "Nháp không còn chờ duyệt — ca đã được x�
 CONFLICT_HELD = "Ca đang do nhân viên khác xử lý."
 CONFLICT_CLOSED = "Ca đã đóng."
 CONFLICT_CHANGED = "Trạng thái ca vừa thay đổi — hãy tải lại."
+CONFLICT_STALE_DRAFT = "Nháp đã đổi (khách vừa nhắn thêm) — hãy tải lại để xem nháp mới."
 
 
 def transition_conflict(
@@ -84,11 +86,12 @@ async def _transition(
     state: tuple[str, uuid.UUID | None],
     assign: bool = False,
     audit_extra: dict[str, Any] | None = None,
+    expected_draft: str | None = None,
 ) -> None:
     """Bảng chuyển + CAS trên status VỪA ĐỌC + dòng audit, trong transaction của caller (caller commit).
 
-    Không hợp lệ / thua CAS (status đổi giữa lúc đọc và ghi) → 409; ca biến mất giữa chừng → 404. Detail audit chỉ
-    có id + status (+ cờ) — KHÔNG chép nội dung tin/nháp.
+    Không hợp lệ / thua CAS (status — hoặc nháp `expected_draft` — đổi giữa lúc đọc và ghi) → 409; ca biến mất giữa
+    chừng → 404. Detail audit chỉ có id + status (+ cờ) — KHÔNG chép nội dung tin/nháp.
     """
     from_status, holder = state
     conflict = transition_conflict(action, from_status, holder, admin_id)
@@ -100,6 +103,7 @@ async def _transition(
             allowed_from=(from_status,),
             assigned_admin_id=admin_id if assign else None,
             not_held_by_other_than=admin_id,
+            expected_draft=expected_draft,
         )
         if ok:
             await audit_service.write_audit(
@@ -255,6 +259,11 @@ async def approve_draft(
     content = (payload.content or "").strip() or draft
     if not content:
         raise HTTPException(status_code=400, detail="no draft to send")
+    # ABA (FE-03.2): PENDING(D1) → REPLIED → PENDING(D2) vẫn qua bảng chuyển — nháp màn admin đã xem phải là nháp
+    # HIỆN TẠI: kiểm ở đây (lý do rõ) và lại trong CAS (không đua giữa lúc đọc và lúc ghi).
+    expected = payload.expected_draft or None
+    if expected is not None and expected != draft:
+        raise HTTPException(status_code=409, detail=CONFLICT_STALE_DRAFT)
     holder = conv.assigned_admin_id
     await _transition(
         session,
@@ -264,6 +273,7 @@ async def approve_draft(
         to=ConversationStatus.REPLIED,
         state=(conv.status, holder),
         audit_extra={"edited": content.strip() != draft.strip()},
+        expected_draft=expected,
     )
     message = await conversation_service.insert_message(
         session, conversation_id, sender=MessageSender.AI, content=content
@@ -278,14 +288,21 @@ async def approve_draft(
 @router.post("/conversations/{conversation_id}/reject", response_model=AdminConversationOut)
 async def reject_draft(
     conversation_id: uuid.UUID,
+    payload: RejectRequest | None = None,
     session: AsyncSession = Depends(get_session),
     admin: User = Depends(require_admin),
 ) -> AdminConversationOut:
     """Từ chối nháp (08a) → IN_HUMAN_QUEUE (admin tự tiếp quản xử lý). Chỉ từ PENDING_APPROVAL — không kéo ngược
-    ca đang có người xử lý về hàng đợi (FE-03.3) → 409."""
+    ca đang có người xử lý về hàng đợi (FE-03.3) → 409. Có `expected_draft` mà card đã sang nháp mới (ABA) → 409."""
     state = await _state_or_404(session, conversation_id)
     await _transition(
-        session, conversation_id, admin.id, action="reject", to=ConversationStatus.IN_HUMAN_QUEUE, state=state
+        session,
+        conversation_id,
+        admin.id,
+        action="reject",
+        to=ConversationStatus.IN_HUMAN_QUEUE,
+        state=state,
+        expected_draft=(payload.expected_draft if payload else None) or None,
     )
     await session.commit()
     await hub.notify_status(conversation_id, status=ConversationStatus.IN_HUMAN_QUEUE, assigned_admin_id=state[1])

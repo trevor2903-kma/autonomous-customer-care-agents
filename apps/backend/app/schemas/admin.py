@@ -36,9 +36,19 @@ class ConversationListItem(BaseModel):
 
 
 class ApproveRequest(BaseModel):
-    """Duyệt nháp (08a): `content` = nháp đã sửa (nếu admin chỉnh); bỏ trống → dùng suggested_reply trong card."""
+    """Duyệt nháp (08a): `content` = nháp đã sửa (nếu admin chỉnh); bỏ trống → dùng suggested_reply trong card.
+
+    `expected_draft` = `suggested_reply` của card mà màn admin ĐANG hiển thị (FE-03.2, chống ABA): card đã sang nháp
+    mới → 409. Bỏ trống / rỗng → không kiểm (client cũ)."""
 
     content: str | None = None
+    expected_draft: str | None = None
+
+
+class RejectRequest(BaseModel):
+    """Từ chối nháp (08a) — body TUỲ CHỌN (client cũ POST không body). `expected_draft` như `ApproveRequest`."""
+
+    expected_draft: str | None = None
 
 
 class AdminConversationOut(BaseModel):

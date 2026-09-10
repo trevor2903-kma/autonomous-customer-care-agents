@@ -68,9 +68,14 @@ def transition_stmt(
     current_intent: str | None = None,
     assigned_admin_id: uuid.UUID | None = None,
     not_held_by_other_than: uuid.UUID | None = None,
+    expected_draft: str | None = None,
 ) -> Update:
     """Câu UPDATE compare-and-set của `transition_status` (tách riêng để test hình dạng SQL offline)."""
     conditions = [Conversation.id == conversation_id, Conversation.status.in_(tuple(allowed_from))]
+    if expected_draft is not None:
+        # Nháp admin ĐÃ XEM phải còn là nháp hiện tại (FE-03.2): PENDING(D1) → REPLIED → PENDING(D2) vẫn qua điều
+        # kiện status (ABA) — so thêm nháp trên CHÍNH row đang ghi thì màn cũ không duyệt/từ chối nhầm D2.
+        conditions.append(Conversation.escalation_card["suggested_reply"].astext == expected_draft)
     if not_held_by_other_than is not None:
         # "Ca do admin KHÁC giữ": HUMAN_HANDLING + có người giữ + người đó không phải mình. HUMAN_HANDLING mà KHÔNG
         # có người giữ (dữ liệu cũ) không tính là bị giữ — nếu không ca đó kẹt vĩnh viễn, không ai nhận/đóng được.
@@ -105,6 +110,7 @@ async def transition_status(
     current_intent: str | None = None,
     assigned_admin_id: uuid.UUID | None = None,
     not_held_by_other_than: uuid.UUID | None = None,
+    expected_draft: str | None = None,
 ) -> bool:
     """Đổi status CÓ ĐIỀU KIỆN (compare-and-set): chỉ ghi khi status hiện tại ∈ `allowed_from` [và ca không do admin
     KHÁC giữ]. True ⇔ đúng 1 dòng đổi; False = trạng thái đã đổi dưới chân (admin tiếp quản / đóng ca / từ chối…)
@@ -112,6 +118,7 @@ async def transition_status(
 
     `current_intent` (tuỳ chọn): ghi kèm intent lượt khi vào AWAITING_CUSTOMER (resume clarify 09b).
     `assigned_admin_id` (tuỳ chọn): gán người giữ trong CÙNG câu UPDATE (takeover).
+    `expected_draft` (tuỳ chọn): chỉ ghi khi `escalation_card.suggested_reply` vẫn là nháp này (duyệt/từ chối — ABA).
     """
     result = await session.execute(
         transition_stmt(
@@ -121,22 +128,23 @@ async def transition_status(
             current_intent=current_intent,
             assigned_admin_id=assigned_admin_id,
             not_held_by_other_than=not_held_by_other_than,
+            expected_draft=expected_draft,
         )
     )
     return result.rowcount == 1
 
 
 async def get_status_and_admin(
-    session: AsyncSession, conversation_id: uuid.UUID
+    session: AsyncSession, conversation_id: uuid.UUID, *, for_update: bool = False
 ) -> tuple[str, uuid.UUID | None] | None:
-    """`(status, assigned_admin_id)` đọc TƯƠI từ DB (không qua identity map, không load messages). None = không có ca."""
-    row = (
-        await session.execute(
-            select(Conversation.status, Conversation.assigned_admin_id).where(
-                Conversation.id == conversation_id
-            )
-        )
-    ).first()
+    """`(status, assigned_admin_id)` đọc TƯƠI từ DB (không qua identity map, không load messages). None = không có ca.
+
+    `for_update`: khoá hàng (SELECT … FOR UPDATE) tới hết transaction của caller — kiểm-rồi-chèn tin không đua với
+    một lần đổi status (resolve / auto-resolve phải CHỜ caller commit)."""
+    stmt = select(Conversation.status, Conversation.assigned_admin_id).where(Conversation.id == conversation_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    row = (await session.execute(stmt)).first()
     return (row.status, row.assigned_admin_id) if row is not None else None
 
 

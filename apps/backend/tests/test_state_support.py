@@ -133,9 +133,12 @@ def install_service_fakes(monkeypatch: pytest.MonkeyPatch, store: FakeStore) -> 
         current_intent: str | None = None,
         assigned_admin_id: uuid.UUID | None = None,
         not_held_by_other_than: uuid.UUID | None = None,
+        expected_draft: str | None = None,
     ) -> bool:
         conv = store.convs.get(conversation_id)
         if conv is None or conv["status"] not in set(allowed_from):
+            return False
+        if expected_draft is not None and (conv["escalation_card"] or {}).get("suggested_reply") != expected_draft:
             return False
         held = conv["assigned_admin_id"]
         if (
@@ -196,8 +199,10 @@ def install_service_fakes(monkeypatch: pytest.MonkeyPatch, store: FakeStore) -> 
         session.staged.append(apply)
 
     async def get_status_and_admin(
-        session: FakeSession, conversation_id: uuid.UUID
+        session: FakeSession, conversation_id: uuid.UUID, *, for_update: bool = False
     ) -> tuple[str, uuid.UUID | None] | None:
+        if for_update:
+            store.log.append("lock")  # SELECT … FOR UPDATE (khoá hàng tới commit)
         conv = store.convs.get(conversation_id)
         return (conv["status"], conv["assigned_admin_id"]) if conv else None
 

@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from app.api.ws import chat
-from app.api.ws.hub import ConnectionHub
+from app.api.ws.hub import INBOX_KEY, ConnectionHub
 from app.core.rate_limit import SlidingWindowLimiter
 from app.models.enums import ConversationStatus as S
 from app.models.enums import TurnOutcome
@@ -206,6 +206,26 @@ async def test_handoff_status_card_and_notice_land_in_one_commit_before_the_fram
     assert env.audits[0]["outcome"] == TurnOutcome.QUEUED_FOR_HUMAN
 
 
+async def test_escalating_turn_publishes_status_to_admin_and_inbox_not_to_its_own_socket(env: Any) -> None:
+    customer = uuid.uuid4()
+    cid = env.store.add_conv(customer_id=customer, status=S.REPLIED)
+    env.pipe.final = _final(S.IN_HUMAN_QUEUE, reply=NOTICE, intent="complaint", priority="high")
+    admin_q = env.hub.register(str(cid))  # admin đang mở ca để theo dõi (FE-01.3)
+    inbox_q = env.hub.register(INBOX_KEY)
+    ws, task = await _open(env, customer)
+    ws.push(_msg("áo bị rách, shop xử lý sao", "s-1"))
+    await until(lambda: bool(ws.frames("handoff")))
+    await _settle((ws, task))
+
+    frames = drain(admin_q)
+    assert [f["type"] for f in frames] == ["message", "message", "status"]
+    assert frames[-1] == {"type": "status", "status": "IN_HUMAN_QUEUE", "assigned_admin_id": None}
+    assert [(e["event"], e["status"]) for e in drain(inbox_q)] == [
+        ("message", None), ("message", None), ("status", "IN_HUMAN_QUEUE")
+    ]
+    assert ws.frames("status") == [] and ws.frames("message") == []  # socket gốc đã nhận frame handoff trực tiếp
+
+
 async def test_gate_hold_persists_pending_card_without_sending_the_draft(
     env: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -286,6 +306,37 @@ async def test_status_change_mid_pipeline_discards_the_turn(env: Any, status_now
     assert (detail["discarded"], detail["reason"], detail["status_now"]) == (True, "status_changed", status_now)
 
 
+async def test_lost_cas_is_discarded_even_when_the_status_reread_fails(
+    env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    customer, admin = uuid.uuid4(), uuid.uuid4()
+    cid = env.store.add_conv(customer_id=customer, status=S.REPLIED)
+    env.pipe.gate = asyncio.Event()
+    real = conversation_service.get_status_and_admin
+    broken = {"on": False}
+
+    async def reread_fails(session: Any, conversation_id: uuid.UUID, *, for_update: bool = False) -> Any:
+        if broken["on"]:
+            raise RuntimeError("Neon ngắt kết nối")
+        return await real(session, conversation_id, for_update=for_update)
+
+    monkeypatch.setattr(conversation_service, "get_status_and_admin", reread_fails)
+    ws, task = await _open(env, customer)
+    ws.push(_msg("size M còn không", "y-1"))
+    await until(lambda: len(env.pipe.calls) == 1)
+    env.store.convs[cid].update(status=S.HUMAN_HANDLING, assigned_admin_id=admin)  # admin vừa tiếp quản…
+    broken["on"] = True  # …và lần đọc lại status sau khi CAS thua cũng lỗi
+    admin_q = env.hub.register(str(cid))
+    env.pipe.gate.set()
+    await until(lambda: bool(ws.frames("status")))
+    await _settle((ws, task))
+
+    # CAS thua = lượt BỊ BỎ dù không biết status mới: AI KHÔNG nói chen vào ca admin đã nhận (GRAPH-02.2).
+    assert ws.frames("status") == [{"type": "status", "status": None, "assigned_admin_id": None}]
+    assert ws.frames("reply") == [] and env.store.msgs(cid, "ai") == [] and drain(admin_q) == []
+    assert env.audits[0]["delivery_detail"]["discarded"] is True
+
+
 # ── Lượt sống sót khi socket chết giữa chừng (GRAPH-02.1) ────────────────────
 async def test_turn_completes_and_persists_after_the_socket_closes_mid_turn(env: Any) -> None:
     customer = uuid.uuid4()
@@ -304,7 +355,9 @@ async def test_turn_completes_and_persists_after_the_socket_closes_mid_turn(env:
     ai = env.store.msgs(cid, "ai")
     assert len(ai) == 1 and env.store.convs[cid]["status"] == S.REPLIED and len(env.audits) == 1
     # Trả lời tới socket MỚI qua hub (không mất), socket cũ không còn đăng ký (không rò queue).
-    assert ws2.frames("message") == [{"type": "message", "from": "ai", "content": REPLY, "message_id": str(ai[0].id)}]
+    assert ws2.frames("message") == [
+        {"type": "message", "from": "ai", "content": REPLY, "message_id": str(ai[0].id), "client_msg_id": None}
+    ]
     assert env.hub.subscriber_count(str(cid)) == 1
     await _settle((ws2, task2))
 
@@ -361,6 +414,35 @@ async def test_socket_on_a_closed_case_moves_to_the_case_another_tab_opened(env:
     await _settle((ws, task))
 
 
+async def test_case_closed_between_status_read_and_insert_moves_the_message_to_a_new_case(
+    env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    customer = uuid.uuid4()
+    old = env.store.add_conv(customer_id=customer, status=S.REPLIED)
+    real = chat._load_history
+    closed = {"done": False}
+
+    async def history_then_case_closes(conv_id: Any) -> Any:
+        out = await real(conv_id)
+        if not closed["done"]:  # admin resolve / auto-resolve commit ĐÚNG lúc này (lượt đã đọc status REPLIED)
+            closed["done"] = True
+            env.store.convs[old]["status"] = S.RESOLVED
+        return out
+
+    monkeypatch.setattr(chat, "_load_history", history_then_case_closes)
+    ws, task = await _open(env, customer)
+    ws.push(_msg("còn size M không shop", "q-1"))
+    await until(lambda: bool(ws.frames("reply")))
+    await _settle((ws, task))
+
+    convs = _customer_convs(env.store, customer)
+    new = next(c["id"] for c in convs if c["id"] != old)
+    assert len(convs) == 2 and env.store.msgs(old) == []  # KHÔNG tin nào lọt vào ca đã đóng
+    assert [m.content for m in env.store.msgs(new, "customer")] == ["còn size M không shop"]
+    # Câu hỏi được trả lời trên ca MỚI (PRD §15), không bị bỏ âm thầm.
+    assert env.store.convs[new]["status"] == S.REPLIED and ws.frames("status") == []
+
+
 async def test_other_tab_sees_the_customer_message_and_the_ai_reply(env: Any) -> None:
     customer = uuid.uuid4()
     cid = env.store.add_conv(customer_id=customer, status=S.REPLIED)
@@ -370,8 +452,9 @@ async def test_other_tab_sees_the_customer_message_and_the_ai_reply(env: Any) ->
     await until(lambda: len(b.frames("message")) == 2)
     customer_msg, ai_msg = env.store.msgs(cid, "customer")[0], env.store.msgs(cid, "ai")[0]
     assert b.frames("message") == [
-        {"type": "message", "from": "customer", "content": "size L còn không", "message_id": str(customer_msg.id)},
-        {"type": "message", "from": "ai", "content": REPLY, "message_id": str(ai_msg.id)},
+        {"type": "message", "from": "customer", "content": "size L còn không", "message_id": str(customer_msg.id),
+         "client_msg_id": "t-1"},
+        {"type": "message", "from": "ai", "content": REPLY, "message_id": str(ai_msg.id), "client_msg_id": None},
     ]
     assert a.frames("message") == []  # socket gửi đã nhận frame trực tiếp → không nhận lại
     await _settle((a, ta), (b, tb))
@@ -425,6 +508,27 @@ async def test_rate_limited_message_gets_error_frame_and_is_not_processed(
     assert [m.content for m in env.store.msgs(cid, "customer")] == ["tin một"] and len(env.pipe.calls) == 1
 
 
+async def test_resend_of_an_accepted_message_does_not_use_the_rate_budget(
+    env: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Trần 2 tin: tin GỬI LẠI (id đã nhận) không tốn slot và không bị báo rate_limited — tin gốc ĐÃ lưu + trả lời.
+    monkeypatch.setattr(chat, "_chat_limiter", SlidingWindowLimiter(2, 60))
+    customer = uuid.uuid4()
+    cid = env.store.add_conv(customer_id=customer, status=S.REPLIED)
+    ws, task = await _open(env, customer)
+    ws.push(_msg("tin một", "m-1"))
+    ws.push(_msg("tin một", "m-1"))  # gửi lại (chưa thấy ack)
+    ws.push(_msg("tin hai", "m-2"))
+    await until(lambda: len(ws.frames("ack")) == 3 and len(ws.frames("reply")) == 2)
+    await _settle((ws, task))
+
+    assert ws.frames("error") == []
+    assert [(a["client_msg_id"], a["duplicate"]) for a in ws.frames("ack")] == [
+        ("m-1", False), ("m-1", True), ("m-2", False)
+    ]
+    assert [m.content for m in env.store.msgs(cid, "customer")] == ["tin một", "tin hai"] and len(env.pipe.calls) == 2
+
+
 async def test_ping_is_answered_while_a_turn_is_running(env: Any) -> None:
     customer = uuid.uuid4()
     env.store.add_conv(customer_id=customer, status=S.REPLIED)
@@ -464,7 +568,8 @@ async def test_status_gated_message_reaches_admin_without_running_ai(env: Any) -
 
     saved = env.store.msgs(cid, "customer")[0]
     assert drain(admin_q) == [
-        {"type": "message", "from": "customer", "content": "anh ơi em gửi ảnh rồi", "message_id": str(saved.id)}
+        {"type": "message", "from": "customer", "content": "anh ơi em gửi ảnh rồi", "message_id": str(saved.id),
+         "client_msg_id": "g-1"}
     ]
     assert env.pipe.calls == [] and ws.frames("typing") == [] and env.audits == []
 
@@ -489,6 +594,24 @@ async def test_ai_only_degraded_path_speaks_protocol_v2(env: Any, monkeypatch: p
         {"type": "typing"},
         {"type": "reply", "content": REPLY, "message_id": None},
     ]
+
+
+async def test_ai_only_resend_does_not_use_the_rate_budget(env: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def db_down(session: Any, customer_id: uuid.UUID) -> Any:
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(conversation_service, "get_active_conversation_for_customer", db_down)
+    monkeypatch.setattr(chat, "_chat_limiter", SlidingWindowLimiter(1, 60))
+    ws = FakeWebSocket(env.store, name="tab")
+    ws.query_params = {"token": str(uuid.uuid4())}
+    task = asyncio.create_task(chat.chat_ws(ws))  # type: ignore[arg-type]
+    ws.push(_msg("alo", "z-1"))
+    ws.push(_msg("alo", "z-1"))  # gửi lại → ack duplicate, KHÔNG rate_limited
+    await until(lambda: len(ws.frames("ack")) == 2)
+    ws.drop()
+    await asyncio.wait_for(task, 2)
+    assert ws.frames("error") == [] and [a["duplicate"] for a in ws.frames("ack")] == [False, True]
+    assert len(ws.frames("reply")) == 1
 
 
 # ── Quyết định giao (hàm thuần) ──────────────────────────────────────────────

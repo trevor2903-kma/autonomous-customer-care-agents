@@ -46,8 +46,13 @@ async def test_notify_message_reaches_conversation_and_inbox() -> None:
     other_q = h.register("c1")
     inbox_q = h.register(INBOX_KEY)
     mid = uuid.uuid4()
-    await h.notify_message("c1", sender="customer", content="hi", message_id=mid, exclude=sender_q)
-    assert other_q.get_nowait() == {"type": "message", "from": "customer", "content": "hi", "message_id": str(mid)}
+    await h.notify_message(
+        "c1", sender="customer", content="hi", message_id=mid, client_msg_id="c-9", exclude=sender_q
+    )
+    # client_msg_id đi kèm → socket mới của chính người gửi khớp được bong bóng của mình (IDEM-XC.1).
+    assert other_q.get_nowait() == {
+        "type": "message", "from": "customer", "content": "hi", "message_id": str(mid), "client_msg_id": "c-9"
+    }
     assert sender_q.empty()  # socket đã có frame trực tiếp KHÔNG nhận lại
     # Inbox admin nhận MỌI tin mới (kể cả của socket bị exclude) — thay polling 10s (FE-01.5).
     assert inbox_q.get_nowait() == {"type": "inbox", "conversation_id": "c1", "event": "message", "status": None}

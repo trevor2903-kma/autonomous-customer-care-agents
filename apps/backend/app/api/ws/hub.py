@@ -6,8 +6,10 @@ tiến trình → giữ 1 uvicorn worker ở slice này.
 
 Giao thức realtime v2 (audit v2, contract §4). MỌI publisher đi qua HAI helper — nhờ vậy kênh inbox admin
 (`INBOX_KEY`, WS `/ws/admin-inbox`, thay polling 10s — FE-01.5) không bao giờ sót sự kiện:
-- `hub.notify_message(conv, sender=, content=, message_id=, exclude=)` → frame
-  `{"type":"message","from","content","message_id"}` tới subscriber của ca + `{"type":"inbox","event":"message"}`.
+- `hub.notify_message(conv, sender=, content=, message_id=, client_msg_id=, exclude=)` → frame
+  `{"type":"message","from","content","message_id","client_msg_id"}` tới subscriber của ca + `{"type":"inbox",
+  "event":"message"}`. `client_msg_id` = id client đã sinh cho tin (khách/admin; null cho tin AI/hệ thống): socket
+  MỚI của chính người gửi (mở lại sau khi rớt) khớp được bong bóng lạc quan của mình thay vì hiện trùng (IDEM-XC.1).
 - `hub.notify_status(conv, status=, assigned_admin_id=, exclude=)` → frame
   `{"type":"status","status","assigned_admin_id"}` tới MỌI subscriber của ca (khách + admin) + inbox `"status"`.
 `exclude` = queue của socket ĐÃ nhận frame tương đương trực tiếp (không tự nghe lại). Hub lỗi → log, KHÔNG ném:
@@ -109,11 +111,19 @@ class ConnectionHub:
         sender: str,
         content: str,
         message_id: uuid.UUID | str | None,
+        client_msg_id: str | None = None,
         exclude: asyncio.Queue[Payload] | None = None,
     ) -> None:
-        """Tin mới (khách/AI/admin) → subscriber của ca + sự kiện inbox. `message_id` = id đã lưu (None nếu chưa lưu)."""
+        """Tin mới (khách/AI/admin) → subscriber của ca + sự kiện inbox. `message_id` = id đã lưu (None nếu chưa lưu),
+        `client_msg_id` = id client của tin (None cho tin AI/hệ thống)."""
         key = str(conversation_id)
-        payload = {"type": "message", "from": str(sender), "content": content, "message_id": _sid(message_id)}
+        payload = {
+            "type": "message",
+            "from": str(sender),
+            "content": content,
+            "message_id": _sid(message_id),
+            "client_msg_id": client_msg_id,
+        }
         await self._publish_safe(key, payload, exclude)
         await self._publish_safe(INBOX_KEY, _inbox_event(key, "message", None))
 

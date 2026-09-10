@@ -68,12 +68,12 @@ async def _persist_admin_message(
     """Lưu tin admin NẾU admin này đang giữ ca (đọc tươi, session NGẮN).
 
     → `("ok", id)` | `("not_assigned", None)` | `("duplicate", None)` (client_msg_id đã lưu = gửi lại) |
-    `("error", None)` (DB lỗi). Khi ca HUMAN_HANDLING do admin này giữ thì chỉ CHÍNH admin này đổi được trạng thái
-    (takeover/resolve của người khác bị CAS chặn; AI và auto-resolve không đụng ca này) → kiểm-rồi-ghi không đua.
+    `("error", None)` (DB lỗi). Kiểm "đang giữ ca" bằng SELECT … FOR UPDATE, khoá giữ tới commit: một lần đổi status
+    (kể cả resolve của CHÍNH admin này từ tab/PWA khác) phải CHỜ tin được lưu → không có tin admin nằm trong ca đã đóng.
     """
     try:
         async with AsyncSessionLocal() as s:
-            state = await conversation_service.get_status_and_admin(s, conv_id)
+            state = await conversation_service.get_status_and_admin(s, conv_id, for_update=True)
             if state is None or state[0] != ConversationStatus.HUMAN_HANDLING or state[1] != admin_id:
                 return "not_assigned", None
             message = await conversation_service.insert_message(
@@ -121,6 +121,7 @@ async def _admin_reader(
                     sender=MessageSender.ADMIN,
                     content=frame.content,
                     message_id=message_id,
+                    client_msg_id=frame.client_msg_id,
                     exclude=self_queue,
                 )
             await websocket.send_json(
@@ -189,17 +190,18 @@ async def admin_ws(websocket: WebSocket, conversation_id: uuid.UUID) -> None:
     except (ValueError, TypeError):
         await websocket.close(code=WS_AUTH_CLOSE_CODE)
         return
-    status, holder = await _current_state(conversation_id)  # CHỈ XEM — không đổi status (fix 08c)
-    await websocket.send_json(
-        {"type": "system", "message": "admin connected", "status": status, "assigned_admin_id": _sid(holder)}
-    )
-    log.info("admin WS connected (conv=%s status=%s)", conversation_id, status)
-
     conv_key = str(conversation_id)
+    # Đăng ký hub TRƯỚC khi đọc snapshot (FE-01.3): sự kiện phát giữa lúc đọc status và lúc gửi frame connect nằm sẵn
+    # trong queue, tới socket ngay sau frame connect — không lỡ. Frame status tới sau snapshot vô hại (FE lấy bản mới).
     queue = hub.register(conv_key)
-    reader = asyncio.create_task(_admin_reader(websocket, conversation_id, conv_key, queue, admin_id))
-    listener = asyncio.create_task(_hub_listener(websocket, queue))
     try:
+        status, holder = await _current_state(conversation_id)  # CHỈ XEM — không đổi status (fix 08c)
+        await websocket.send_json(
+            {"type": "system", "message": "admin connected", "status": status, "assigned_admin_id": _sid(holder)}
+        )
+        log.info("admin WS connected (conv=%s status=%s)", conversation_id, status)
+        reader = asyncio.create_task(_admin_reader(websocket, conversation_id, conv_key, queue, admin_id))
+        listener = asyncio.create_task(_hub_listener(websocket, queue))
         await _run_until_first_done(reader, listener)
     finally:
         hub.unregister(conv_key, queue)

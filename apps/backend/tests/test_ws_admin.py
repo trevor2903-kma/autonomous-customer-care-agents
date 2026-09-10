@@ -101,9 +101,23 @@ async def test_assigned_admin_message_is_persisted_published_then_acked(
     ]
     assert drain(customer_q) == [
         {"type": "message", "from": "admin", "content": "Dạ em kiểm tra đơn giúp anh ạ",
-         "message_id": str(saved[0].id)}
+         "message_id": str(saved[0].id), "client_msg_id": "c-1"}
     ]
     assert [e["event"] for e in drain(inbox_q)] == ["message"]
+    await _close(ws, task)
+
+
+async def test_holder_check_locks_the_row_until_the_message_is_committed(
+    env: tuple[FakeStore, ConnectionHub],
+) -> None:
+    store, _ = env
+    cid = store.add_conv(status=S.HUMAN_HANDLING, assigned_admin_id=ME)
+    ws, task = await _open(cid, ME)
+    ws.push(_msg("Dạ em gửi anh mã vận đơn ạ", "l-1"))
+    await until(lambda: bool(ws.frames("ack")))
+    # SELECT … FOR UPDATE: resolve (kể cả của CHÍNH admin này ở tab/PWA khác) phải CHỜ tin được lưu — không có tin
+    # admin nằm trong ca đã đóng.
+    assert store.log.index("lock") < store.log.index("commit")
     await _close(ws, task)
 
 
@@ -143,6 +157,27 @@ async def test_status_frames_from_hub_reach_admin_socket(env: tuple[FakeStore, C
     await until(lambda: hub.subscriber_count(str(cid)) == 1)
     await hub.notify_status(cid, status=S.IN_HUMAN_QUEUE, assigned_admin_id=None)
     await until(lambda: bool(ws.frames("status")))
+    assert ws.frames("status") == [{"type": "status", "status": "IN_HUMAN_QUEUE", "assigned_admin_id": None}]
+    await _close(ws, task)
+
+
+async def test_status_published_while_the_snapshot_is_read_is_not_lost(
+    env: tuple[FakeStore, ConnectionHub], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, hub = env
+    cid = store.add_conv(status=S.REPLIED)
+    real = ws_admin._current_state
+
+    async def snapshot_then_escalate(conv_id: uuid.UUID) -> Any:
+        state = await real(conv_id)  # snapshot: REPLIED…
+        store.convs[cid]["status"] = S.IN_HUMAN_QUEUE  # …ngay sau đó lượt AI escalate + phát status (FE-01.3)
+        await hub.notify_status(cid, status=S.IN_HUMAN_QUEUE, assigned_admin_id=None)
+        return state
+
+    monkeypatch.setattr(ws_admin, "_current_state", snapshot_then_escalate)
+    ws, task = await _open(cid, ME)
+    await until(lambda: bool(ws.frames("status")))
+    assert ws.sent[0]["status"] == "REPLIED"
     assert ws.frames("status") == [{"type": "status", "status": "IN_HUMAN_QUEUE", "assigned_admin_id": None}]
     await _close(ws, task)
 
