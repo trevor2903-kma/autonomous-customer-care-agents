@@ -1,7 +1,7 @@
 import type { EscalationCard } from "shared-types";
-import { FLAG_LABEL, SEVERITY_LABEL, formatEscalationReason, formatIntent, parseBlockingFlags } from "@/components/reports/labels";
+import { FLAG_LABEL, formatEscalationReason, formatIntent, parseBlockingFlags } from "@/components/reports/labels";
 
-// EscalationCard (design, PRD §11): vì sao ca này cần người — ưu tiên/mức độ, lý do + cờ, tóm tắt,
+// EscalationCard (design, PRD §11): vì sao ca này cần người — ưu tiên, lý do + cờ, tóm tắt,
 // intent & thực thể, tri thức RAG đã truy hồi. Đây là ngữ cảnh để admin nắm ca trong vài giây.
 
 const PRIO: Record<string, { color: string; soft: string; label: string }> = {
@@ -35,9 +35,6 @@ export function EscalationCardPanel({
             }}
           >
             Ưu tiên {PRIO[card.priority ?? ""]?.label ?? card.priority}
-          </span>
-          <span className="rounded-full bg-cream px-2.5 py-0.5 text-[11.5px] text-muted">
-            Mức độ: {SEVERITY_LABEL[card.severity ?? ""] ?? card.severity}
           </span>
         </div>
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
+import { dayLabel, startsNewDay } from "@/lib/dayDivider";
 import type { SendState } from "@/lib/messageMerge";
 
 export type ChatMessage = {
@@ -8,6 +9,8 @@ export type ChatMessage = {
   from: "you" | "system" | "ai" | "admin";
   text: string;
   time: string;
+  /** ISO thời điểm gửi — chỉ dùng để chèn chip ngăn cách theo ngày; giờ hiển thị vẫn là `time`. */
+  at?: string;
   /** Nguồn tri thức Agent 2 dùng để trả lời (chip "Căn cứ tri thức"). */
   sources?: string[];
   /** id tin đã lưu (message.id) — khoá chống trùng khi ghép lịch sử với frame realtime. */
@@ -25,6 +28,17 @@ export type ChatMessage = {
 
 // Còn cách đáy ≤ 80px coi như "đang ở đáy" → tin mới tự cuộn theo (UX-02.1).
 const NEAR_BOTTOM_PX = 80;
+
+// Chip ngăn cách theo ngày (kiểu Zalo): "Hôm nay" · "Hôm qua" · "T6 11/09/2026".
+function DayDivider({ at }: { at?: string }) {
+  return (
+    <div className="flex justify-center">
+      <span className="rounded-full border border-line bg-cream-soft px-3 py-1 text-[11.5px] font-medium text-faint">
+        {dayLabel(at)}
+      </span>
+    </div>
+  );
+}
 
 // Bong bóng theo design: khách (nền đậm, phải) · AI (trắng + avatar olive) · nhân viên (avatar steel) ·
 // hệ thống/chuyển người (căn giữa, terracotta). Chữ `whitespace-pre-wrap` giữ xuống dòng khách gõ, `break-words`
@@ -91,6 +105,90 @@ export function ChatWindow({
     if (count > prev) setHasNew(true);
   }, [messages.length, typing, waiting, justSent]);
 
+  // Một bong bóng (không kèm `key` — phần tử bọc ở dưới giữ key React).
+  function bubble(m: ChatMessage) {
+    if (m.from === "you") {
+      const cid = m.clientMsgId;
+      return (
+        <div className="flex flex-col items-end gap-[5px]">
+          <div
+            className={`max-w-[80%] whitespace-pre-wrap break-words rounded-[16px_16px_5px_16px] bg-ink px-4 py-3 text-[15px] leading-[1.55] text-ink-paper ${
+              m.sendState === "sending" ? "opacity-70" : ""
+            }`}
+          >
+            {m.text}
+          </div>
+          {m.sendState === "failed" && cid ? (
+            <span className="flex items-center gap-1 pr-1 text-[11.5px] text-terracotta">
+              Chưa gửi được ·
+              <button
+                type="button"
+                onClick={() => onRetry?.(cid, m.text)}
+                disabled={!canRetry}
+                className="font-semibold hover:underline disabled:opacity-50"
+              >
+                Gửi lại
+              </button>
+            </span>
+          ) : (
+            <span className="pr-1 text-[11px] text-dim">
+              {m.sendState === "sending" ? "Đang gửi…" : m.time}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    if (m.from === "system") {
+      return (
+        <div className="flex justify-center">
+          <div className="max-w-[82%] whitespace-pre-wrap break-words rounded-[11px] border border-terracotta-line bg-terracotta-soft px-[18px] py-2.5 text-center text-[13px] leading-[1.55] text-terracotta-ink">
+            {m.text}
+          </div>
+        </div>
+      );
+    }
+
+    const isAdmin = m.from === "admin";
+    return (
+      <div className="flex items-start gap-3">
+        <span
+          className={`flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] border text-xs font-semibold ${
+            isAdmin
+              ? "border-steel-line bg-steel-soft text-steel"
+              : "border-line-olive bg-olive-soft text-olive-dark"
+          }`}
+        >
+          {isAdmin ? "NV" : "AI"}
+        </span>
+        <div className="flex min-w-0 max-w-[80%] flex-col gap-[7px]">
+          {isAdmin && <span className="text-xs font-semibold text-steel">Nhân viên hỗ trợ</span>}
+          <div
+            className={`whitespace-pre-wrap break-words rounded-[5px_16px_16px_16px] border bg-white px-4 py-3 text-[15px] leading-[1.6] text-ink ${
+              isAdmin ? "border-steel-line" : "border-line"
+            }`}
+          >
+            {m.text}
+          </div>
+          {m.sources && m.sources.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11.5px] text-dim">Căn cứ tri thức</span>
+              {m.sources.map((s) => (
+                <span
+                  key={s}
+                  className="rounded-md border border-line-olive bg-olive-soft px-2 py-0.5 text-[11.5px] text-olive-dark"
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+          )}
+          <span className="text-[11px] text-dim">{m.time}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
@@ -104,88 +202,12 @@ export function ChatWindow({
           </p>
         )}
 
-        {messages.map((m) => {
-          if (m.from === "you") {
-            const cid = m.clientMsgId;
-            return (
-              <div key={m.id} className="flex flex-col items-end gap-[5px]">
-                <div
-                  className={`max-w-[80%] whitespace-pre-wrap break-words rounded-[16px_16px_5px_16px] bg-ink px-4 py-3 text-[15px] leading-[1.55] text-ink-paper ${
-                    m.sendState === "sending" ? "opacity-70" : ""
-                  }`}
-                >
-                  {m.text}
-                </div>
-                {m.sendState === "failed" && cid ? (
-                  <span className="flex items-center gap-1 pr-1 text-[11.5px] text-terracotta">
-                    Chưa gửi được ·
-                    <button
-                      type="button"
-                      onClick={() => onRetry?.(cid, m.text)}
-                      disabled={!canRetry}
-                      className="font-semibold hover:underline disabled:opacity-50"
-                    >
-                      Gửi lại
-                    </button>
-                  </span>
-                ) : (
-                  <span className="pr-1 text-[11px] text-dim">
-                    {m.sendState === "sending" ? "Đang gửi…" : m.time}
-                  </span>
-                )}
-              </div>
-            );
-          }
-
-          if (m.from === "system") {
-            return (
-              <div key={m.id} className="flex justify-center">
-                <div className="max-w-[82%] whitespace-pre-wrap break-words rounded-[11px] border border-terracotta-line bg-terracotta-soft px-[18px] py-2.5 text-center text-[13px] leading-[1.55] text-terracotta-ink">
-                  {m.text}
-                </div>
-              </div>
-            );
-          }
-
-          const isAdmin = m.from === "admin";
-          return (
-            <div key={m.id} className="flex items-start gap-3">
-              <span
-                className={`flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] border text-xs font-semibold ${
-                  isAdmin
-                    ? "border-steel-line bg-steel-soft text-steel"
-                    : "border-line-olive bg-olive-soft text-olive-dark"
-                }`}
-              >
-                {isAdmin ? "NV" : "AI"}
-              </span>
-              <div className="flex min-w-0 max-w-[80%] flex-col gap-[7px]">
-                {isAdmin && <span className="text-xs font-semibold text-steel">Nhân viên hỗ trợ</span>}
-                <div
-                  className={`whitespace-pre-wrap break-words rounded-[5px_16px_16px_16px] border bg-white px-4 py-3 text-[15px] leading-[1.6] text-ink ${
-                    isAdmin ? "border-steel-line" : "border-line"
-                  }`}
-                >
-                  {m.text}
-                </div>
-                {m.sources && m.sources.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-[11.5px] text-dim">Căn cứ tri thức</span>
-                    {m.sources.map((s) => (
-                      <span
-                        key={s}
-                        className="rounded-md border border-line-olive bg-olive-soft px-2 py-0.5 text-[11.5px] text-olive-dark"
-                      >
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <span className="text-[11px] text-dim">{m.time}</span>
-              </div>
-            </div>
-          );
-        })}
+        {messages.map((m, i) => (
+          <Fragment key={m.id}>
+            {startsNewDay(m.at, messages[i - 1]?.at) && <DayDivider at={m.at} />}
+            {bubble(m)}
+          </Fragment>
+        ))}
 
         {typing && (
           <div className="flex items-center gap-3">

@@ -15,13 +15,21 @@ import {
   senderToFrom,
   unconfirmedOwn,
 } from "./messageMerge.ts";
+import type { Message, MessageSender } from "shared-types";
+import type { ChatMessage } from "../components/chat/ChatWindow.tsx";
+import type { ThreadMessage } from "./api.ts";
 
 function ids() {
   let n = 100;
   return () => n++;
 }
 const timeOf = (iso: string) => iso.slice(11, 16);
-const th = (id: string, sender: string, content: string, client_msg_id: string | null = null) => ({
+const th = (
+  id: string,
+  sender: MessageSender,
+  content: string,
+  client_msg_id: string | null = null,
+): ThreadMessage => ({
   id,
   conversation_id: "conv-1",
   sender,
@@ -104,14 +112,14 @@ test("vòng đời gửi: ack → sent (+message_id); quá hạn chỉ hạ tin 
 });
 
 test("appendUnique: frame lặp cùng message_id không thêm lần hai; tin không có id luôn được thêm", () => {
-  const list = [{ key: "1", messageId: "m1" }];
+  const list: { key: string; messageId: string | null }[] = [{ key: "1", messageId: "m1" }];
   assert.equal(appendUnique(list, { key: "2", messageId: "m1" }), list);
   assert.equal(appendUnique(list, { key: "3", messageId: "m9" }).length, 2);
   assert.equal(appendUnique(list, { key: "4", messageId: null }).length, 2);
 });
 
 test("admin: tin realtime/ack đã có trong bản REST vừa nạp lại → không trùng; phần chưa lưu giữ lại", () => {
-  const fetched = [
+  const fetched: Message[] = [
     { id: "m1", sender: "customer", content: "hỏi", created_at: "2026-09-10T10:00:00Z" },
     { id: "m2", sender: "admin", content: "đáp", created_at: "2026-09-10T10:01:00Z", client_msg_id: "c2" },
   ];
@@ -142,7 +150,7 @@ test("FE-01.4 admin: tiếng vọng tin CHÍNH mình (client_msg_id khớp) tớ
   assert.equal(out[1].sendState, "sent");
   assert.equal(out[1].messageId, "m2");
   // REST nạp lại sau đó vẫn gộp đúng một bản.
-  const fetched = [
+  const fetched: Message[] = [
     { id: "m1", sender: "customer", content: "hỏi", created_at: "2026-09-10T10:00:00Z" },
     { id: "m2", sender: "admin", content: "đáp", created_at: "2026-09-10T10:01:00Z", client_msg_id: "c1" },
   ];
@@ -163,7 +171,12 @@ test("FE-01.4 admin: frame không phải tiếng vọng của tab này → thêm
   assert.equal(absorbAdminEcho(live, { ...live[0], key: "m1-lap" }, null), live);
 });
 
-const you = (id: number, text: string, cid: string, sendState: "sending" | "sent" | "failed") => ({
+const you = (
+  id: number,
+  text: string,
+  cid: string,
+  sendState: "sending" | "sent" | "failed",
+): ChatMessage => ({
   id,
   from: "you" as const,
   text,

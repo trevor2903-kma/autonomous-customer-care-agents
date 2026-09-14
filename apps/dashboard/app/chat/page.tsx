@@ -42,9 +42,13 @@ import { useReconnectingSocket } from "@/lib/useReconnectingSocket";
 // đang gửi → đã gửi (ack) → chưa gửi được (quá 10 s / frame error) + "Gửi lại" cùng id. Mỗi lần server báo `system`
 // (socket đã gắn hub — cả lần nối đầu) → nạp lại /me/thread rồi ghép theo message_id / client_msg_id: không mất tin,
 // không trùng tin.
-const now = () => new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
 const timeOf = (iso: string) =>
   new Date(iso).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+// Nhãn giờ hiển thị + mốc ISO (ChatWindow dùng để chèn chip ngăn cách theo ngày) của CÙNG một thời điểm.
+const stamp = () => {
+  const iso = new Date().toISOString();
+  return { time: timeOf(iso), at: iso };
+};
 
 // Server từ chối vì gửi quá nhanh (`error/rate_limited`) — thông báo TẠM phía khách, không lưu DB.
 const RATE_LIMIT_NOTICE = "Bạn đang gửi hơi nhanh — vui lòng đợi giây lát rồi bấm “Gửi lại”.";
@@ -72,8 +76,8 @@ function ChatInner() {
   const wsUrl = useMemo(currentChatWsUrl, []);
 
   const nextId = () => idRef.current++;
-  const push = (m: Omit<ChatMessage, "id" | "time">) => {
-    const item: ChatMessage = { ...m, id: nextId(), time: now() };
+  const push = (m: Omit<ChatMessage, "id" | "time" | "at">) => {
+    const item: ChatMessage = { ...m, id: nextId(), ...stamp() };
     setMessages((prev) => appendUnique(prev, item));
   };
 
@@ -136,7 +140,7 @@ function ChatInner() {
   }
 
   function notice(text: string) {
-    const item: ChatMessage = { id: nextId(), from: "system", text, time: now() };
+    const item: ChatMessage = { id: nextId(), from: "system", text, ...stamp() };
     setMessages((prev) => {
       const last = prev[prev.length - 1];
       return last?.from === "system" && last.text === text ? prev : [...prev, item];
@@ -188,7 +192,7 @@ function ChatInner() {
           // Tin của CHÍNH khách. Backend kèm client_msg_id → khớp CHÍNH XÁC bong bóng tab này đã gửi (tiếng vọng tin
           // gửi trước lúc nối lại) → gắn message_id vào bong bóng đó; không khớp = tin gõ ở tab/thiết bị khác (FE-01.6)
           // → bong bóng "bạn", KHÔNG phải AI. Frame thiếu client_msg_id (server cũ) mới khớp theo nội dung.
-          const item: ChatMessage = { id: nextId(), from: "you", text, time: now(), messageId };
+          const item: ChatMessage = { id: nextId(), from: "you", text, ...stamp(), messageId };
           if (cid) clearAck(cid);
           setMessages(
             (prev) =>
@@ -242,7 +246,7 @@ function ChatInner() {
       id: nextId(),
       from: "you",
       text,
-      time: now(),
+      ...stamp(),
       clientMsgId: cid,
       sendState: "sending",
     };

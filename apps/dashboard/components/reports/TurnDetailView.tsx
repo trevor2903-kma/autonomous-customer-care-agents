@@ -12,7 +12,6 @@ import {
   OUTCOME_LABEL,
   OUTCOME_TONE,
   PRIORITY_LABEL,
-  SEVERITY_LABEL,
   formatEscalationReason,
   formatIntent,
   fmtClock,
@@ -68,12 +67,11 @@ function stepSummary(step: TurnStep, d: TurnDetail): { line: string; sub: string
     case "decision": {
       const blocking = (detail.blocking_flags as string[]) ?? [];
       const prio = PRIORITY_LABEL[String(detail.priority)] ?? String(detail.priority ?? "—");
-      const sev = SEVERITY_LABEL[String(detail.severity)] ?? String(detail.severity ?? "—");
       return {
         line: ACTION_LABEL[String(step.action)] ?? String(step.action ?? "—"),
         sub: blocking.length
           ? `Cờ chặn: ${blocking.map((f) => FLAG_LABEL[f] ?? f).join(", ")}`
-          : `Ưu tiên ${prio} · mức ${sev}`,
+          : `Ưu tiên: ${prio}`,
       };
     }
     case "response": {

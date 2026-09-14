@@ -76,6 +76,7 @@ export function reconcileThread(
     from: senderToFrom(m.sender),
     text: m.content,
     time: timeOf(m.created_at),
+    at: m.created_at,
     messageId: m.id,
     fromHistory: true,
   }));

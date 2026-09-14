@@ -11,6 +11,9 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // Unit test (lib/*.test.mts) chạy bằng `node --test`: Node strip type theo specifier ĐẦY ĐỦ nên phải
+    // import "./x.ts". Chỉ hợp lệ khi noEmit — đúng như trên (tsc ở đây chỉ kiểm tra type).
+    "allowImportingTsExtensions": true,
     "jsx": "preserve",
     "incremental": true,
     "plugins": [{ "name": "next" }],
@@ -19,6 +22,6 @@
       "shared-types": ["../../packages/shared-types/src/index.ts"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.mts", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
 }

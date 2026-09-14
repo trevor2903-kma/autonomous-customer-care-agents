@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import type { AdminConversation } from "shared-types";
 import {
@@ -13,6 +13,7 @@ import {
   takeoverConversation,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { dayLabel, startsNewDay } from "@/lib/dayDivider";
 import {
   type AdminMsg,
   absorbAdminEcho,
@@ -73,6 +74,17 @@ const NOT_ASSIGNED_NOTICE =
 // URL socket ca: trình duyệt tự động gửi kèm cookie access_token khi handshake.
 function currentAdminWsUrl(conversationId: string): string | null {
   return adminWsUrl(conversationId);
+}
+
+// Chip ngăn cách theo ngày (kiểu Zalo) — cùng cách hiển thị với box chat khách.
+function DayDivider({ at }: { at: string }) {
+  return (
+    <div className="flex justify-center">
+      <span className="rounded-full border border-line bg-cream-soft px-3 py-1 text-[11.5px] font-medium text-faint">
+        {dayLabel(at)}
+      </span>
+    </div>
+  );
 }
 
 function Bubble({
@@ -444,8 +456,11 @@ export default function AdminConversationPage({
         )}
 
         <div className="flex flex-col gap-[18px]">
-          {messages.map((m) => (
-            <Bubble key={m.key} msg={m} canRetry={isHandling && online} onRetry={retry} />
+          {messages.map((m, i) => (
+            <Fragment key={m.key}>
+              {startsNewDay(m.at, messages[i - 1]?.at) && <DayDivider at={m.at} />}
+              <Bubble msg={m} canRetry={isHandling && online} onRetry={retry} />
+            </Fragment>
           ))}
           <div ref={endRef} />
         </div>
