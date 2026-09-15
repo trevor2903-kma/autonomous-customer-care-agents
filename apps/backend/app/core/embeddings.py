@@ -64,7 +64,7 @@ async def embedding_dim() -> int:
 
 
 async def close_openai() -> None:
-    """Đóng client (đối xứng close_redis/close_qdrant) — gọi ở lifespan shutdown."""
+    """Đóng client (đối xứng close_qdrant) — gọi ở lifespan shutdown."""
     global _client
     if _client is not None:
         await _client.close()

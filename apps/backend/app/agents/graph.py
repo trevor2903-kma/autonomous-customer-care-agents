@@ -84,8 +84,8 @@ def build_graph():
     g.add_edge("response", END)
 
     # Checkpointer in-memory (MemorySaver).
-    # TODO (PRD §10 FR-ASYNC-3/§10 FR-ASYNC-6): checkpointer Redis/Postgres + interrupt cho suspend/resume
-    #   human_handoff; wiring WebSocket↔graph + Redis pub/sub phát realtime.
+    # TODO (PRD §10 FR-ASYNC-3/§10 FR-ASYNC-6): checkpointer Postgres + interrupt cho suspend/resume
+    #   human_handoff.
     return g.compile(checkpointer=MemorySaver())
 
 

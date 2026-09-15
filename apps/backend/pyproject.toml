@@ -14,7 +14,6 @@ dependencies = [
     "greenlet>=3.0",
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.5,<3",
-    "redis>=5.0,<6",
     "qdrant-client>=1.12,<2",
     "python-dotenv>=1.0",
     "openai>=1.40,<2",

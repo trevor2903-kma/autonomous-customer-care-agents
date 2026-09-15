@@ -1,8 +1,8 @@
-"""In-process pub/sub hub (08c) — realtime 2 chiều khách ↔ admin CÙNG một hội thoại. KHÔNG Redis (1 worker).
+"""In-process pub/sub hub (08c) — realtime 2 chiều khách ↔ admin CÙNG một hội thoại. 1 uvicorn worker.
 
 Event-driven (mỗi kết nối 1 `asyncio.Queue`), KHÔNG polling. Đằng sau interface nhỏ (register/unregister/publish)
-để sau SWAP sang Redis pub/sub cho ĐA-WORKER (PRD §10 FR-ASYNC-7) mà không đụng call-site. Chỉ sống trong
-tiến trình → giữ 1 uvicorn worker ở slice này.
+để sau SWAP sang một broker ngoài tiến trình cho ĐA-WORKER (PRD §10 FR-ASYNC-7) mà không đụng call-site. Chỉ
+sống trong tiến trình → giữ 1 uvicorn worker ở slice này.
 
 Giao thức realtime v2 (audit v2, contract §4). MỌI publisher đi qua HAI helper — nhờ vậy kênh inbox admin
 (`INBOX_KEY`, WS `/ws/admin-inbox`, thay polling 10s — FE-01.5) không bao giờ sót sự kiện:
@@ -154,5 +154,5 @@ def _inbox_event(conversation_id: str, event: str, status: str | None) -> Payloa
     return {"type": "inbox", "conversation_id": conversation_id, "event": event, "status": _sid(status)}
 
 
-# Singleton in-process — 1 worker (PRD §10: đa-worker cần Redis pub/sub, để dành).
+# Singleton in-process — 1 worker (PRD §10: đa-worker cần pub/sub ngoài tiến trình, để dành).
 hub = ConnectionHub()

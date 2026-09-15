@@ -1,7 +1,7 @@
 """Giới hạn tần suất IN-PROCESS theo cửa sổ trượt (audit v2, SEC-XC.2).
 
 Chặn brute-force đăng nhập, spam đăng ký và đốt tiền LLM qua /ws/chat. Cùng ràng buộc với hub (1 uvicorn
-worker, PRD §10): bộ đếm sống trong tiến trình. Lên đa-worker thì thay phần lưu bằng Redis (INCR + EXPIRE)
+worker, PRD §10): bộ đếm sống trong tiến trình. Lên đa-worker thì thay phần lưu bằng một bộ đếm dùng chung
 sau cùng interface `hit()` — call-site không đổi.
 
 `hit()` là hàm SYNC không có `await` nên nguyên tử trong event loop (không cần lock).

@@ -1,8 +1,8 @@
-"""Phase 1 smoke test — kiểm tra kết nối 3 dịch vụ managed (Neon · Upstash · Qdrant).
+"""Phase 1 smoke test — kiểm tra kết nối 2 dịch vụ managed (Neon · Qdrant).
 
 Chạy độc lập, KHÔNG phụ thuộc backend project (Phase 2):
 
-    uv run --python 3.12 --with asyncpg --with redis --with qdrant-client \
+    uv run --python 3.12 --with asyncpg --with qdrant-client \
            --with python-dotenv scripts/check_connections.py
 
 hoặc:  make check-conn
@@ -48,23 +48,6 @@ async def check_postgres() -> tuple[bool, str]:
         return False, f"{type(e).__name__}: {e}"
 
 
-async def check_redis() -> tuple[bool, str]:
-    import redis.asyncio as aioredis
-
-    url = os.getenv("REDIS_URL", "")
-    if not url:
-        return False, "REDIS_URL chưa đặt"
-    try:
-        client = aioredis.from_url(url, socket_connect_timeout=15)
-        try:
-            pong = await client.ping()
-        finally:
-            await client.aclose()
-        return bool(pong), f"PING -> {pong}"
-    except Exception as e:  # noqa: BLE001
-        return False, f"{type(e).__name__}: {e}"
-
-
 async def check_qdrant() -> tuple[bool, str]:
     from qdrant_client import QdrantClient
 
@@ -90,7 +73,6 @@ async def check_qdrant() -> tuple[bool, str]:
 async def main() -> int:
     checks = (
         ("Neon (Postgres)", check_postgres),
-        ("Upstash (Redis)", check_redis),
         ("Qdrant Cloud", check_qdrant),
     )
     results = await asyncio.gather(*(fn() for _, fn in checks))

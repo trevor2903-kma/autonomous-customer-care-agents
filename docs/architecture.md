@@ -42,19 +42,19 @@ PENDING_APPROVAL · IN_HUMAN_QUEUE · HUMAN_HANDLING · RESOLVED · CLOSED`.
 | Backend (FastAPI + LangGraph) | API + WebSocket + pipeline | [`apps/backend`](../apps/backend) |
 | Web / PWA (Next.js) | Admin dashboard `/` + cổng chat khách `/chat`; **cài được lên điện thoại** (Add to Home Screen) — một codebase web duy nhất, không codebase mobile riêng | [`apps/dashboard`](../apps/dashboard) |
 | shared-types | type dùng chung (ConversationStatus, Message, Escalation, AdminConversation) | [`packages/shared-types`](../packages/shared-types) |
-| Neon (Postgres) | hội thoại/tin nhắn/audit | `app/models`, `alembic/` |
-| Upstash (Redis) | session ngắn hạn + **pub/sub** realtime (pub/sub: TODO) | `app/core/redis_client.py` |
+| Neon (Postgres) | hội thoại/tin nhắn/audit + bộ nhớ hội thoại | `app/models`, `alembic/` |
+| Hub pub/sub in-process | phát realtime khách ↔ Admin (1 uvicorn worker) | `app/api/ws/hub.py` |
 | Qdrant Cloud | vector DB cho RAG (embed/truy hồi: phase sau) | `app/core/qdrant_client.py` |
 
 ## 5. Xử lý bất đồng bộ & realtime (PRD §10)
 
-- Đường nhanh mỗi tin nhắn (P95 ≤ 5s) — FastAPI **BackgroundTasks** (KHÔNG worker polling Redis).
+- Đường nhanh mỗi tin nhắn (P95 ≤ 5s) — FastAPI **BackgroundTasks** (KHÔNG worker polling).
   Code: [`app/api/ws/chat.py`](../apps/backend/app/api/ws/chat.py) — ghi `audit_log` mỗi bước, gom theo `turn_id` (FR-PIPE-4).
-- Realtime: **WebSocket + Redis pub/sub** (event-driven, KHÔNG polling). Scaffold: WebSocket **echo**; pub/sub là TODO.
+- Realtime: **WebSocket + pub/sub in-process** (event-driven, KHÔNG polling). Hub sống trong tiến trình → giữ 1 uvicorn worker.
 - human_handoff = tạm dừng AI cho hội thoại (LangGraph `interrupt` + checkpointer) — **TODO** (scaffold dùng `MemorySaver`).
 
 ## 6. Ranh giới scaffold (TODO trỏ PRD)
 
 Chưa làm (chỉ chừa chỗ): LLM trong pipeline (`ENABLE_LLM=false`) · intent thật · RAG embed/truy hồi · logic
 gate (§9) · human_handoff định tuyến/EscalationCard đầy đủ (§11) · suspend/resume (§10) · wiring AI↔WebSocket ·
-Redis pub/sub · vòng học (§5 trụ cột 4). Xem `# TODO (PRD …)` trong code.
+pub/sub đa-worker · vòng học (§5 trụ cột 4). Xem `# TODO (PRD …)` trong code.

@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     max_message_chars: int = 2000
 
     # ── Giới hạn tần suất (audit v2, SEC-XC.2) — IN-PROCESS như hub (1 worker) ──
-    # Mỗi con số = số lần tối đa trong `rate_limit_window_seconds`; 0 = tắt. Đa-worker → chuyển sang Redis.
+    # Mỗi con số = số lần tối đa trong `rate_limit_window_seconds`; 0 = tắt. Đa-worker → cần bộ đếm dùng chung.
     rate_limit_window_seconds: int = 60
     login_rate_per_ip: int = 10
     login_rate_per_email: int = 5
@@ -89,9 +89,6 @@ class Settings(BaseSettings):
     # SSL bật qua connect_args={"ssl": ...} (CLAUDE.md). URL KHÔNG mang '?sslmode='.
     database_url: str
     database_ssl: bool = True  # local docker không TLS -> đặt DATABASE_SSL=false
-
-    # ── Redis (Upstash) ───────────────────────────────────────────────────────
-    redis_url: str
 
     # ── Qdrant (Vector DB / RAG) ──────────────────────────────────────────────
     qdrant_url: str

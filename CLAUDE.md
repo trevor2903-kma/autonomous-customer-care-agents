@@ -39,7 +39,7 @@ Giai đoạn hiện tại: **lõi tự trị + HITL đầy đủ đã chạy liv
 (Decision Engine tất định), Agent 4 (Response grounded) đều thật; lưu hội thoại + bộ nhớ đa lượt (Postgres);
 chat khách `/chat`, dashboard admin (hàng đợi, takeover, duyệt nháp, gate, báo cáo), auth JWT + RBAC, tra đơn
 scoped, chống prompt-injection 4 lớp, auto-resolve theo im lặng, lượt clarification (AWAITING_CUSTOMER), thông báo
-ngoài giờ — tất cả live. Việc còn lại (durable checkpointer + interrupt, admin-presence offline, Redis pub/sub
+ngoài giờ — tất cả live. Việc còn lại (durable checkpointer + interrupt, admin-presence offline, pub/sub
 đa-worker, deploy, vòng học) và
 slice tiếp theo (**14 deploy**) → xem **`ROADMAP.md`**.
 
@@ -48,9 +48,9 @@ slice tiếp theo (**14 deploy**) → xem **`ROADMAP.md`**.
 ## Stack
 
 - **Backend:** Python 3.12 · FastAPI · LangGraph · SQLAlchemy 2 (async) · Alembic · Pydantic v2. Gói: `uv`.
-- **Realtime:** WebSocket (chat) + Redis pub/sub (phát tin nhắn tới client/Admin) — **event-driven, KHÔNG polling**.
-- **Hạ tầng (managed-first):** Neon (Postgres) · Upstash Redis · Qdrant Cloud. Dự phòng: `docker-compose.local.yml`.
-- **Async:** FastAPI BackgroundTasks (KHÔNG worker polling — phá free tier Upstash). human_handoff/clarification
+- **Realtime:** WebSocket (chat) + pub/sub in-process (phát tin nhắn tới client/Admin) — **event-driven, KHÔNG polling**.
+- **Hạ tầng (managed-first):** Neon (Postgres) · Qdrant Cloud. Dự phòng: `docker-compose.local.yml`. **KHÔNG Redis.**
+- **Async:** FastAPI BackgroundTasks (KHÔNG worker polling). human_handoff/clarification
   dùng suspend/resume (LangGraph interrupt + checkpointer — phase sau).
 - **Frontend:** Next.js 14 · **Tailwind thuần (KHÔNG shadcn/thư viện UI)** · TanStack Query. Theo pattern
   component sẵn có (`DocumentsPanel`, `admin/gate/page.tsx`, `components/reports/*`).
@@ -75,7 +75,7 @@ slice tiếp theo (**14 deploy**) → xem **`ROADMAP.md`**.
   node khác.
 - **Trạng thái hội thoại** dùng tập canonical ở PRD §15 (`conversation.status`) — thống nhất backend +
   shared-types + dashboard.
-- **Realtime KHÔNG polling:** dùng WebSocket + Redis pub/sub (giữ free-tier Upstash).
+- **Realtime KHÔNG polling:** dùng WebSocket + hub pub/sub in-process (`api/ws/hub.py`).
 
 ---
 
@@ -150,7 +150,7 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
   động admin ghi `audit_log` (FR-ESC-5).
 - **Auto-resolve theo im lặng (09c, phần inactivity):** `services/auto_resolve.py` — `classify_idle` THUẦN (NOOP/
   REMIND/RESOLVE) + `run_sweep_once`/`sweep_loop` (asyncio task trong lifespan, quét Postgres mỗi
-  `sweep_interval_seconds`, KHÔNG polling Redis). CHỈ `REPLIED`/`AWAITING_CUSTOMER`; gate `auto_resolve` OFF →
+  `sweep_interval_seconds`, KHÔNG polling broker). CHỈ `REPLIED`/`AWAITING_CUSTOMER`; gate `auto_resolve` OFF →
   no-op. Hai ngưỡng T1 `auto_resolve_minutes` (→ 1 tin nhắc) + T2 `auto_resolve_grace_minutes` (→ `RESOLVED`);
   `conversation.auto_resolve_reminded_at` mốc đã nhắc, reset khi khách nhắn. Ghi bằng **guarded UPDATE**
   (`WHERE status IN sweepable [+ reminded_at guard] [+ REMIND: vẫn im lặng ≥ T1 trên chính row]`, chỉ hành động khi
@@ -203,10 +203,10 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
   quyết định kiến trúc VĨNH VIỄN, không phải "chưa tới lượt".)
 - **durable checkpointer + `interrupt()`** (09b — nay vẫn `MemorySaver` in-memory, `graph.py`; **lượt clarification
   AWAITING_CUSTOMER ĐÃ XONG** trên DB+status, checkpointer chưa); **admin-presence offline** (09c — **offline theo giờ
-  hỗ trợ ĐÃ XONG**, presence thật chưa); Redis pub/sub đa-worker (nay hub, khoá lượt theo khách, registry chống trùng,
+  hỗ trợ ĐÃ XONG**, presence thật chưa); pub/sub đa-worker (nay hub, khoá lượt theo khách, registry chống trùng,
   registry socket đang sống, rate limiter, khoá ghi RAG đều IN-PROCESS → GIỮ 1 uvicorn worker); deploy (14); vòng
   học (15).
-- KHÔNG worker queue polling Redis — dùng BackgroundTasks/session ngắn (giữ free-tier).
+- KHÔNG worker queue polling — dùng BackgroundTasks/session ngắn. KHÔNG Redis (đã gỡ khỏi dự án).
 
 **Slice tiếp theo:** **14 — Deploy** (backend → Render/Railway, FE → Vercel; hạ tầng cloud, secret theo env,
 lưu ý dữ liệu cá nhân NFR-6). Code TODO trỏ số slice trong **`ROADMAP.md`**.

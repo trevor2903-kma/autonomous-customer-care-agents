@@ -135,8 +135,8 @@ giảm tải nhân viên CSKH; chuẩn hóa quy trình xử lý yêu cầu.
   duyệt/nhận ca chuyển tiếp nhanh. Một app web duy nhất, responsive; KHÔNG có codebase mobile riêng.
 - **Backend (FastAPI + LangGraph):** API Gateway + WebSocket; pipeline đa tác tử; session memory; chuyển tiếp
   con người (human handoff). Mục tiêu phản hồi tự động ≤ 5 giây.
-- **Hạ tầng managed:** PostgreSQL (Neon) lưu hội thoại/ticket/audit; Redis (Upstash) cho session memory ngắn
-  hạn + **pub/sub** phát realtime (event-driven, KHÔNG polling); Qdrant Cloud cho embedding tri thức (RAG).
+- **Hạ tầng managed:** PostgreSQL (Neon) lưu hội thoại/ticket/audit + bộ nhớ hội thoại; Qdrant Cloud cho
+  embedding tri thức (RAG). Phát realtime bằng **pub/sub in-process** (event-driven, KHÔNG polling).
 - **Observability:** Langfuse (giám sát chi phí token/độ trễ/tỉ lệ lỗi — phase sau).
 
 Luồng tổng thể (phía khách):
@@ -329,7 +329,7 @@ con người, hội thoại được tạm dừng auto-mode và chuyển quyền
 hội thoại chờ lượt trả lời tiếp theo.
 
 - **FR-ASYNC-1 (đường nhanh mỗi tin nhắn):** mỗi tin nhắn khách chạy pipeline đồng bộ, mục tiêu P95 ≤ 5s,
-  ghi `audit_log` cho từng node. Session memory ở Redis (ngắn hạn, theo hội thoại).
+  ghi `audit_log` cho từng node. Session memory đọc từ Postgres (theo hội thoại, §12).
 - **FR-ASYNC-2 (lượt làm rõ — clarification):** Khi Intent/Decision cần thêm thông tin → Response Generator
   hỏi lại (tối đa 1 lần/lượt) → hội thoại sang `AWAITING_CUSTOMER`. Tin nhắn kế tiếp của khách **resume**
   pipeline với ngữ cảnh đã lưu.
@@ -341,9 +341,11 @@ hội thoại chờ lượt trả lời tiếp theo.
 - **FR-ASYNC-5 (trả lại AI — tùy chọn, phase sau):** Admin có thể trả hội thoại về chế độ AI sau khi xử lý
   xong; pipeline resume cho các tin nhắn tiếp theo.
 - **FR-ASYNC-6 (bền vững):** state hội thoại đủ để resume sau khi service khởi động lại (checkpointer). Phase
-  1 dùng Redis/short-term cho session; cân nhắc checkpointer Postgres khi cần bền vững dài hơn.
-- **FR-ASYNC-7 (realtime, không polling):** phát tin nhắn tới client/Admin bằng WebSocket + Redis pub/sub
-  (event-driven), KHÔNG worker polling (giữ free-tier Upstash).
+  1 dựng lại ngữ cảnh từ Postgres (`conversation.status` + lịch sử tin nhắn); cân nhắc checkpointer Postgres
+  khi cần dừng GIỮA graph.
+- **FR-ASYNC-7 (realtime, không polling):** phát tin nhắn tới client/Admin bằng WebSocket + **pub/sub
+  in-process** (event-driven), KHÔNG worker polling. Ràng buộc kéo theo: hub sống trong tiến trình → chạy
+  MỘT uvicorn worker. Muốn đa-worker thì thay lớp pub/sub bằng một broker ngoài tiến trình (phase sau).
 
 ---
 
@@ -371,8 +373,8 @@ hội thoại chờ lượt trả lời tiếp theo.
 ## 12. Bộ nhớ hội thoại (Conversation Memory)
 
 **Phase 1:** mỗi hội thoại có memory riêng; **không chia sẻ dữ liệu giữa các hội thoại** (cross-conversation
-memory để Phase 2). Lưu ngắn hạn ở Redis (truy cập nhanh trong lượt), sao lưu bền ở Postgres (bảng
-`conversation`/`message`, §20).
+memory để Phase 2). Lưu bền ở Postgres (bảng `conversation`/`message`, §20); mỗi lượt nạp `history_window`
+tin gần nhất từ đó vào prompt — KHÔNG có tầng cache riêng.
 
 ```json
 {
@@ -615,12 +617,12 @@ Window (tin khách / AI / admin).
 | Embeddings           | text-embedding-3-small (hoặc tương đương)                      |
 | Database             | PostgreSQL (Neon managed)                                      |
 | Vector DB            | Qdrant (Cloud)                                                 |
-| Cache / Session      | Redis (Upstash) — session ngắn hạn + pub/sub realtime          |
+| Session / Memory     | PostgreSQL (`conversation`/`message`) — không có tầng cache riêng |
 | Async (scaffold)     | FastAPI BackgroundTasks (KHÔNG broker polling)                  |
 | Observability        | Langfuse (phase sau)                                          |
 
 > **Ghi chú queue/realtime:**
->  CSKH realtime dùng **WebSocket** cho chat và **Redis pub/sub** (event-driven) để phát tin nhắn tới nhiều client/Admin —
+>  CSKH realtime dùng **WebSocket** cho chat và **pub/sub in-process** (event-driven) để phát tin nhắn tới nhiều client/Admin —
 
 ---
 

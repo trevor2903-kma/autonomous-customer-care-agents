@@ -27,7 +27,7 @@
 - **07a — Pipeline integration.** Graph runs all 4 nodes end-to-end (`intent → knowledge → decision → response`).
 - **07b — Realtime chat backend (minimal).** WebSocket `/ws/chat` runs the full pipeline per message and returns
   `{type:"reply"}` (+ `typing`). *Single-turn: a fresh `thread_id` per message — no cross-turn memory yet; no
-  Redis pub/sub yet (single client is fine).*
+  pub/sub hub yet (single client is fine).*
 - **07c — Customer chat UI** (§16). `/chat` renders AI replies + typing indicator over WebSocket.
 - **05 — Agent 3 · Decision Engine** (§7.3). **Deterministic** policy: routes on FLAGS (`BLOCKING_FLAGS`), **NOT**
   confidence-blending; `RETRIEVAL_THRESHOLD` split from `confidence_threshold`; priority/severity by intent;
@@ -116,9 +116,9 @@
   thứ ba `clarify` (order_status/refund/exchange thiếu `order_id` → hỏi mã; tối đa 1 lần rồi handoff; safety-gate luôn
   ưu tiên trên clarify), Response phát câu hỏi CỐ ĐỊNH (no LLM) + `AWAITING_CUSTOMER`, resume = lượt kế với DB history.
   Giữ `MemorySaver` + `thread_id` mỗi lượt. **Còn lại:** durable checkpointer + `interrupt()` + stable thread_id
-  (Redis/Postgres, FR-ASYNC-6) — chỉ cần khi dừng-GIỮA-graph hoặc chạy >1 worker; DB+status-gate đã che nhu cầu hiện tại.
+  (Postgres, FR-ASYNC-6) — chỉ cần khi dừng-GIỮA-graph hoặc chạy >1 worker; DB+status-gate đã che nhu cầu hiện tại.
 - **09c — Auto-resolve + offline handling** (§9/§10). **Auto-resolve inactivity DONE** — periodic Postgres sweep
-  (asyncio task trong lifespan, KHÔNG polling Redis): `REPLIED`/`AWAITING_CUSTOMER` im lặng ≥ T1
+  (asyncio task trong lifespan, KHÔNG polling broker): `REPLIED`/`AWAITING_CUSTOMER` im lặng ≥ T1
   (`auto_resolve_minutes`) → 1 tin nhắc → im lặng ≥ T2 (`auto_resolve_grace_minutes`) → `RESOLVED`. Guarded UPDATE
   re-check status lúc ghi nên takeover/khách-nhắn-lại giữa sweep KHÔNG bị đóng nhầm (FR-ASYNC-4); tin nhắc/đóng =
   template cố định qua `send_auto_message` (no-bump) + `hub.publish` (sole-egress, KHÔNG LLM); gate `auto_resolve`
@@ -155,7 +155,7 @@
 - **UI redesign.** End-phase visual pass, incremental, no-backend-touched, plain Tailwind.
 - **14 — Deploy ← NEXT.** Backend → Render/Railway; frontend → Vercel; cloud infra; env secrets; personal-data care (NFR-6).
   Constraints from audit v2: keep ONE uvicorn worker (hub, per-customer turn lock, dedupe registry, live-socket
-  registry, rate limiters and the RAG write lock are in-process) until Redis pub/sub + locks (FR-ASYNC-7); run uvicorn
+  registry, rate limiters and the RAG write lock are in-process) until out-of-process pub/sub + locks (FR-ASYNC-7); run uvicorn
   with `--ws-max-size 65536` (the Dockerfile does; a custom start command must too) and `--proxy-headers
   --forwarded-allow-ips` or every client shares the proxy IP's login/register rate limit; `alembic upgrade head`
   (7c4e2a9f1b3d adds `message.client_msg_id`); the first reindex turns the real `knowledge` collection into an alias

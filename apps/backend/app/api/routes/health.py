@@ -1,4 +1,4 @@
-"""Health check — ping thật API + Neon + Upstash + Qdrant (plan Phase 2).
+"""Health check — ping thật API + Neon + Qdrant (plan Phase 2).
 
 Endpoint CÔNG KHAI (không auth — load balancer / `make health`) nên chỉ trả ok/không từng dịch vụ + status tổng.
 Lỗi thật (có thể chứa hostname, tên role Postgres, URL cluster) CHỈ ghi log phía server (audit v2, SEC-XC.4).
@@ -16,7 +16,6 @@ from ...core.config import settings
 from ...core.database import ping_db
 from ...core.logging import get_logger
 from ...core.qdrant_client import ping_qdrant
-from ...core.redis_client import ping_redis
 
 log = get_logger("health")
 
@@ -43,7 +42,6 @@ async def _probe(name: str, fn: Callable[[], Awaitable[Any]]) -> dict[str, bool]
 async def health() -> dict[str, Any]:
     services = {
         "database": await _probe("database", ping_db),
-        "redis": await _probe("redis", ping_redis),
         "qdrant": await _probe("qdrant", ping_qdrant),
     }
     healthy = all(s["ok"] for s in services.values())

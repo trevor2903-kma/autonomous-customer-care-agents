@@ -15,7 +15,7 @@ help:
 	@echo   migrate            - alembic upgrade head
 	@echo   makemigration      - alembic revision --autogenerate
 	@echo   health             - curl /api/health
-	@echo   check-conn         - kiem tra ket noi Neon/Upstash/Qdrant (Phase 1)
+	@echo   check-conn         - kiem tra ket noi Neon/Qdrant (Phase 1)
 	@echo   ingest-kb          - nap lai KB apps/backend/knowledge vao Qdrant (reset-and-reingest)
 	@echo   test               - pytest backend + unit test dashboard (node --test)
 	@echo   build              - pnpm -r build
@@ -43,7 +43,7 @@ health:
 	curl -s http://localhost:8000/api/health
 
 check-conn:
-	uv run --python 3.12 --with asyncpg --with redis --with qdrant-client --with python-dotenv scripts/check_connections.py
+	uv run --python 3.12 --with asyncpg --with qdrant-client --with python-dotenv scripts/check_connections.py
 
 ingest-kb:
 	cd apps/backend && uv run python ../../scripts/ingest_kb.py

@@ -27,7 +27,8 @@ mở /chat rồi thoát KHÔNG để lại ca rỗng trong hàng đợi admin.
 Persist guarded (DB lỗi KHÔNG chặn chat — `reply` vẫn gửi). Riêng `handoff`/`pending` hứa một trạng thái ĐÃ commit:
 bước ghi của lượt hỏng cả sau 1 lần thử lại → khách nhận `FALLBACK_REPLY` (không hứa gì) thay cho hai frame đó
 (GRAPH-02.1). `db_conversation_id` = khoá hub (TÁCH khỏi thread_id checkpointer).
-Hub, khoá khách, registry chống trùng, rate limiter đều IN-PROCESS (1 worker; đa-worker = Redis, FR-ASYNC-7).
+Hub, khoá khách, registry chống trùng, rate limiter đều IN-PROCESS (1 worker; đa-worker cần hạ tầng chia sẻ,
+FR-ASYNC-7).
 """
 
 from __future__ import annotations

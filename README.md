@@ -67,7 +67,6 @@ gặp giới hạn. Admin theo dõi, tiếp quản, duyệt nháp và giám sát
 | Realtime        | WebSocket + **pub/sub in-process** (1 worker)                                                                   |
 | Vector store    | **Qdrant Cloud** (cosine)                                                                                       |
 | CSDL            | **Neon** (Postgres, async)                                                                                      |
-| Cache           | **Upstash** (Redis)                                                                                             |
 | Observability   | **Langfuse** (trace LLM, degrade-safe) + `audit_log` (Postgres)                                                 |
 | Frontend        | Next.js 14 · React 18 · **Tailwind CSS (thuần)** · TanStack Query · TypeScript · PWA                            |
 | Monorepo        | pnpm workspaces (`apps/*`, `packages/*`) + backend Python riêng                                                 |
@@ -103,7 +102,7 @@ gặp giới hạn. Admin theo dõi, tiếp quản, duyệt nháp và giám sát
 ### Yêu cầu
 
 - Python **3.12**, [`uv`](https://docs.astral.sh/uv/), Node.js + **pnpm**
-- Tài khoản: Neon (Postgres) · Upstash (Redis) · Qdrant Cloud · OpenAI API key
+- Tài khoản: Neon (Postgres) · Qdrant Cloud · OpenAI API key
 
 ### Các bước
 
@@ -143,7 +142,6 @@ make dev-dashboard                    # http://localhost:3000
 | LLM                      | `LLM_API_KEY`, `ENABLE_LLM`                                                                                                                    |
 | Postgres (Neon)          | `DATABASE_URL`, `DATABASE_SSL`                                                                                                                 |
 | Qdrant                   | `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION`                                                                                            |
-| Redis (Upstash)          | `REDIS_URL` (hoặc `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`)                                                                       |
 | Xác thực                 | `JWT_SECRET`, `JWT_EXPIRE_MINUTES`                                                                                                             |
 | Langfuse (tuỳ chọn)      | `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`                                                                                  |
 | Tinh chỉnh (có mặc định) | `RETRIEVAL_THRESHOLD` (0.40) · `AUTO_RESOLVE_MINUTES` · `SWEEP_INTERVAL_SECONDS` · `MAX_MESSAGE_CHARS` · `NFR_LATENCY_MS` · `HISTORY_WINDOW` … |
@@ -160,7 +158,7 @@ Danh sách đầy đủ + mô tả xem `apps/backend/.env.example` và `app/core
 | `make migrate`             | `alembic upgrade head`                        |
 | `make makemigration`       | Tạo migration mới                             |
 | `make ingest-kb`           | Reset + nạp lại kho tri thức vào Qdrant       |
-| `make check-conn`          | Kiểm tra kết nối Postgres/Redis/Qdrant/OpenAI |
+| `make check-conn`          | Kiểm tra kết nối Postgres/Qdrant              |
 | `make health`              | Health check backend                          |
 | `make test`                | Chạy test (offline)                           |
 | `make build`               | Build production dashboard                    |

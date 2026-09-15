@@ -11,7 +11,7 @@ uv run uvicorn app.main:app --reload --port 8000
 # hoặc từ gốc repo:  make dev-backend
 ```
 
-- Health: `GET /api/health` — ping thật Neon + Upstash + Qdrant.
+- Health: `GET /api/health` — ping thật Neon + Qdrant.
 - WebSocket echo (scaffold): `ws://localhost:8000/ws/chat`.
 - Docs: `GET /docs`.
 

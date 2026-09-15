@@ -21,7 +21,6 @@ from .core.config import settings
 from .core.embeddings import close_openai
 from .core.logging import configure_logging, get_logger
 from .core.qdrant_client import close_qdrant
-from .core.redis_client import close_redis
 from .services import auto_resolve
 
 configure_logging()
@@ -44,10 +43,9 @@ async def lifespan(app: FastAPI):
     except asyncio.CancelledError:
         pass
     tracing.flush()  # đẩy nốt sự kiện còn trong hàng đợi; no-op nếu tracing tắt
-    await close_redis()
     await close_qdrant()
     await close_openai()
-    log.info("Backend shutdown — closed redis/qdrant/openai clients")
+    log.info("Backend shutdown — closed qdrant/openai clients")
 
 
 app = FastAPI(
