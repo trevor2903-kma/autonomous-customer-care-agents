@@ -14,7 +14,7 @@ import {
   custTurnAfter,
 } from "@/components/chat/custStatus";
 import { RequireAuth } from "@/components/auth/RequireAuth";
-import { type CustomerThread, chatWsUrl, getMyThread } from "@/lib/api";
+import { type CustomerThread, chatWsUrl, fetchWsToken, getMyThread } from "@/lib/api";
 
 import { useAuth } from "@/lib/auth";
 import {
@@ -53,9 +53,9 @@ const stamp = () => {
 // Server từ chối vì gửi quá nhanh (`error/rate_limited`) — thông báo TẠM phía khách, không lưu DB.
 const RATE_LIMIT_NOTICE = "Bạn đang gửi hơi nhanh — vui lòng đợi giây lát rồi bấm “Gửi lại”.";
 
-// URL socket: trình duyệt tự động gửi kèm cookie access_token khi handshake.
-function currentChatWsUrl(): string | null {
-  return chatWsUrl();
+// URL socket: gắn token WS ngắn hạn lấy MỚI mỗi lần nối (iOS không gửi cookie khác site lúc handshake).
+async function currentChatWsUrl(): Promise<string | null> {
+  return chatWsUrl(await fetchWsToken());
 }
 
 function ChatInner() {
@@ -73,7 +73,7 @@ function ChatInner() {
   // socket CŨ chỉ đánh dấu "chưa gửi được", KHÔNG ép nối lại socket MỚI.
   const ackTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const genRef = useRef(0);
-  const wsUrl = useMemo(currentChatWsUrl, []);
+  const wsUrl = useMemo(() => chatWsUrl(), []);
 
   const nextId = () => idRef.current++;
   const push = (m: Omit<ChatMessage, "id" | "time" | "at">) => {

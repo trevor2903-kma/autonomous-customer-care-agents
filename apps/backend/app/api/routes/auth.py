@@ -226,6 +226,14 @@ async def logout(response: Response) -> dict[str, Any]:
     return {"ok": True, "message": "logged out"}
 
 
+@router.post("/ws-token")
+async def ws_token(user: User = Depends(get_current_user)) -> dict[str, str]:
+    """Token NGẮN HẠN cho `?token=` khi nối WS. REST đi qua proxy Next (cookie cùng site) nhưng WS nối thẳng backend
+    khác site → Safari/iOS (ITP) không gửi cookie lúc handshake; FE lấy token này (qua proxy) cho MỖI lần nối."""
+    token = create_access_token(user_id=str(user.id), role=user.role, expire_minutes=settings.jwt_ws_expire_minutes)
+    return {"token": token}
+
+
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)) -> UserOut:
     return user

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { adminInboxWsUrl } from "@/lib/api";
+import { adminInboxWsUrl, fetchWsToken } from "@/lib/api";
 import { asString, createInboxBatcher } from "@/lib/realtime";
 import { useReconnectingSocket } from "@/lib/useReconnectingSocket";
 
@@ -13,14 +13,14 @@ import { useReconnectingSocket } from "@/lib/useReconnectingSocket";
 // lưu lượng khách không được quyết định tần suất nạp. `refetchInterval` 60 s ở các query chỉ còn là lưới an toàn
 // khi socket rớt lâu.
 
-// URL kênh inbox: trình duyệt tự động gửi kèm cookie access_token khi handshake.
-function currentInboxWsUrl(): string | null {
-  return adminInboxWsUrl();
+// URL kênh inbox: gắn token WS ngắn hạn lấy MỚI mỗi lần nối (iOS không gửi cookie khác site lúc handshake).
+async function currentInboxWsUrl(): Promise<string | null> {
+  return adminInboxWsUrl(await fetchWsToken());
 }
 
 export function useAdminInbox(): void {
   const qc = useQueryClient();
-  const url = useMemo(currentInboxWsUrl, []);
+  const url = useMemo(() => adminInboxWsUrl(), []);
   const [batcher] = useState(() =>
     createInboxBatcher(({ escalations, changed }) => {
       qc.invalidateQueries({ queryKey: ["conversations"] });

@@ -131,3 +131,14 @@ async def test_websocket_authenticated_via_cookie(monkeypatch: pytest.MonkeyPatc
     assert payload is not None and payload["sub"] == str(customer.id)
     assert ws.closed_with is None
 
+
+
+async def test_query_token_takes_precedence_over_stale_cookie(monkeypatch: pytest.MonkeyPatch) -> None:
+    # iOS/proxy: FE gắn token mới qua `?token=`; cookie (nếu có) có thể đã hết hạn → không được chặn handshake.
+    customer = _user(UserRole.CUSTOMER)
+    _use_db(monkeypatch, customer)
+    fresh = create_access_token(user_id=str(customer.id), role=UserRole.CUSTOMER)
+    ws = _FakeWebSocket(token=fresh, cookies={"access_token": "het-han"})
+    payload = await ws_auth.authenticate_websocket(ws, UserRole.CUSTOMER)
+    assert payload is not None and payload["sub"] == str(customer.id)
+    assert ws.closed_with is None

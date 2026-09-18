@@ -31,7 +31,7 @@ export type SocketHandlers = {
   authRole?: string;
   /** Dựng URL (kèm token HIỆN TẠI trong localStorage) ở MỖI lần nối; không truyền → `url` cố định. Trả null (token đã
    *  bị xoá) → dừng hẳn. Xem `socketUrl`. */
-  resolveUrl?: () => string | null;
+  resolveUrl?: () => string | null | Promise<string | null>;
   /** Mọi frame JSON hợp lệ, trừ `pong` (hook tự nuốt). */
   onFrame: (frame: Frame) => void;
   /** Socket mở (bắt tay xong). `isReconnect` = không phải lần mở đầu tiên. Đối soát lịch sử nên chờ frame xác nhận
@@ -103,11 +103,12 @@ export function useReconnectingSocket(url: string | null, handlers: SocketHandle
       scheduleReconnect();
     };
 
-    function connect() {
+    async function connect() {
       if (disposed) return;
       retryTimer = undefined;
       // URL dựng lại ở MỖI lần nối: sau 4401 mà phiên vẫn còn, lần thử lại mang token mới (không lặp mãi URL cũ).
-      const target = socketUrl(url, handlersRef.current.resolveUrl);
+      const target = await socketUrl(url, handlersRef.current.resolveUrl);
+      if (disposed) return;
       if (!target) {
         setState("offline");
         return;
@@ -168,7 +169,7 @@ export function useReconnectingSocket(url: string | null, handlers: SocketHandle
     }
 
     forceRef.current = forceReconnect;
-    connect();
+    void connect();
     return () => {
       disposed = true;
       stopBeat();

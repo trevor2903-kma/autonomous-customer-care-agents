@@ -8,6 +8,8 @@ import type {
 } from "shared-types";
 
 export function getApiBase(): string {
+  // Proxy qua Next (next.config.mjs, API_PROXY_TARGET) → gọi cùng origin để cookie auth là cookie bên thứ nhất.
+  if (process.env.API_PROXY_ENABLED === "1") return "";
   if (process.env.NEXT_PUBLIC_API_BASE_URL) {
     return process.env.NEXT_PUBLIC_API_BASE_URL;
   }
@@ -119,7 +121,17 @@ async function fail(res: Response, fallback: string): Promise<never> {
   throw new Error(detail);
 }
 
-// ── WS URL (trình duyệt tự động gửi cookie access_token khi handshake; token query-param là fallback) ──
+// ── WS URL: WS nối thẳng backend (khác site) → Safari/iOS không gửi cookie lúc handshake; mỗi lần nối lấy token
+// ngắn hạn qua `/api/auth/ws-token` (đi qua proxy, có cookie) gắn vào `?token=`. Lấy hỏng → để cookie tự lo như cũ. ──
+export async function fetchWsToken(): Promise<string | undefined> {
+  try {
+    const res = await req("/api/auth/ws-token", { method: "POST" });
+    if (!res.ok) return undefined;
+    return ((await res.json()) as { token: string }).token;
+  } catch {
+    return undefined;
+  }
+}
 export function chatWsUrl(token?: string): string {
   return token ? `${getWsUrl()}?token=${encodeURIComponent(token)}` : getWsUrl();
 }

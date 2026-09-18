@@ -38,7 +38,10 @@ export function stopAfterAuthClose(probe: { role: string } | null | undefined, r
 /** URL cho MỖI lần nối (FE-01.2). Có `resolve` → luôn dựng lại từ token HIỆN TẠI: sau 4401 mà phiên vẫn còn (vừa đăng
  *  nhập lại ở tab khác) lần thử lại mang token mới thay vì lặp mãi URL có token đã bị từ chối; `resolve` trả null
  *  (token đã bị xoá — đăng xuất) → null = dừng hẳn, KHÔNG quay về URL cũ. Không có `resolve` → URL cố định `fixed`. */
-export function socketUrl(fixed: string | null, resolve?: () => string | null): string | null {
+export function socketUrl(
+  fixed: string | null,
+  resolve?: () => string | null | Promise<string | null>,
+): string | null | Promise<string | null> {
   return resolve ? resolve() : fixed;
 }
 

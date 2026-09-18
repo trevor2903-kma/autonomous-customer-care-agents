@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 10080  # tương thích cũ — mặc định 7 ngày
     jwt_access_expire_minutes: int = 30  # access token hết hạn sau 30 phút
     jwt_refresh_expire_days: int = 7  # refresh token hết hạn sau 7 ngày
+    # Token ngắn hạn cho handshake WS (`/auth/ws-token`): FE qua proxy Next không gửi được cookie tới WS khác site.
+    jwt_ws_expire_minutes: int = 1
     cookie_secure: bool = False  # dev: False (HTTP), prod: True (HTTPS)
     cookie_samesite: str = "lax"  # "lax", "strict", hoặc "none"
     cookie_domain: str | None = None

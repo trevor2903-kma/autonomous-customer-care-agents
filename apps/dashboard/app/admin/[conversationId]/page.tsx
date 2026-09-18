@@ -7,6 +7,7 @@ import type { AdminConversation } from "shared-types";
 import {
   adminWsUrl,
   approveDraft,
+  fetchWsToken,
   getAdminConversation,
   rejectDraft,
   resolveConversation,
@@ -71,9 +72,9 @@ function initials(s?: string | null): string {
 const NOT_ASSIGNED_NOTICE =
   "Tin chưa được gửi: bạn không còn giữ ca này (chưa tiếp quản, ca đã đổi trạng thái hoặc nhân viên khác đã nhận).";
 
-// URL socket ca: trình duyệt tự động gửi kèm cookie access_token khi handshake.
-function currentAdminWsUrl(conversationId: string): string | null {
-  return adminWsUrl(conversationId);
+// URL socket ca: gắn token WS ngắn hạn lấy MỚI mỗi lần nối (iOS không gửi cookie khác site lúc handshake).
+async function currentAdminWsUrl(conversationId: string): Promise<string | null> {
+  return adminWsUrl(conversationId, await fetchWsToken());
 }
 
 // Chip ngăn cách theo ngày (kiểu Zalo) — cùng cách hiển thị với box chat khách.
@@ -175,7 +176,7 @@ export default function AdminConversationPage({
   const ackTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const genRef = useRef(0);
   const seqRef = useRef(0);
-  const wsUrl = useMemo(() => currentAdminWsUrl(id), [id]);
+  const wsUrl = useMemo(() => adminWsUrl(id), [id]);
 
   const {
     data: conv,

@@ -17,7 +17,7 @@ from app.api.routes import auth as auth_routes
 from app.core.config import settings
 from app.core.database import get_session
 from app.core.rate_limit import SlidingWindowLimiter
-from app.core.security import hash_password
+from app.core.security import decode_access_token, hash_password
 from app.models import User
 from app.models.enums import UserRole
 from app.schemas.auth import EMAIL_MAX_LENGTH
@@ -307,3 +307,17 @@ async def test_logout_in_production_includes_secure_and_samesite_none(
         assert "max-age=0" in c or "expires=" in c
 
 
+
+
+async def test_ws_token_is_short_lived_access_token(client: httpx.AsyncClient) -> None:
+    login_res = await _login(client, EXISTING.email, PASSWORD)
+    access_token = login_res.cookies["access_token"]
+    r = await client.post("/api/auth/ws-token", headers={"Cookie": f"access_token={access_token}"})
+    assert r.status_code == 200
+    payload = decode_access_token(r.json()["token"])
+    assert payload is not None and payload["sub"] == str(EXISTING.id)
+    assert payload["exp"] - payload["iat"] == settings.jwt_ws_expire_minutes * 60
+
+
+async def test_ws_token_requires_auth(client: httpx.AsyncClient) -> None:
+    assert (await client.post("/api/auth/ws-token")).status_code == 401

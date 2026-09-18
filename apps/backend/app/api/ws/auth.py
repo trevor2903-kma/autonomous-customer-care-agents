@@ -44,7 +44,8 @@ async def _db_role(sub: Any) -> str | None:
 async def authenticate_websocket(websocket: WebSocket, required_role: str) -> dict[str, Any] | None:
     """Trả payload JWT nếu hợp lệ & role TRONG DB đúng; ngược lại đóng WS (4401) + trả None. Gọi SAU accept()."""
     cookies = getattr(websocket, "cookies", None) or {}
-    token = cookies.get("access_token") or websocket.query_params.get("token")
+    # `?token=` (FE lấy MỚI qua `/auth/ws-token` mỗi lần nối) ưu tiên hơn cookie — cookie có thể cũ/hết hạn.
+    token = websocket.query_params.get("token") or cookies.get("access_token")
     payload = decode_access_token(token) if token else None
     role: str | None = None
     if payload is not None:
