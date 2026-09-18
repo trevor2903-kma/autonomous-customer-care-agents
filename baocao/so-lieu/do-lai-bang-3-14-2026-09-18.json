@@ -1,0 +1,453 @@
+{
+  "meta": {
+    "ngay_do": "2026-09-18",
+    "bo_cau_hoi": "scripts/verify_intent.py — CASES (20 câu)",
+    "cach_do": "mỗi câu một tài khoản mới (một hội thoại riêng), chạy lần lượt qua /ws/chat thật; kết cục dựng bằng report_service.group_turns từ audit_log",
+    "cau_hinh": {
+      "enable_llm": true,
+      "llm_model": "gpt-4o-mini",
+      "embedding_model": "text-embedding-3-small",
+      "retrieval_threshold": 0.4,
+      "history_window": 8
+    }
+  },
+  "luot": [
+    {
+      "stt": 1,
+      "cau_hoi": "cái quần jean này nhiêu xu vậy shop",
+      "intent_ky_vong": "product_price",
+      "intent_do_duoc": "product_price",
+      "thuc_the": {
+        "product_name": "quần jean"
+      },
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.5862163,
+      "ms_phia_may_chu": 11261,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Em chưa có thông tin về giá của quần jean cụ thể. Anh/chị vui lòng cho em biết tên hoặc mã sản phẩm, hoặc gửi ảnh sản phẩm để em hỗ trợ tốt hơn nhé!"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 2,
+      "cau_hoi": "đầm này vải có nóng không ạ",
+      "intent_ky_vong": "product_information",
+      "intent_do_duoc": "product_information",
+      "thuc_the": {
+        "product_name": "đầm"
+      },
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.40884596,
+      "ms_phia_may_chu": 6850,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Em chưa có thông tin về chất liệu của đầm này ạ. Anh/chị có thể kiểm tra mô tả sản phẩm trên website hoặc app để biết thêm chi tiết về vải và cảm giác khi mặc nhé!"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 3,
+      "cau_hoi": "em 1m65 58kg thì lấy size nào vừa",
+      "intent_ky_vong": "size_consulting",
+      "intent_do_duoc": "size_consulting",
+      "thuc_the": {
+        "height": "1m65",
+        "weight": "58kg"
+      },
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.72362447,
+      "ms_phia_may_chu": 5473,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Với chiều cao 1m65 và cân nặng 58kg, em có thể chọn size L, vì size này phù hợp với chiều cao từ 165–173 cm. Nếu em thích mặc thoải mái hơn, có thể cân nhắc chọn size XL. Nếu cần thêm thông tin gì, em cứ hỏi nhé!"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 4,
+      "cau_hoi": "gửi ra Hà Nội mất bao lâu shop ơi",
+      "intent_ky_vong": "shipping",
+      "intent_do_duoc": "shipping",
+      "thuc_the": {
+        "destination": "Hà Nội"
+      },
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.5305971,
+      "ms_phia_may_chu": 6499,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Thời gian giao hàng ra Hà Nội là từ 2 đến 5 ngày làm việc. Nếu bạn có thêm câu hỏi nào khác, hãy cho em biết nhé!"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 5,
+      "cau_hoi": "kiện hàng mã AB12 giờ nằm ở đâu rồi",
+      "intent_ky_vong": "order_status",
+      "intent_do_duoc": "order_status",
+      "thuc_the": {
+        "order_id": "AB12"
+      },
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "AWAITING_CUSTOMER",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.47477153,
+      "ms_phia_may_chu": 3111,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Dạ em không tìm thấy đơn AB12 trong tài khoản của anh/chị ạ. Anh/chị kiểm tra rồi gửi lại mã đơn giúp em nhé; nếu mã vẫn không ra, anh/chị nhắn muốn gặp nhân viên để em chuyển nhân viên kiểm tra giúp ạ."
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 6,
+      "cau_hoi": "hàng lỗi muốn trả lại lấy tiền về",
+      "intent_ky_vong": "refund",
+      "intent_do_duoc": "refund",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "AWAITING_CUSTOMER",
+      "hanh_dong_tac_tu_3": "clarify",
+      "ly_do_chuyen": null,
+      "co": [
+        "ambiguous_intent"
+      ],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.77902466,
+      "ms_phia_may_chu": 3877,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Dạ anh/chị cho em xin mã đơn hàng để em kiểm tra giúp ạ."
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 7,
+      "cau_hoi": "cho đổi qua màu đen được hông shop",
+      "intent_ky_vong": "exchange",
+      "intent_do_duoc": "exchange",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "AWAITING_CUSTOMER",
+      "hanh_dong_tac_tu_3": "clarify",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.7047926,
+      "ms_phia_may_chu": 3393,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Dạ anh/chị cho em xin mã đơn hàng để em kiểm tra giúp ạ."
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 8,
+      "cau_hoi": "nhân viên trả lời trống không, thái độ quá tệ",
+      "intent_ky_vong": "complaint",
+      "intent_do_duoc": "complaint",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "held_for_approval",
+      "trang_thai_ca": "PENDING_APPROVAL",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.44895023,
+      "ms_phia_may_chu": 4117,
+      "khung_ket_thuc": "pending",
+      "tin_nhan_ai": [],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 9,
+      "cau_hoi": "đang có đợt sale nào hong shop",
+      "intent_ky_vong": "promotion",
+      "intent_do_duoc": "promotion",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.5865751,
+      "ms_phia_may_chu": 6148,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Hiện tại, ThriftYourStyle có các đợt khuyến mãi theo dịp và ưu đãi cho thành viên. Chương trình khuyến mãi đang chạy sẽ được thông báo trên website, app và Fanpage của shop. Bạn có thể kiểm tra để biết thêm thông tin chi tiết nhé!"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 10,
+      "cau_hoi": "cho mình hỏi vé xem phim tối nay mấy giờ",
+      "intent_ky_vong": "other",
+      "intent_do_duoc": "other",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "queued_for_human",
+      "trang_thai_ca": "IN_HUMAN_QUEUE",
+      "hanh_dong_tac_tu_3": "human_handoff",
+      "ly_do_chuyen": "blocking_flags=['out_of_domain']",
+      "co": [
+        "out_of_domain"
+      ],
+      "co_chan": [
+        "out_of_domain"
+      ],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.47930264,
+      "ms_phia_may_chu": 3701,
+      "khung_ket_thuc": "handoff",
+      "tin_nhan_ai": [
+        "Yêu cầu của bạn đã được chuyển tới nhân viên hỗ trợ."
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 11,
+      "cau_hoi": "freeship cho đơn từ mấy trăm k vậy ạ",
+      "intent_ky_vong": "shipping",
+      "intent_do_duoc": "shipping",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.6770102,
+      "ms_phia_may_chu": 4692,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Đơn hàng từ 500.000đ sẽ được miễn phí vận chuyển ạ. Nếu đơn dưới mức đó, phí giao tiêu chuẩn là 30.000đ. Nếu cần thêm thông tin gì, em sẵn sàng hỗ trợ!"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 12,
+      "cau_hoi": "tư vấn giúp em chọn size áo khoác với",
+      "intent_ky_vong": "size_consulting",
+      "intent_do_duoc": "size_consulting",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [
+        "ambiguous_intent"
+      ],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.70878196,
+      "ms_phia_may_chu": 6092,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Để chọn size áo khoác, bạn cần đo vòng ngực và chiều cao của mình. Dưới đây là bảng size tham khảo:\n\nSize S: Vòng ngực 84–90 cm, Chiều cao 155–163 cm  \nSize M: Vòng ngực 90–96 cm, Chiều cao 160–168 cm  \nSize L: Vòng ngực 96–102 cm, Chiều cao 165–173 cm  \nSize XL: Vòng ngực 102–110 cm, Chiều cao 170–178 cm  \nSize XXL: Vòng ngực 110–118 cm, Chiều cao 175–183 cm  \n\nNếu bạn có số đo nằm giữa hai size, hãy chọn size lớn hơn nếu thích mặc thoải mái. Nếu cần thêm thông tin, bạn có thể hỏi nhé!"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 13,
+      "cau_hoi": "xin chào shop",
+      "intent_ky_vong": "greeting",
+      "intent_do_duoc": "greeting",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.0,
+      "ms_phia_may_chu": 2239,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Dạ em chào anh/chị ạ! Em là trợ lý của shop. Anh/chị cần em hỗ trợ gì về sản phẩm, size, đơn hàng hay chính sách đổi/trả ạ?"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 14,
+      "cau_hoi": "cảm ơn shop nhiều nha",
+      "intent_ky_vong": "greeting",
+      "intent_do_duoc": "greeting",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.0,
+      "ms_phia_may_chu": 2910,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Dạ em chào anh/chị ạ! Em là trợ lý của shop. Anh/chị cần em hỗ trợ gì về sản phẩm, size, đơn hàng hay chính sách đổi/trả ạ?"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 15,
+      "cau_hoi": "cho mình xin chính sách trả hàng với",
+      "intent_ky_vong": "return_exchange_policy",
+      "intent_do_duoc": "return_exchange_policy",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.669413,
+      "ms_phia_may_chu": 5899,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Chính sách trả hàng của shop như sau:\n\nĐối với đơn hàng online, bạn có thể đổi hoặc trả hàng trong vòng 30 ngày kể từ khi nhận hàng. Đối với hàng mua tại cửa hàng, chỉ áp dụng đổi trong 30 ngày kể từ ngày mua.\n\nSản phẩm phải chưa qua sử dụng, chưa giặt, còn nguyên tag và nhãn, kèm theo mã đơn hoặc hóa đơn. \n\nLưu ý, đồ lót và đồ bơi đã mở niêm phong sẽ không được đổi hoặc trả. Nếu có lỗi từ nhà sản xuất, bạn có thể đổi hoặc trả trong vòng 6 tháng kèm bằng chứng.\n\nNếu bạn cần thêm thông tin, hãy cho mình biết nhé!"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 16,
+      "cau_hoi": "mua về mặc thử không vừa thì đổi trong bao lâu ạ",
+      "intent_ky_vong": "return_exchange_policy",
+      "intent_do_duoc": "return_exchange_policy",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.6411371,
+      "ms_phia_may_chu": 5569,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Nếu mua hàng online, bạn có thể đổi hoặc trả trong 30 ngày kể từ khi nhận hàng. Sản phẩm cần phải chưa qua sử dụng, chưa giặt, còn nguyên tag và nhãn. Nếu bạn mua tại cửa hàng, chỉ áp dụng đổi trong 30 ngày kể từ ngày mua."
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 17,
+      "cau_hoi": "shop cho thanh toán bằng momo không",
+      "intent_ky_vong": "payment",
+      "intent_do_duoc": "payment",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.8453514,
+      "ms_phia_may_chu": 5366,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Shop có hỗ trợ thanh toán bằng ví điện tử MoMo ạ. Bạn có thể chọn hình thức này khi đặt hàng. Nếu cần thêm thông tin gì, hãy cho em biết nhé!"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 18,
+      "cau_hoi": "đăng ký thành viên để tích điểm kiểu gì vậy",
+      "intent_ky_vong": "membership",
+      "intent_do_duoc": "membership",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.7343122,
+      "ms_phia_may_chu": 5306,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Để đăng ký thành viên, bạn có thể thực hiện qua website hoặc ứng dụng của shop. Khi trở thành thành viên, bạn sẽ tích điểm khi mua hàng, nhận coupon riêng và được thông báo sớm về hàng mới cũng như các đợt sale. Hãy sử dụng cùng một tài khoản khi mua online để điểm và ưu đãi được ghi nhận. Nếu cần thêm thông tin chi tiết, bạn có thể xem trong mục thành viên trên website."
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 19,
+      "cau_hoi": "cửa hàng mình mấy giờ đóng cửa vậy",
+      "intent_ky_vong": "store_information",
+      "intent_do_duoc": "store_information",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.8369637,
+      "ms_phia_may_chu": 4180,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Cửa hàng ThriftYourStyle hỗ trợ khách hàng từ 9:00 đến 21:00 hằng ngày. Nếu bạn cần thêm thông tin, hãy cho em biết nhé!"
+      ],
+      "nhap_cho_duyet": {}
+    },
+    {
+      "stt": 20,
+      "cau_hoi": "shop có số hotline nào gọi được không",
+      "intent_ky_vong": "store_information",
+      "intent_do_duoc": "store_information",
+      "thuc_the": {},
+      "ket_cuc_bao_cao": "sent",
+      "trang_thai_ca": "REPLIED",
+      "hanh_dong_tac_tu_3": "auto_reply",
+      "ly_do_chuyen": null,
+      "co": [],
+      "co_chan": [],
+      "du_phong_hallucination_risk": false,
+      "do_tin_cay_truy_hoi": 0.76525056,
+      "ms_phia_may_chu": 4991,
+      "khung_ket_thuc": "reply",
+      "tin_nhan_ai": [
+        "Shop có số hotline là 0900 000 000, bạn có thể gọi vào số này trong giờ hỗ trợ từ 9:00 đến 21:00 hằng ngày. Nếu cần thêm thông tin, bạn cũng có thể nhắn tin qua Fanpage ThriftYourStyle nhé!"
+      ],
+      "nhap_cho_duyet": {}
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+ "prefix": "b3n100-",
+ "since": "2000-01-01T00:00:00+00:00",
+ "n": 100.0,
+ "avg_ms": 8335.38,
+ "p50_ms": 8009.0,
+ "p95_ms": 9836.0,
+ "p99_ms": 9874.0,
+ "max_ms": 9918.0,
+ "min_ms": 6630.0,
+ "nfr1_pct": 0.0,
+ "first_at": "2026-09-17T18:33:11.730918+00:00",
+ "last_at": "2026-09-17T18:33:14.874988+00:00",
+ "avg_queue_ms": 0.31,
+ "avg_pre_pipeline_ms": 1358.49,
+ "avg_pipeline_ms": 5605.0,
+ "avg_persist_ms": 1369.9,
+ "avg_send_ms": 0.0,
+ "avg_fanout_ms": 0.0,
+ "p95_pipeline_ms": 6553.0,
+ "p95_persist_ms": 2578.0,
+ "p95_pre_pipeline_ms": 1664.0,
+ "outcomes": {
+  "sent": 100
+ },
+ "final_status": {
+  "REPLIED": 100
+ },
+ "node_avg_ms": {
+  "decision": 0.0,
+  "intent": 1459.5,
+  "knowledge": 1733.8,
+  "response": 1711.0
+ },
+ "node_p95_ms": {
+  "decision": 0,
+  "intent": 2146,
+  "knowledge": 2270,
+  "response": 2510
+ },
+ "knowledge": {
+  "avg_embed_ms": 552.3,
+  "avg_qdrant_ms": 1181.0,
+  "avg_order_ms": 0.0,
+  "skipped": 0,
+  "order_found": 0,
+  "p95_embed_ms": 1152
+ },
+ "intents": {
+  "shipping": 100
+ },
+ "flags": {}
+}

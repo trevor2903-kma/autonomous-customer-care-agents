@@ -1,0 +1,532 @@
+{
+ "b2_n1": {
+  "prefix": "b2n1-",
+  "since": "2000-01-01T00:00:00+00:00",
+  "n": 1.0,
+  "avg_ms": 5860.0,
+  "p50_ms": 5860.0,
+  "p95_ms": 5860.0,
+  "p99_ms": 5860.0,
+  "max_ms": 5860.0,
+  "min_ms": 5860.0,
+  "nfr1_pct": 0.0,
+  "first_at": "2026-09-17T18:02:03.886642+00:00",
+  "last_at": "2026-09-17T18:02:03.886642+00:00",
+  "avg_queue_ms": 0.0,
+  "avg_pre_pipeline_ms": 927.0,
+  "avg_pipeline_ms": 4287.0,
+  "avg_persist_ms": 645.0,
+  "avg_send_ms": 0.0,
+  "avg_fanout_ms": 0.0,
+  "p95_pipeline_ms": 4287.0,
+  "p95_persist_ms": 645.0,
+  "p95_pre_pipeline_ms": 927.0,
+  "outcomes": {
+   "sent": 1
+  },
+  "final_status": {
+   "REPLIED": 1
+  },
+  "node_avg_ms": {
+   "decision": 0.0,
+   "intent": 1013.0,
+   "knowledge": 1109.0,
+   "response": 2155.0
+  },
+  "node_p95_ms": {
+   "decision": 0,
+   "intent": 1013,
+   "knowledge": 1109,
+   "response": 2155
+  },
+  "knowledge": {
+   "avg_embed_ms": 345.0,
+   "avg_qdrant_ms": 763.0,
+   "avg_order_ms": 0.0,
+   "skipped": 0,
+   "order_found": 0,
+   "p95_embed_ms": 345
+  },
+  "intents": {
+   "shipping": 1
+  },
+  "flags": {}
+ },
+ "b2_n10": {
+  "prefix": "b2n10-",
+  "since": "2000-01-01T00:00:00+00:00",
+  "n": 10.0,
+  "avg_ms": 5130.6,
+  "p50_ms": 5035.0,
+  "p95_ms": 5648.0,
+  "p99_ms": 5648.0,
+  "max_ms": 5648.0,
+  "min_ms": 4862.0,
+  "nfr1_pct": 40.0,
+  "first_at": "2026-09-17T18:02:42.640933+00:00",
+  "last_at": "2026-09-17T18:02:43.041774+00:00",
+  "avg_queue_ms": 0.0,
+  "avg_pre_pipeline_ms": 1038.0,
+  "avg_pipeline_ms": 3464.5,
+  "avg_persist_ms": 626.3,
+  "avg_send_ms": 0.0,
+  "avg_fanout_ms": 0.0,
+  "p95_pipeline_ms": 3833.0,
+  "p95_persist_ms": 845.0,
+  "p95_pre_pipeline_ms": 1121.0,
+  "outcomes": {
+   "sent": 10
+  },
+  "final_status": {
+   "REPLIED": 10
+  },
+  "node_avg_ms": {
+   "decision": 0.0,
+   "intent": 1250.5,
+   "knowledge": 1043.1,
+   "response": 1161.6
+  },
+  "node_p95_ms": {
+   "decision": 0,
+   "intent": 1745,
+   "knowledge": 1270,
+   "response": 1341
+  },
+  "knowledge": {
+   "avg_embed_ms": 265.0,
+   "avg_qdrant_ms": 777.6,
+   "avg_order_ms": 0.0,
+   "skipped": 0,
+   "order_found": 0,
+   "p95_embed_ms": 444
+  },
+  "intents": {
+   "shipping": 10
+  },
+  "flags": {}
+ },
+ "b2_n25": {
+  "prefix": "b2n25-",
+  "since": "2000-01-01T00:00:00+00:00",
+  "n": 25.0,
+  "avg_ms": 5048.16,
+  "p50_ms": 5042.0,
+  "p95_ms": 5481.0,
+  "p99_ms": 5941.0,
+  "max_ms": 5941.0,
+  "min_ms": 4384.0,
+  "nfr1_pct": 48.0,
+  "first_at": "2026-09-17T18:03:39.189132+00:00",
+  "last_at": "2026-09-17T18:03:40.785222+00:00",
+  "avg_queue_ms": 0.0,
+  "avg_pre_pipeline_ms": 1014.64,
+  "avg_pipeline_ms": 3182.32,
+  "avg_persist_ms": 849.52,
+  "avg_send_ms": 0.0,
+  "avg_fanout_ms": 0.0,
+  "p95_pipeline_ms": 3708.0,
+  "p95_persist_ms": 1122.0,
+  "p95_pre_pipeline_ms": 1177.0,
+  "outcomes": {
+   "sent": 25
+  },
+  "final_status": {
+   "REPLIED": 25
+  },
+  "node_avg_ms": {
+   "decision": 0.0,
+   "intent": 1121.1,
+   "knowledge": 851.5,
+   "response": 1200.2
+  },
+  "node_p95_ms": {
+   "decision": 0,
+   "intent": 1197,
+   "knowledge": 1107,
+   "response": 1329
+  },
+  "knowledge": {
+   "avg_embed_ms": 249.2,
+   "avg_qdrant_ms": 601.6,
+   "avg_order_ms": 0.0,
+   "skipped": 0,
+   "order_found": 0,
+   "p95_embed_ms": 319
+  },
+  "intents": {
+   "shipping": 25
+  },
+  "flags": {}
+ },
+ "b2_n50": {
+  "prefix": "b2n50-",
+  "since": "2000-01-01T00:00:00+00:00",
+  "n": 50.0,
+  "avg_ms": 6246.48,
+  "p50_ms": 6323.0,
+  "p95_ms": 6598.0,
+  "p99_ms": 6706.0,
+  "max_ms": 6706.0,
+  "min_ms": 5399.0,
+  "nfr1_pct": 0.0,
+  "first_at": "2026-09-17T18:05:06.936635+00:00",
+  "last_at": "2026-09-17T18:05:08.248121+00:00",
+  "avg_queue_ms": 0.0,
+  "avg_pre_pipeline_ms": 1120.7,
+  "avg_pipeline_ms": 3392.62,
+  "avg_persist_ms": 1731.56,
+  "avg_send_ms": 0.0,
+  "avg_fanout_ms": 0.0,
+  "p95_pipeline_ms": 3745.0,
+  "p95_persist_ms": 2019.0,
+  "p95_pre_pipeline_ms": 1344.0,
+  "outcomes": {
+   "sent": 50
+  },
+  "final_status": {
+   "REPLIED": 50
+  },
+  "node_avg_ms": {
+   "decision": 0.0,
+   "intent": 1077.4,
+   "knowledge": 1096.5,
+   "response": 1173.0
+  },
+  "node_p95_ms": {
+   "decision": 0,
+   "intent": 1293,
+   "knowledge": 1258,
+   "response": 1430
+  },
+  "knowledge": {
+   "avg_embed_ms": 305.0,
+   "avg_qdrant_ms": 790.9,
+   "avg_order_ms": 0.0,
+   "skipped": 0,
+   "order_found": 0,
+   "p95_embed_ms": 476
+  },
+  "intents": {
+   "shipping": 50
+  },
+  "flags": {}
+ },
+ "b2_n100": {
+  "prefix": "b2n100-",
+  "since": "2000-01-01T00:00:00+00:00",
+  "n": 100.0,
+  "avg_ms": 8998.16,
+  "p50_ms": 9068.0,
+  "p95_ms": 9705.0,
+  "p99_ms": 10408.0,
+  "max_ms": 10753.0,
+  "min_ms": 7321.0,
+  "nfr1_pct": 0.0,
+  "first_at": "2026-09-17T18:07:36.204972+00:00",
+  "last_at": "2026-09-17T18:07:39.031671+00:00",
+  "avg_queue_ms": 0.04,
+  "avg_pre_pipeline_ms": 2127.0,
+  "avg_pipeline_ms": 5465.81,
+  "avg_persist_ms": 1403.76,
+  "avg_send_ms": 0.0,
+  "avg_fanout_ms": 0.0,
+  "p95_pipeline_ms": 6401.0,
+  "p95_persist_ms": 2183.0,
+  "p95_pre_pipeline_ms": 2427.0,
+  "outcomes": {
+   "sent": 100
+  },
+  "final_status": {
+   "REPLIED": 100
+  },
+  "node_avg_ms": {
+   "decision": 0.0,
+   "intent": 1144.4,
+   "knowledge": 1800.2,
+   "response": 1728.2
+  },
+  "node_p95_ms": {
+   "decision": 0,
+   "intent": 1322,
+   "knowledge": 2831,
+   "response": 2834
+  },
+  "knowledge": {
+   "avg_embed_ms": 759.7,
+   "avg_qdrant_ms": 1040.0,
+   "avg_order_ms": 0.0,
+   "skipped": 0,
+   "order_found": 0,
+   "p95_embed_ms": 2603
+  },
+  "intents": {
+   "shipping": 100
+  },
+  "flags": {}
+ },
+ "b2_xagiao": {
+  "prefix": "b2xagiao-",
+  "since": "2000-01-01T00:00:00+00:00",
+  "n": 50.0,
+  "avg_ms": 3821.98,
+  "p50_ms": 3785.0,
+  "p95_ms": 4407.0,
+  "p99_ms": 4490.0,
+  "max_ms": 4490.0,
+  "min_ms": 2814.0,
+  "nfr1_pct": 100.0,
+  "first_at": "2026-09-17T18:09:04.706443+00:00",
+  "last_at": "2026-09-17T18:09:06.923014+00:00",
+  "avg_queue_ms": 0.1,
+  "avg_pre_pipeline_ms": 1125.9,
+  "avg_pipeline_ms": 1288.12,
+  "avg_persist_ms": 1406.22,
+  "avg_send_ms": 0.0,
+  "avg_fanout_ms": 0.0,
+  "p95_pipeline_ms": 1941.0,
+  "p95_persist_ms": 1915.0,
+  "p95_pre_pipeline_ms": 1352.0,
+  "outcomes": {
+   "sent": 50
+  },
+  "final_status": {
+   "REPLIED": 50
+  },
+  "node_avg_ms": {
+   "decision": 0.0,
+   "intent": 1113.9,
+   "knowledge": 0.0,
+   "response": 0.0
+  },
+  "node_p95_ms": {
+   "decision": 0,
+   "intent": 1499,
+   "knowledge": 0,
+   "response": 0
+  },
+  "knowledge": {
+   "avg_embed_ms": null,
+   "avg_qdrant_ms": null,
+   "avg_order_ms": 0.0,
+   "skipped": 50,
+   "order_found": 0,
+   "p95_embed_ms": null
+  },
+  "intents": {
+   "greeting": 50
+  },
+  "flags": {}
+ },
+ "b2_tradon": {
+  "prefix": "b2tradon-",
+  "since": "2000-01-01T00:00:00+00:00",
+  "n": 50.0,
+  "avg_ms": 6791.4,
+  "p50_ms": 6763.0,
+  "p95_ms": 7552.0,
+  "p99_ms": 7614.0,
+  "max_ms": 7614.0,
+  "min_ms": 5764.0,
+  "nfr1_pct": 0.0,
+  "first_at": "2026-09-17T18:10:33.830384+00:00",
+  "last_at": "2026-09-17T18:10:35.911139+00:00",
+  "avg_queue_ms": 0.04,
+  "avg_pre_pipeline_ms": 1162.38,
+  "avg_pipeline_ms": 4378.16,
+  "avg_persist_ms": 1249.06,
+  "avg_send_ms": 0.0,
+  "avg_fanout_ms": 0.0,
+  "p95_pipeline_ms": 5115.0,
+  "p95_persist_ms": 1833.0,
+  "p95_pre_pipeline_ms": 1403.0,
+  "outcomes": {
+   "sent": 50
+  },
+  "final_status": {
+   "REPLIED": 50
+  },
+  "node_avg_ms": {
+   "decision": 0.0,
+   "intent": 1144.0,
+   "knowledge": 1732.6,
+   "response": 1452.3
+  },
+  "node_p95_ms": {
+   "decision": 0,
+   "intent": 1368,
+   "knowledge": 2265,
+   "response": 1636
+  },
+  "knowledge": {
+   "avg_embed_ms": 386.7,
+   "avg_qdrant_ms": 909.7,
+   "avg_order_ms": 435.2,
+   "skipped": 0,
+   "order_found": 50,
+   "p95_embed_ms": 575
+  },
+  "intents": {
+   "order_status": 50
+  },
+  "flags": {}
+ },
+ "b2_khongtradon": {
+  "prefix": "b2khongtradon-",
+  "since": "2000-01-01T00:00:00+00:00",
+  "n": 50.0,
+  "avg_ms": 6184.48,
+  "p50_ms": 6241.0,
+  "p95_ms": 6604.0,
+  "p99_ms": 6949.0,
+  "max_ms": 6949.0,
+  "min_ms": 5228.0,
+  "nfr1_pct": 0.0,
+  "first_at": "2026-09-17T18:12:07.062515+00:00",
+  "last_at": "2026-09-17T18:12:08.610703+00:00",
+  "avg_queue_ms": 0.18,
+  "avg_pre_pipeline_ms": 1213.64,
+  "avg_pipeline_ms": 3378.84,
+  "avg_persist_ms": 1590.28,
+  "avg_send_ms": 0.0,
+  "avg_fanout_ms": 0.0,
+  "p95_pipeline_ms": 3835.0,
+  "p95_persist_ms": 2141.0,
+  "p95_pre_pipeline_ms": 1376.0,
+  "outcomes": {
+   "sent": 50
+  },
+  "final_status": {
+   "REPLIED": 50
+  },
+  "node_avg_ms": {
+   "decision": 0.0,
+   "intent": 1056.8,
+   "knowledge": 1102.8,
+   "response": 1123.7
+  },
+  "node_p95_ms": {
+   "decision": 0,
+   "intent": 1209,
+   "knowledge": 1282,
+   "response": 1283
+  },
+  "knowledge": {
+   "avg_embed_ms": 308.6,
+   "avg_qdrant_ms": 793.7,
+   "avg_order_ms": 0.0,
+   "skipped": 0,
+   "order_found": 0,
+   "p95_embed_ms": 469
+  },
+  "intents": {
+   "shipping": 50
+  },
+  "flags": {}
+ },
+ "b2_ls4": {
+  "prefix": "b2ls4-",
+  "since": "2026-09-17T18:24:59+00:00",
+  "n": 50.0,
+  "avg_ms": 6209.74,
+  "p50_ms": 6571.0,
+  "p95_ms": 6973.0,
+  "p99_ms": 7105.0,
+  "max_ms": 7105.0,
+  "min_ms": 4978.0,
+  "nfr1_pct": 2.0,
+  "first_at": "2026-09-17T18:26:03.219829+00:00",
+  "last_at": "2026-09-17T18:26:05.335260+00:00",
+  "avg_queue_ms": 0.04,
+  "avg_pre_pipeline_ms": 1147.56,
+  "avg_pipeline_ms": 3656.64,
+  "avg_persist_ms": 1403.82,
+  "avg_send_ms": 0.0,
+  "avg_fanout_ms": 0.0,
+  "p95_pipeline_ms": 4385.0,
+  "p95_persist_ms": 1974.0,
+  "p95_pre_pipeline_ms": 1266.0,
+  "outcomes": {
+   "sent": 50
+  },
+  "final_status": {
+   "REPLIED": 50
+  },
+  "node_avg_ms": {
+   "decision": 0.0,
+   "intent": 1159.5,
+   "knowledge": 1184.4,
+   "response": 1209.1
+  },
+  "node_p95_ms": {
+   "decision": 0,
+   "intent": 1338,
+   "knowledge": 1265,
+   "response": 1465
+  },
+  "knowledge": {
+   "avg_embed_ms": 288.4,
+   "avg_qdrant_ms": 895.4,
+   "avg_order_ms": 0.0,
+   "skipped": 0,
+   "order_found": 0,
+   "p95_embed_ms": 405
+  },
+  "intents": {
+   "shipping": 50
+  },
+  "flags": {}
+ },
+ "b2_ls8": {
+  "prefix": "b2ls8-",
+  "since": "2026-09-17T18:27:13+00:00",
+  "n": 50.0,
+  "avg_ms": 6133.06,
+  "p50_ms": 6279.0,
+  "p95_ms": 6867.0,
+  "p99_ms": 7047.0,
+  "max_ms": 7047.0,
+  "min_ms": 5247.0,
+  "nfr1_pct": 0.0,
+  "first_at": "2026-09-17T18:28:16.685689+00:00",
+  "last_at": "2026-09-17T18:28:18.269293+00:00",
+  "avg_queue_ms": 0.0,
+  "avg_pre_pipeline_ms": 1162.0,
+  "avg_pipeline_ms": 3675.3,
+  "avg_persist_ms": 1294.08,
+  "avg_send_ms": 0.0,
+  "avg_fanout_ms": 0.0,
+  "p95_pipeline_ms": 4246.0,
+  "p95_persist_ms": 1799.0,
+  "p95_pre_pipeline_ms": 1303.0,
+  "outcomes": {
+   "sent": 50
+  },
+  "final_status": {
+   "REPLIED": 50
+  },
+  "node_avg_ms": {
+   "decision": 0.0,
+   "intent": 1105.9,
+   "knowledge": 1194.4,
+   "response": 1295.5
+  },
+  "node_p95_ms": {
+   "decision": 0,
+   "intent": 1305,
+   "knowledge": 1384,
+   "response": 1801
+  },
+  "knowledge": {
+   "avg_embed_ms": 278.2,
+   "avg_qdrant_ms": 915.8,
+   "avg_order_ms": 0.0,
+   "skipped": 0,
+   "order_found": 0,
+   "p95_embed_ms": 449
+  },
+  "intents": {
+   "shipping": 50
+  },
+  "flags": {}
+ }
+}

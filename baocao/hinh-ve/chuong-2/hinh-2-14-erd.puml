@@ -1,0 +1,145 @@
+@startuml hinh-2-14-erd
+' Hình 2.14. Sơ đồ quan hệ thực thể (ERD)  (Chương 2, mục 2.8.1)
+' ĐỐI CHIẾU apps/backend/app/models/*.py — 8 bảng.
+' Ký hiệu: PK khoá chính · FK khoá ngoại · U duy nhất · I có chỉ mục
+!include ../_style.puml
+hide circle
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+skinparam nodesep 40
+skinparam ranksep 55
+
+entity "**user**" as user {
+  **id** : UUID <<PK>>
+  --
+  email : VARCHAR(255) <<U, I>>
+  password_hash : VARCHAR(255)
+  role : VARCHAR(16)  //admin | customer//
+  display_name : VARCHAR(255)
+  created_at : TIMESTAMPTZ
+}
+
+entity "**conversation**" as conv {
+  **id** : UUID <<PK>>
+  --
+  customer_id : UUID <<FK, I>>  //NULL cho khách vãng lai//
+  customer_identifier : VARCHAR(255)
+  status : VARCHAR(32) <<I>>  //tập canonical//
+  current_intent : VARCHAR(64)
+  entities : JSONB
+  confidence : FLOAT
+  uncertainty_flags : JSONB
+  escalation_reason : TEXT
+  priority : VARCHAR(16)
+  severity : VARCHAR(16)
+  escalation_card : JSONB
+  assigned_admin_id : UUID
+  last_message_at : TIMESTAMPTZ
+  auto_resolve_reminded_at : TIMESTAMPTZ
+  created_at / updated_at : TIMESTAMPTZ
+}
+
+entity "**message**" as msg {
+  **id** : UUID <<PK>>
+  --
+  conversation_id : UUID <<FK, I>>
+  sender : VARCHAR(16)  //customer | ai | admin//
+  content : TEXT
+  intent : VARCHAR(64)
+  confidence : FLOAT
+  client_msg_id : VARCHAR(64)
+  created_at : TIMESTAMPTZ
+  --
+  <<U>> (conversation_id, client_msg_id)
+  //partial index khi client_msg_id khác NULL//
+}
+
+entity "**order**" as ord {
+  **id** : UUID <<PK>>
+  --
+  order_code : VARCHAR(32) <<U, I>>  //chỉ chữ số//
+  customer_id : UUID <<FK, I>>  //CHỦ đơn//
+  status : VARCHAR(16)
+  items_summary : VARCHAR(255)
+  region : VARCHAR(64)
+  ordered_at : TIMESTAMPTZ
+  shipped_at / delivered_at : TIMESTAMPTZ
+  cancelled_at : TIMESTAMPTZ
+  estimated_delivery : TIMESTAMPTZ
+  tracking_code : VARCHAR(64)
+  created_at : TIMESTAMPTZ
+}
+
+entity "**audit_log**" as audit {
+  **id** : UUID <<PK>>
+  --
+  conversation_id : UUID <<I>>  //KHÔNG khoá ngoại cứng//
+  message_id : UUID
+  turn_id : UUID <<I>>  //khoá gom một lượt//
+  duration_ms : INTEGER
+  node : VARCHAR(32)
+  action : VARCHAR(64)
+  confidence : FLOAT
+  uncertainty_flags : JSONB
+  escalation_reason : TEXT
+  detail : JSONB
+  created_at : TIMESTAMPTZ <<I>>
+}
+
+entity "**gate_config**" as gcfg {
+  **id** : INTEGER <<PK>>  //luôn bằng 1//
+  --
+  auto_reply_enabled : BOOLEAN
+  auto_resolve_enabled : BOOLEAN
+  auto_resolve_minutes : INTEGER  //T1//
+  auto_resolve_grace_minutes : INTEGER  //T2//
+}
+
+entity "**gate_intent_rule**" as grule {
+  **intent** : VARCHAR(64) <<PK>>  //khoá mang nghĩa nghiệp vụ//
+  --
+  label : VARCHAR(64)
+  sensitive : BOOLEAN  //chỉ để hiển thị nhãn//
+  send_directly : BOOLEAN  //true = gửi thẳng//
+}
+
+entity "**knowledge_document**" as kdoc {
+  **id** : UUID <<PK>>
+  --
+  title : VARCHAR(255)
+  source_type : VARCHAR(16)  //pdf | docx | txt | md//
+  file_ref : VARCHAR(512) <<U>>  //khớp payload.source//
+  doc_type : VARCHAR(16)  //faq | case | reference | upload//
+  intent : VARCHAR(64)
+  chunks : INTEGER
+  metadata : JSONB
+  status : VARCHAR(16)  //indexed | pending//
+  embedding_ref : VARCHAR(255)
+  created_at / indexed_at : TIMESTAMPTZ
+}
+
+user ||--o{ conv : "sở hữu\nON DELETE SET NULL"
+user ||--o{ ord  : "chủ đơn\nON DELETE CASCADE"
+conv ||--o{ msg  : "chứa\nON DELETE CASCADE"
+
+audit }o.. conv : "tham chiếu MỀM\n(không khoá ngoại)"
+audit }o.. msg  : "tham chiếu MỀM"
+
+note bottom of audit #FDE8E8
+  **Vì sao `audit_log` và `knowledge_document` không khai báo khoá ngoại cứng**
+  • Nhật ký kiểm toán phải **tồn tại được ngay cả khi hội thoại mà nó ghi lại đã bị xoá**;
+    ràng buộc cứng sẽ kéo theo việc xoá mất bằng chứng.
+  • Sổ tài liệu chỉ là **bản chiếu** của kho tri thức trong repository chứ không phải nguồn dữ liệu
+    chính thức, nên nó không được phép ràng buộc bất cứ thứ gì.
+  Hai bảng cấu hình `gate_config` và `gate_intent_rule` **không liên kết** với bảng nào: khoá của chúng
+  mang ý nghĩa nghiệp vụ (hằng số 1 và tên ý định) chứ không phải một định danh sinh máy.
+end note
+
+note right of ord #FFF3CD
+  **Cơ sở kỹ thuật của tra cứu theo phạm vi khách hàng**
+  Hàm `lookup` luôn nhận thêm `customer_id` làm tham số,
+  nên mã đơn của người khác và mã đơn không tồn tại
+  trả về **cùng một** kết quả — hệ thống không để lộ
+  sự tồn tại đơn hàng của khách khác.
+end note
+@enduml

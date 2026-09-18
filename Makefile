@@ -5,7 +5,7 @@
 
 .DEFAULT_GOAL := help
 .PHONY: help install dev-backend dev-dashboard migrate makemigration \
-        health check-conn ingest-kb test build local-infra-up local-infra-down
+        health check-conn ingest-kb test bench build local-infra-up local-infra-down
 
 help:
 	@echo Targets:
@@ -18,6 +18,7 @@ help:
 	@echo   check-conn         - kiem tra ket noi Neon/Qdrant (Phase 1)
 	@echo   ingest-kb          - nap lai KB apps/backend/knowledge vao Qdrant (reset-and-reingest)
 	@echo   test               - pytest backend + unit test dashboard (node --test)
+	@echo   bench              - tao tai dong thoi tren /ws/chat de do do tre (ARGS="--concurrency 1,10,25")
 	@echo   build              - pnpm -r build
 	@echo   local-infra-up     - docker compose local (du phong)
 	@echo   local-infra-down   - dung docker compose local
@@ -51,6 +52,10 @@ ingest-kb:
 test:
 	cd apps/backend && uv run pytest -q
 	pnpm --filter dashboard test
+
+# Cần backend đang chạy (`make dev-backend`). Mỗi lượt tốn hạn mức LLM thật.
+bench:
+	uv run --python 3.12 --with websockets --with httpx scripts/bench_concurrent.py $(ARGS)
 
 build:
 	pnpm -r build

@@ -1,0 +1,57 @@
+@startuml hinh-3-13-phan-ra-thoi-gian-mot-luot
+' Hình 3.13. Phân rã thời gian một lượt và phạm vi con số đối chiếu NFR-1  (Chương 3, mục 3.5.5)
+' ĐỐI CHIẾU apps/backend/app/api/ws/chat.py (_turn): total_ms = received → t_sent;
+'   queue_ms        = received → started
+'   pre_pipeline_ms = (started → t_fan0) + (t_fan1 → t_pipeline)
+'   fanout_ms       = (t_fan0 → t_fan1)  [TRONG total_ms]  + (t_fan2 → t_fan3)  [SAU t_sent, NGOÀI total_ms]
+'   pipeline_ms     = t_pipeline → t_decide
+'   persist_ms      = t_decide → t_send   (gồm kiểm tra cổng + giao dịch ghi, thử lại tối đa 1 lần)
+'   send_ms         = t_send → t_sent
+' Sơ đồ KHÔNG theo tỉ lệ thời gian (Bảng 3.17 chưa có số đo): độ dài các khối chỉ để minh hoạ thứ tự.
+!include ../_style.puml
+skinparam componentStyle rectangle
+skinparam rectangleBorderThickness 1
+skinparam nodesep 10
+skinparam ranksep 22
+
+rectangle "**NGOÀI PHẠM VI ĐO**\n(chưa đo)" as PRE #F1F3F5 {
+  rectangle "Mạng\ntrình duyệt\n→ máy chủ" as NET_IN #FFFFFF
+}
+
+rectangle "**total_ms — CON SỐ ĐỐI CHIẾU NFR-1** (P95 ≤ 5 giây)\ntừ //received// tới //t_sent//, đo phía máy chủ, ghi ở dòng `delivery` của audit_log" as TOTAL #EAF1FB {
+  rectangle "**queue_ms**\n\nchuẩn hoá, ack,\ntạo task lượt,\n**chờ khoá** sau\nlượt trước của\ncùng khách" as Q #FFFFFF
+  rectangle "**pre_pipeline_ms**\n//(phần 1)//\n\ntìm / mở ca,\nnạp lịch sử,\nlưu tin khách" as PP1 #FFFFFF
+  rectangle "**fanout_ms**\n//(lần 1)//\n\nphát tin khách\ncho admin và\ntab khác" as F1 #FFF3CD
+  rectangle "**pre_pipeline_ms**\n//(phần 2)//\n\nsinh turn_id,\ngửi khung\ntyping" as PP2 #FFFFFF
+  rectangle "**pipeline_ms**\n\nbốn tác tử:\n2 lời gọi LLM\n+ embed_ms\n+ qdrant_ms\n+ order_ms" as PIPE #DCE8F7
+  rectangle "**persist_ms**\n\nkiểm tra cổng\n+ MỘT giao dịch\nso-sánh-rồi-ghi\n(thử lại ≤ 1 lần)" as PER #FFFFFF
+  rectangle "**send_ms**\n\ntrao khung\ncho socket" as SEND #FFFFFF
+}
+
+rectangle "**NGOÀI total_ms**\n(ghi riêng / chưa đo)" as POST #F1F3F5 {
+  rectangle "**fanout_ms**\n//(lần 2)//\n\nphát câu trả lời\ncho admin và\ntab khác" as F2 #FFF3CD
+  rectangle "**ghi 6 dòng**\n**audit_log**\ncùng turn_id" as AUD #FFFFFF
+  rectangle "Mạng\nmáy chủ →\ntrình duyệt\n+ hiển thị" as NET_OUT #FFFFFF
+}
+
+NET_IN -right-> Q : //received//
+Q -right-> PP1 : //started//
+PP1 -right-> F1 : //t_fan0//
+F1 -right-> PP2 : //t_fan1//
+PP2 -right-> PIPE : //t_pipeline//
+PIPE -right-> PER : //t_decide//
+PER -right-> SEND : //t_send//
+SEND -right-> F2 : //t_sent//
+F2 -right-> AUD
+AUD -right-> NET_OUT
+
+legend bottom
+  **Ba điểm cần đọc đúng khi đối chiếu NFR-1** — sơ đồ **không theo tỉ lệ**: độ dài các khối chỉ minh hoạ thứ tự, không phải thời lượng.
+  1. **total_ms là độ trễ phía máy chủ**, tính từ lúc đọc được khung tin tới lúc trao khung phản hồi cho socket. Nó **không** gồm thời gian mạng hai chiều
+     và thời gian hiển thị ở trình duyệt, nên độ trễ khách cảm nhận luôn lớn hơn con số này.
+  2. **queue_ms nằm trong total_ms:** nếu khách gửi dồn nhiều tin, lượt sau phải chờ lượt trước và thời gian chờ đó được tính vào độ trễ của lượt sau.
+  3. **fanout_ms gồm hai lần phát và chỉ lần thứ hai nằm ngoài total_ms.** Lần phát thứ nhất (tin khách tới quản trị viên và các tab khác) xảy ra
+     **trước** pipeline nên vẫn nằm trong con số đối chiếu NFR-1; lần phát thứ hai (câu trả lời) xảy ra sau khi đã trao khung cho socket.
+  Do hệ thống **ghi trước rồi mới báo khách**, mọi vòng truy vấn cơ sở dữ liệu của lượt (pre_pipeline_ms, persist_ms) đều nằm trong con số đo được.
+endlegend
+@enduml

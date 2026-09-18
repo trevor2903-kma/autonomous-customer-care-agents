@@ -1,0 +1,92 @@
+@startuml hinh-2-12-tuan-tu-duyet-nhap
+' Hình 2.12. Biểu đồ tuần tự — Luồng duyệt nháp  (Chương 2, mục 2.7.4)
+' Kết cục 2 trong ba kết cục giao phản hồi: auto_reply + không cờ chặn + cổng TẮT cho ý định này.
+!include ../_style.puml
+autonumber "<b>[0]"
+
+actor "Khách hàng" as KH
+participant ":ChatWebSocket" as WS
+participant ":Pipeline\n//LangGraph//" as PIPE
+participant ":GateService" as GATE
+participant ":ConversationService" as CONV
+database ":PostgreSQL" as PG
+actor "Quản trị viên" as AD
+
+== Lượt của khách — nháp bị giữ lại ==
+
+KH -> WS : "em muốn hoàn đơn 1234567"
+activate WS
+WS --> KH : **ack**
+WS -> PIPE : run_pipeline(...)
+activate PIPE
+  PIPE -> PIPE : **Agent 1** → intent = `refund`, order_id = 1234567
+  PIPE -> PIPE : **Agent 2** → truy hồi quy trình hoàn tiền + tra đơn
+  PIPE -> PIPE : **Agent 3** — không cờ chặn → action = auto_reply
+  PIPE -> PIPE : **Agent 4** → sinh **nháp** phản hồi grounded
+PIPE --> WS : {reply = nháp, intent = refund}
+deactivate PIPE
+
+WS -> GATE : holds_auto_reply(status, intent)
+activate GATE
+GATE -> PG : gate_config + gate_intent_rule(refund)
+PG --> GATE : send_directly = **false**
+GATE --> WS : **true** — giữ nháp lại
+deactivate GATE
+
+group #FFF3CD MỘT giao dịch — ghi trước, báo sau
+  WS -> CONV : transition_status(→ PENDING_APPROVAL)
+  CONV -> PG : UPDATE conversation SET status, escalation_card\n(**suggested_reply = nháp của Agent 4**)\n**WHERE** status = giá trị đầu lượt
+  CONV -> PG : **COMMIT**
+end
+
+WS --> KH : **pending** — chỉ là **tín hiệu chờ**
+note left of KH #FDE8E8
+  Khách **không** nhận bất kỳ phần nội dung
+  nào của nháp. Nội dung chỉ rời khỏi hệ thống
+  sau khi đã có người phê duyệt — đúng nguyên
+  tắc điểm phát ngôn duy nhất.
+end note
+WS -> AD : phát lên /ws/admin-inbox qua hub
+deactivate WS
+
+== Quản trị viên xử lý nháp ==
+
+AD -> CONV : GET /admin/escalations
+CONV -> PG : SELECT … ORDER BY ánh xạ priority sang số, last_message_at
+CONV --> AD : hàng đợi kèm EscalationCard và nháp gợi ý
+
+alt Duyệt nháp (UC-13) hoặc Sửa nháp rồi gửi (UC-14)
+  AD -> CONV : POST approve {conversation_id, **expected_draft**, nội dung}
+  activate CONV
+  CONV -> PG : UPDATE **WHERE** status = 'PENDING_APPROVAL'\n**AND** escalation_card.suggested_reply = expected_draft
+  note right of CONV #FFF3CD
+    `expected_draft` chống tình huống ABA:
+    nháp đã bị thay giữa lúc đọc và lúc bấm duyệt
+    thì phép ghi thất bại thay vì gửi nhầm bản cũ.
+  end note
+  alt rowcount = 0
+    CONV --> AD : **409 Conflict** — giao diện tải lại trạng thái mới
+  else rowcount = 1
+    CONV -> PG : transition → REPLIED + INSERT message(ai)\n+ INSERT audit_log(node = admin) + **COMMIT**
+    CONV --> AD : thành công
+    CONV -> KH : phát qua hub //(sau khi commit)//: **reply** {nội dung đã duyệt}
+  end
+  deactivate CONV
+
+else Từ chối nháp (UC-15)
+  AD -> CONV : POST reject {conversation_id, expected_draft}
+  CONV -> PG : transition PENDING_APPROVAL → **IN_HUMAN_QUEUE** (CAS)\n+ INSERT audit_log(node = admin) + **COMMIT**
+  CONV --> AD : thành công — ca trở về hàng đợi người
+  AD -> CONV : POST takeover → **HUMAN_HANDLING**\nrồi chat trực tiếp với khách (xem Hình PL.4)
+end
+
+legend bottom
+  **Ba điểm thiết kế đọc được từ hình này**
+  1. **Cổng cấu hình chỉ can thiệp nhánh auto_reply.** Lượt này đã đi qua cổng an toàn của Agent 3 và không có
+     cờ chặn nào; việc giữ nháp là quyết định **chính sách kinh doanh**, không phải quyết định an toàn.
+  2. **Khách chỉ nhận tín hiệu chờ.** Không một ký tự nào của nháp rời khỏi hệ thống trước khi có người duyệt.
+  3. **Mọi thao tác của quản trị viên đều là so-sánh-rồi-ghi và đều sinh một dòng `audit_log` với `node = admin`.**
+     Hai quản trị viên cùng bấm duyệt thì chỉ một người thành công, người còn lại nhận lỗi xung đột chứ không
+     ghi đè lên nhau. Cấu hình mặc định TẮT cổng cho ba ý định nhạy cảm: `refund`, `exchange` và `complaint`.
+endlegend
+@enduml

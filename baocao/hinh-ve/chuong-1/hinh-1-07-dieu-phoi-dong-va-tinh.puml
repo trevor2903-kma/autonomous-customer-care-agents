@@ -1,0 +1,47 @@
+@startuml hinh-1-07-dieu-phoi-dong-va-tinh
+' Hình 1.7. So sánh điều phối động có Supervisor và điều phối tĩnh theo pipeline cố định  (Chương 1, mục 1.3.3)
+' Bố cục: hai khối xếp DỌC, (a) trên (b) dưới; pipeline ở (b) nằm NGANG để hai khối cùng bề rộng.
+!include ../_style.puml
+skinparam componentStyle rectangle
+skinparam rectangleBorderThickness 1
+skinparam nodesep 24
+skinparam ranksep 34
+
+rectangle "**(a) ĐIỀU PHỐI ĐỘNG — có tác tử Supervisor**" as LEFT #FDF6F6 {
+  rectangle "Yêu cầu" as QA #FFFFFF
+  component "**Supervisor** (một lời gọi LLM)\ntự quyết **tại thời điểm chạy**: gọi tác tử nào,\ntheo thứ tự nào, lặp lại bao nhiêu vòng" as SUP #FDE8E8
+  rectangle "Trả lời" as RA #FFFFFF
+  component "Tác tử A" as SA
+  component "Tác tử B" as SB
+  component "Tác tử C" as SC
+  rectangle "+ Linh hoạt tối đa, xử lý được yêu cầu phức hợp chưa lường trước\n− Cùng một câu hỏi có thể đi qua **hai đường khác nhau** ở hai lần chạy\n− Số lời gọi mô hình, chi phí và độ trễ **không có giới hạn trên**\n− Quyết định điều phối cũng là xác suất → **khó truy nguyên** khi hệ thống sai" as PROS_A #FFFFFF
+}
+
+rectangle "**(b) ĐIỀU PHỐI TĨNH — pipeline cố định**  (đề tài lựa chọn)" as RIGHT #F3F9F3 {
+  rectangle "Yêu cầu" as QB #FFFFFF
+  component "**Tác tử 1**\nphân loại ý định" as T1
+  component "**Tác tử 2**\ntruy hồi tri thức" as T2
+  component "**Tác tử 3**\nra quyết định\n(mã tất định)" as T3 #FFF3CD
+  component "**Tác tử 4**\nsinh phản hồi" as T4
+  rectangle "Trả lời" as RB #FFFFFF
+  rectangle "+ Mọi lần chạy đi **đúng một thứ tự**; điểm rẽ nhánh định trước trong mã tất định\n+ **Trần cứng** số lời gọi mô hình mỗi lượt, biết trước khi chạy\n+ Kiểm toán được **từng bước**, quy được lỗi về đúng tác tử đã gây ra\n+ Các tác tử chỉ quyết định **nội dung** xử lý, **không** quyết định luồng đi\n− Kém linh hoạt với yêu cầu phức hợp nằm ngoài thiết kế" as PROS_B #FFFFFF
+}
+
+QA -right-> SUP
+SUP -right-> RA
+SUP <-down-> SA : "gọi / trả"
+SUP <-down-> SB : "số vòng không\ngiới hạn trên"
+SUP <-down-> SC
+SA -[hidden]right- SB
+SB -[hidden]right- SC
+SB -[hidden]down- PROS_A
+
+QB -right-> T1
+T1 -right-> T2
+T2 -right-> T3
+T3 -right-> T4
+T4 -right-> RB
+T3 -[hidden]down- PROS_B
+
+LEFT -[hidden]down- RIGHT
+@enduml

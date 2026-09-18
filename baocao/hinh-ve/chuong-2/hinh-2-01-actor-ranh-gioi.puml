@@ -1,0 +1,33 @@
+@startuml hinh-2-01-actor-ranh-gioi
+' Hình 2.1. Sơ đồ actor và ranh giới hệ thống  (Chương 2, mục 2.1)
+!include ../_style.puml
+left to right direction
+skinparam packageStyle rectangle
+skinparam rectangleBorderThickness 1
+
+actor "**Khách hàng**\n(Customer)\n<size:11>Đăng nhập: tuỳ chọn</size>" as KH
+actor "**Quản trị viên**\n(Admin / NV CSKH)\n<size:11>Đăng nhập: bắt buộc</size>" as AD
+actor "**Tác vụ nền**\n(System sweeper)\n<size:11>Không đăng nhập</size>" as SW
+
+rectangle "                                    **HỆ THỐNG CSKH TỰ TRỊ ĐA TÁC TỬ**                                    " as SYS #FBFCFE {
+  rectangle "**Nhóm nghiệp vụ khách hàng**\n\n• Mở hội thoại và gửi tin nhắn\n• Nhận phản hồi tự động theo thời gian thực\n• Cung cấp mã đơn khi hệ thống hỏi lại\n• Tra cứu trạng thái đơn hàng của chính mình\n• Yêu cầu gặp nhân viên\n• Xem lại lịch sử hội thoại của mình" as GKH #EAF1FB
+
+  rectangle "**Nhóm nghiệp vụ quản trị**\n\n• Xem, lọc danh sách hội thoại\n• Nhận ca từ hàng đợi chuyển tiếp (takeover)\n• Chat trực tiếp với khách hàng\n• Duyệt, sửa hoặc từ chối nháp phản hồi\n• Đóng ca (resolve)\n• Quản lý kho tri thức (upload / reindex)\n• Cấu hình cổng theo từng ý định\n• Xem báo cáo và nhật ký kiểm toán" as GAD #EAF1FB
+
+  rectangle "**Nhóm nghiệp vụ tự động**\n\n• Quét định kỳ hội thoại im lặng\n• Gửi tin nhắc (ngưỡng T1)\n• Tự đóng ca (ngưỡng T2)" as GSW #F1F3F5
+}
+
+KH --> GKH
+AD --> GAD
+SW --> GSW
+
+GKH -[hidden]down- GAD
+GAD -[hidden]down- GSW
+
+note bottom of GSW #FDE8E8
+  **Ranh giới quyền hạn — mặc định an toàn**
+  Mọi truy vấn đơn hàng đều mang theo định danh chủ đơn lấy từ phiên đăng nhập.
+  Không có định danh thì hệ thống không trả về bất kỳ đơn nào; mã đơn của người
+  khác và mã đơn không tồn tại cho **cùng một** kết quả (không lộ sự tồn tại).
+end note
+@enduml

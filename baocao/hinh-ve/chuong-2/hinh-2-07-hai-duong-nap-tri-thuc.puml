@@ -1,0 +1,71 @@
+@startuml hinh-2-07-hai-duong-nap-tri-thuc
+' Hình 2.7. Hai đường nạp kho tri thức: canonical và ad-hoc  (Chương 2, mục 2.6.1)
+!include ../_style.puml
+skinparam componentStyle rectangle
+skinparam rectangleBorderThickness 1
+skinparam nodesep 20
+skinparam ranksep 34
+
+rectangle "**ĐƯỜNG 1 — CANONICAL** (nguồn chân lý, phiên bản hoá bằng Git)" as P1 #F3F9F3 {
+  folder "**knowledge/** trong repository" as KB {
+    artifact "**facts.md** — 1 tài liệu\nsự thật lõi cửa hàng" as FACTS #FFF3CD
+    artifact "**faq/** — 7 tài liệu" as FAQ
+    artifact "**reference/** — 4 tài liệu" as REF
+    artifact "**case/** — 4 tài liệu" as CASE
+    artifact "**promotion/** — 0 tài liệu\n(thư mục đã dựng sẵn)" as PROMO #F1F3F5
+  }
+  component "**Nạp lại toàn bộ (reindex)**\n`make reindex` hoặc nút trên dashboard\nXoá sạch rồi dựng lại — không có bài toán đồng bộ" as REINDEX
+}
+
+rectangle "**ĐƯỜNG 2 — AD-HOC** (bổ sung tạm thời, KHÔNG phải nguồn chính thức)" as P2 #FDF6F6 {
+  actor "Quản trị viên" as AD
+  component "**Upload tài liệu** từ dashboard\npdf · docx · txt · md" as UPLOAD
+  component "**Lớp D — làm sạch tài liệu**\nthay câu mang tính ra lệnh bằng một dấu vết\n(không xoá âm thầm)\nbỏ mục `## Internal Note`\ntên tệp chỉ lấy phần cuối" as SANITIZE #FDE8E8
+}
+
+rectangle "**XỬ LÝ CHUNG**" as COMMON #FBFCFE {
+  component "**Chia đoạn theo section**\nmỗi mục Markdown là một đoạn, giữ nguyên văn\nphần trước tiêu đề đầu tiên = đoạn mở bài\nmục nguyên khối giữ nguyên bất kể độ dài\n**loại hẳn** mục `## Internal Note` khỏi chỉ mục" as CHUNK
+  component "**Mở rộng truy vấn (query-expansion)**\nngoài các điểm của thân tài liệu, tạo thêm\nMỘT điểm cho MỖI câu hỏi khai ở frontmatter;\nvector = vector câu hỏi, nội dung trả về = thân tài liệu\n→ chuyển so khớp câu-hỏi ↔ văn bản\n   thành so khớp câu-hỏi ↔ câu-hỏi" as QE #DCE8F7
+  component "**Sinh embedding**\ntext-embedding-3-small\nđịnh danh điểm sinh TẤT ĐỊNH từ\n(đường dẫn tài liệu, chỉ số đoạn) → luỹ đẳng" as EMB
+}
+
+database "**Qdrant**\ncollection vật lý có hậu tố thời gian,\ntruy vấn qua **alias** (xem Hình 2.8)" as QD
+database "**PostgreSQL** — bảng `knowledge_document`\nsổ hiển thị, dựng lại mỗi lần reindex\n`doc_type` phân biệt canonical với `upload`" as PG
+
+component "**Agent 4 — Response Generator**\nnạp facts.md thẳng vào prompt hệ thống ở MỌI lượt" as A4 #DCE8F7
+component "**Agent 2 — Knowledge Agent**\ntruy hồi theo ý định hoặc trên phạm vi rộng" as A2 #DCE8F7
+
+FACTS -[hidden]right- FAQ
+FAQ -[hidden]right- REF
+REF -[hidden]right- CASE
+CASE -[hidden]right- PROMO
+
+FAQ --> REINDEX
+REF --> REINDEX
+CASE --> REINDEX
+PROMO --> REINDEX
+FACTS -[#B8860B,bold]-> A4 : **KHÔNG vào Qdrant**\nnạp thẳng vào prompt
+
+AD --> UPLOAD
+UPLOAD --> SANITIZE
+
+REINDEX --> CHUNK
+SANITIZE --> CHUNK
+CHUNK --> QE
+QE --> EMB
+EMB --> QD
+EMB --> PG
+
+QD --> A2
+A4 -[hidden]right- A2
+
+note bottom of PG #FDE8E8
+  **Bất đối xứng có chủ đích giữa hai đường nạp**
+  • Tài liệu tải lên theo Đường 2 **bị xoá sau lần nạp lại toàn bộ kế tiếp**. Đây là hành vi ĐÚNG đã ghi rõ
+    trong tài liệu thiết kế, chứ không phải lỗi: cơ sở dữ liệu vector chỉ là **bản phái sinh** của repository
+    và phải dựng lại được hoàn toàn bằng một lệnh duy nhất.
+  • Chỉ Đường 2 đi qua Lớp D, vì tài liệu trong repository do nhóm phát triển biên soạn và đã được rà soát
+    qua quy trình review của Git.
+  • Upload lại cùng một tệp là **THAY** bản cũ (có phiên bản), không phải thêm một bản trùng.
+end note
+@enduml

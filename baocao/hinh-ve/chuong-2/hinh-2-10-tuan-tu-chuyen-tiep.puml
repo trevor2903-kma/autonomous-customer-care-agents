@@ -1,0 +1,71 @@
+@startuml hinh-2-10-tuan-tu-chuyen-tiep
+' Hình 2.10. Biểu đồ tuần tự — Luồng chuyển tiếp cho nhân viên  (Chương 2, mục 2.7.2)
+!include ../_style.puml
+autonumber "<b>[0]"
+
+actor "Khách hàng" as KH
+participant ":ChatWebSocket" as WS
+participant ":Pipeline\n//LangGraph//" as PIPE
+participant ":EscalationService" as ESC
+participant ":ConversationService" as CONV
+database ":PostgreSQL" as PG
+actor "Quản trị viên" as AD
+
+KH -> WS : message — "cho tôi gặp nhân viên"
+activate WS
+WS --> KH : **ack**
+WS -> CONV : lưu tin khách + phát cho tab khác
+WS --> KH : **typing**
+
+WS -> PIPE : run_pipeline(...)
+activate PIPE
+  PIPE -> PIPE : **Agent 1** — phát cờ\n`human_requested` / `out_of_domain`
+  PIPE -> PIPE : **Agent 2** — có thể phát thêm\n`no_relevant_knowledge` · `search_error`
+  PIPE -> PIPE : **Agent 3** — (cờ giao BLOCKING_FLAGS)\nkhác rỗng → action = human_handoff
+  PIPE -> PIPE : is_within_support_hours(now)
+  alt trong giờ hỗ trợ
+    PIPE -> PIPE : **Agent 4** → `HANDOFF_NOTICE`
+  else ngoài giờ hỗ trợ
+    PIPE -> PIPE : **Agent 4** → `HANDOFF_NOTICE_AFTER_HOURS`
+  end
+PIPE --> WS : {action = human_handoff, câu mẫu,\nescalation_reason, priority, severity}
+deactivate PIPE
+
+WS -> ESC : dựng EscalationCard từ trạng thái cuối
+ESC --> WS : {summary, intent, entities, rag_context,\nescalation_reason, priority, severity,\nsuggested_reply = **rỗng**}
+
+group #FDE8E8 MỘT giao dịch — ghi trước, báo sau
+  WS -> CONV : transition_status(→ IN_HUMAN_QUEUE)
+  activate CONV
+  CONV -> PG : UPDATE conversation (+ escalation_card,\npriority, severity) **WHERE** status = giá trị đầu lượt
+  alt rowcount = 0 (admin vừa tiếp quản / đóng ca)
+    CONV --> WS : thua CAS
+    WS --> KH : **status** //không báo chuyển tiếp//
+  end
+  CONV -> PG : INSERT message(ai) + **COMMIT**
+  CONV --> WS : ghi thành công
+  deactivate CONV
+end
+
+alt ghi thất bại cả sau một lần thử lại
+  WS --> KH : câu trả lời **không kèm cam kết nào**
+else ghi thành công
+  WS --> KH : **handoff** {thông báo chuyển tiếp}
+  WS -> AD : phát lên /ws/admin-inbox qua hub
+end
+
+WS -> PG : 6 dòng audit_log cùng turn_id
+deactivate WS
+AD -> AD : đọc EscalationCard, bấm **Nhận ca**\n(xem Hình PL.4)
+
+legend bottom
+  **Bốn điểm thiết kế đọc được từ hình này**
+  1. Agent 3 định tuyến **chỉ dựa trên tập cờ**: không gọi LLM, không gộp hai thang độ tin cậy.
+  2. **Bất biến FR-GATE-2:** ca có cờ chặn **không** đi qua cổng cấu hình mà luôn vào hàng đợi người,
+     bất kể quản trị viên đang bật hay tắt cổng.
+  3. Nhánh chuyển tiếp dùng **câu mẫu cố định**, không phát sinh lời gọi mô hình sinh; phiếu chuyển tiếp
+     có `suggested_reply` **rỗng**, khác với ca chờ duyệt (nơi trường này chứa nháp của Agent 4).
+  4. Khung tin gửi tới khách **không mang định danh tài khoản nhân viên**. Nếu bước ghi thất bại thì ca
+     không vào hàng đợi, nên hệ thống tuyệt đối không được hứa về một ca không tồn tại.
+endlegend
+@enduml

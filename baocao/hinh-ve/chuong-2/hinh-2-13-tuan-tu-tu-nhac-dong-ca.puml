@@ -1,0 +1,90 @@
+@startuml hinh-2-13-tuan-tu-tu-nhac-dong-ca
+' Hình 2.13. Biểu đồ tuần tự — Tác vụ nền tự nhắc và đóng ca  (Chương 2, mục 2.7.5)
+' ĐỐI CHIẾU apps/backend/app/services/auto_resolve.py (classify_idle, run_sweep_once, sweep_loop)
+!include ../_style.puml
+autonumber "<b>[0]"
+
+participant ":sweep_loop\n//asyncio task trong lifespan//" as LOOP
+participant ":GateService" as GATE
+participant ":auto_resolve\n//classify_idle — hàm THUẦN//" as CLS
+participant ":ConversationService" as CONV
+database ":PostgreSQL" as PG
+participant ":Hub" as HUB
+actor "Khách hàng" as KH
+
+loop mỗi `sweep_interval_seconds`
+  LOOP -> GATE : đọc cấu hình cổng
+  GATE -> PG : SELECT gate_config
+  GATE --> LOOP : {auto_resolve_enabled, T1, T2}
+
+  alt cổng auto_resolve TẮT
+    LOOP -> LOOP : **no-op** — kết thúc vòng quét
+  end
+
+  LOOP -> CONV : run_sweep_once()
+  activate CONV
+  CONV -> PG : SELECT ca có status thuộc {REPLIED, AWAITING_CUSTOMER}\n**AND** last_message_at < now − T1\n**LIMIT** sweep_batch_limit
+  note right of PG #FFF3CD
+    Tiền lọc theo thời gian kèm `LIMIT` để mỗi
+    vòng quét không nạp toàn bộ ca `REPLIED`.
+    Mỗi ca dùng một session ngắn riêng.
+  end note
+  PG --> CONV : danh sách ca ứng viên
+
+  loop với từng ca ứng viên
+    CONV -> CLS : classify_idle(status, last_message_at,\nauto_resolve_reminded_at, now, T1, T2)
+    CLS --> CONV : **NOOP** | **REMIND** | **RESOLVE**
+
+    alt REMIND — chưa nhắc và im lặng vượt T1
+      group #E6F4EA MỘT giao dịch
+        CONV -> PG : UPDATE conversation SET auto_resolve_reminded_at = now\n**WHERE** status thuộc tập quét **AND** reminded_at IS NULL\n**AND** vẫn im lặng ≥ T1 trên chính dòng đó
+        alt rowcount khác 1
+          CONV -> CONV : **bỏ qua ca này** — admin vừa tiếp quản\nhoặc khách vừa nhắn lại giữa hai vòng quét
+        else rowcount = 1
+          CONV -> PG : INSERT message(ai) = **tin nhắc mẫu cố định**\n//không bump last_message_at//
+          CONV -> PG : **COMMIT**
+          CONV -> HUB : phát tin nhắc //(sau khi commit)//
+          HUB --> KH : tin nhắc
+        end
+      end
+
+    else RESOLVE — đã nhắc và im lặng tiếp vượt T2
+      group #E6F4EA MỘT giao dịch
+        CONV -> PG : UPDATE conversation SET status = 'RESOLVED'\n**WHERE** status thuộc tập quét\n**AND** reminded_at IS NOT NULL
+        alt rowcount khác 1
+          CONV -> CONV : **bỏ qua ca này**
+        else rowcount = 1
+          CONV -> PG : INSERT message(ai) = **tin đóng ca mẫu cố định**
+          CONV -> PG : **COMMIT**
+          CONV -> HUB : phát tin đóng ca //(sau khi commit)//
+          HUB --> KH : tin đóng ca
+        end
+      end
+
+    else NOOP
+      CONV -> CONV : không phát sinh hành động nào
+    end
+  end
+  deactivate CONV
+end
+
+note over KH #FFF3CD
+  Khi khách nhắn lại, cột `auto_resolve_reminded_at`
+  được **đặt lại về rỗng**, nên đồng hồ im lặng bắt
+  đầu đếm lại từ đầu.
+end note
+
+legend bottom
+  **Bốn điểm thiết kế đọc được từ hình này**
+  1. **Không có worker queue và không polling broker.** Tác vụ nền là một asyncio task nằm trong vòng đời ứng
+     dụng, quét trực tiếp PostgreSQL theo chu kỳ.
+  2. **Phần phân loại là một hàm THUẦN** (`classify_idle`), tách hoàn toàn khỏi phần nhập xuất nên kiểm thử được
+     offline mà không cần cơ sở dữ liệu.
+  3. **Câu lệnh cập nhật có điều kiện kiểm tra lại trạng thái ngay tại thời điểm ghi** và chỉ hành động khi
+     đúng một dòng bị đổi. Nhờ vậy ca vừa bị quản trị viên tiếp quản, hoặc ca mà khách vừa nhắn lại giữa hai
+     vòng quét, sẽ không bị nhắc nhầm hay đóng nhầm (yêu cầu FR-ASYNC-4).
+  4. **Tin nhắc và tin đóng ca là câu mẫu cố định, không gọi mô hình**, được chèn trong **cùng một giao dịch**
+     với phép chuyển trạng thái; chỉ sau khi commit mới phát ra hub. Nhờ đó không còn tình huống "đã đánh dấu
+     là nhắc rồi mà tin nhắn lại không tới tay khách". Các ca đang chờ nhân viên xử lý **không bao giờ** bị tự đóng.
+endlegend
+@enduml

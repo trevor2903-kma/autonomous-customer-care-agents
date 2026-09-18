@@ -1,0 +1,40 @@
+@startuml hinh-1-08-ba-dang-ao-giac
+' Hình 1.8. Ba dạng ảo giác trong ngữ cảnh CSKH và cơ chế chống tương ứng  (Chương 1, mục 1.3.4)
+!include ../_style.puml
+skinparam componentStyle rectangle
+skinparam rectangleBorderThickness 1
+skinparam nodesep 20
+skinparam ranksep 34
+
+rectangle "**ẢO GIÁC (hallucination)**\nmô hình sinh thông tin **không có căn cứ** trong nguồn được cấp,\nvới độ trôi chảy và độ tự tin không khác gì thông tin đúng" as ROOT #F1F3F5
+
+rectangle "**(a) BỊA RA CÁI “CÓ”**\n//positive hallucination//\n<size:11>dạng phổ biến nhất</size>" as H1 #FFF3CD
+rectangle "**(b) BỊA RA CÁI “KHÔNG CÓ”**\n//negative hallucination//\n<size:11>tinh vi, ít được chú ý</size>" as H2 #FFF3CD
+rectangle "**(c) BỊA RA HÀNH ĐỘNG**\n//action hallucination//\n<size:11>nguy hiểm nhất — tạo cam kết giả</size>" as H3 #FDE8E8
+
+rectangle "**Ví dụ**\nĐưa ra một mã giảm giá, một chính\nsách đổi trả hay một mốc thời gian\n**không hề tồn tại**." as E1 #FFFFFF
+rectangle "**Ví dụ**\nKho tri thức **không nhắc** tới giao hàng\nquốc tế → mô hình trả lời “shop chưa\nhỗ trợ giao đi nước ngoài”." as E2 #FFFFFF
+rectangle "**Ví dụ**\n“Em đã hoàn tiền cho anh”,\n“em đang kết nối nhân viên hỗ trợ” —\nnhững thao tác hệ thống **không làm được**." as E3 #FFFFFF
+
+rectangle "**Cơ chế chống**\n• Chỉ cấp cho mô hình các nguồn đã kiểm soát\n• Cấm sử dụng tri thức nằm ngoài nguồn" as M1 #E6F4EA
+rectangle "**Cơ chế chống**\n• Phân biệt “chưa có thông tin về X”\n   với “X không tồn tại”\n• Mọi danh sách trong nguồn là danh sách MỞ,\n   trừ khi nguồn dùng từ “chỉ” / “duy nhất”" as M2 #E6F4EA
+rectangle "**Cơ chế chống**\n• Giới hạn hành động tường minh trong prompt\n• **Bất biến kiến trúc:** tác tử sinh phản hồi\n   KHÔNG có quyền tự chuyển ca → mọi lời hứa\n   chuyển tiếp do nó tự đưa ra đều bị cấm" as M3 #E6F4EA
+
+rectangle "**Chặn cứng ở cấp kiến trúc — áp dụng cho cả ba dạng**\nKhông truy hồi được bất kỳ nguồn tri thức nào → hệ thống **không gọi mô hình** để sinh câu trả lời mà chuyển ca cho nhân viên.\nKhông có lời gọi sinh thì không thể phát sinh nội dung bịa đặt." as HARD #DCE8F7
+
+ROOT -down-> H1
+ROOT -down-> H2
+ROOT -down-> H3
+H1 -down-> E1
+H2 -down-> E2
+H3 -down-> E3
+E1 -down-> M1
+E2 -down-> M2
+E3 -down-> M3
+M1 -down-> HARD
+M2 -down-> HARD
+M3 -down-> HARD
+
+H1 -[hidden]right- H2
+H2 -[hidden]right- H3
+@enduml

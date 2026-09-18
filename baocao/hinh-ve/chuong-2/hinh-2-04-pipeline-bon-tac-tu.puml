@@ -1,0 +1,45 @@
+@startuml hinh-2-04-pipeline-bon-tac-tu
+' Hình 2.4. Pipeline bốn tác tử cố định trên LangGraph  (Chương 2, mục 2.4)
+' ĐỐI CHIẾU apps/backend/app/agents/graph.py: đồ thị TUYẾN TÍNH HOÀN TOÀN — chỉ add_edge,
+' KHÔNG add_conditional_edges, KHÔNG có node human_handoff riêng. Rẽ nhánh nằm BÊN TRONG node response.
+!include ../_style.puml
+skinparam componentStyle rectangle
+skinparam rectangleBorderThickness 1
+skinparam nodesep 18
+skinparam ranksep 38
+
+rectangle "**ĐỒ THỊ LANGGRAPH** — StateGraph(ConversationState), compile(checkpointer = MemorySaver)\n<size:11>Mọi cạnh đều là add_edge vô điều kiện · KHÔNG add_conditional_edges · KHÔNG có node human_handoff riêng</size>" as G #FBFCFE {
+  circle " " as ST
+  component "**intent_classifier**\n//Agent 1 — Intent Classifier//\n\nLLM, taxonomy 15 ý định\nnhúng sẵn trong prompt\nKHÔNG truy hồi\nentities = LLM kết hợp regex\n\n→ intent, category, entities\n→ intent_confidence, cờ" as N1
+  component "**knowledge**\n//Agent 2 — Knowledge Agent//\n\nembedding + truy hồi Qdrant\ntra đơn SCOPED theo\ncustomer_id\n\n→ rag_contexts, order_context\n→ retrieval_confidence, cờ" as N2
+  component "**decision**\n//Agent 3 — Decision Engine//\n**TẤT ĐỊNH — KHÔNG gọi LLM**\n\nđịnh tuyến trên CỜ\n(BLOCKING_FLAGS)\nKHÔNG gộp hai thang tin cậy\n\n→ action, priority, severity\n→ clarify_field" as N3 #FFF3CD
+  component "**response**\n//Agent 4 — Response Generator//\n**ĐIỂM PHÁT NGÔN DUY NHẤT**\n\nrẽ 5 nhánh theo trường action\n(xem khung bên dưới)\n\n→ result.reply, status\n→ cờ hallucination_risk" as N4 #DCE8F7
+  circle " " as EN
+}
+
+ST -right-> N1 : START
+N1 -right-> N2
+N2 -right-> N3
+N3 -right-> N4
+N4 -right-> EN : END
+
+rectangle "**BÊN TRONG NODE `response`** — năm nhánh xét theo thứ tự; đây là nơi rẽ nhánh DUY NHẤT của pipeline\n\n**1. clarify**  →  hỏi mã đơn bằng câu CỐ ĐỊNH, không gọi LLM  →  **AWAITING_CUSTOMER**\n**2. human_handoff**  →  HANDOFF_NOTICE, có biến thể ngoài giờ, không gọi LLM  →  **IN_HUMAN_QUEUE**\n**3. greeting**  →  câu mẫu xã giao, không gọi LLM, không phát cờ  →  **REPLIED**\n**4. order_not_found**  →  template cố định từng chữ, không gọi LLM  →  **AWAITING_CUSTOMER**\n**5. grounded reply**  →  LLM sinh, bám facts.md + rag_contexts + order_context  →  **REPLIED**  |  **PENDING_APPROVAL**" as R #F7FAFF
+
+component "**escalation_service**\ndựng EscalationCard,\nđưa ca vào hàng đợi admin" as ES #FDE8E8
+component "**gate_service**\nholds_auto_reply(intent)\n→ gửi thẳng hay giữ nháp" as GS #FFF3CD
+
+N4 -down-> R : rẽ theo trường `action`\ntrong ConversationState
+
+R -down-> ES : **nhánh 2** — phần việc kèm theo của chuyển tiếp,\nthực hiện NGOÀI đồ thị (không thêm node)
+R -down-> GS : **nhánh 5** — quyết định\nkết cục giao phản hồi
+ES -[hidden]right- GS
+
+note bottom of ES #FDE8E8
+  **Ba điểm phải đọc đúng ở hình này**
+  • Đồ thị **không** có cạnh điều kiện xuất phát từ `decision`; node này chỉ ghi trường `action` vào trạng thái.
+  • Đồ thị **không** có node `human_handoff`: việc chuyển ca do chính `response` phát ngôn, còn phần việc kèm
+    theo do `escalation_service` thực hiện **bên ngoài** đồ thị.
+  • Node phân loại đăng ký với định danh `intent_classifier` chứ không phải `intent`, vì LangGraph cấm định
+    danh node trùng khoá trạng thái mà trạng thái đã có sẵn khoá `intent`.
+end note
+@enduml

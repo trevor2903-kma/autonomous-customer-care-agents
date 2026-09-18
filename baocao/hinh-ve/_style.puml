@@ -1,0 +1,60 @@
+' ---------------------------------------------------------------------------
+' _style.puml — style dùng chung cho toàn bộ hình vẽ của báo cáo ĐATN
+' Nạp bằng:  !include ../_style.puml
+' Đổi ở ĐÂY là đổi cho tất cả hình. Muốn ảnh nét hơn khi in: tăng dpi (150 -> 200).
+' ---------------------------------------------------------------------------
+skinparam dpi 150
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam roundCorner 8
+skinparam Padding 3
+skinparam ArrowColor #3C4858
+skinparam ArrowFontColor #3C4858
+skinparam ArrowFontSize 12
+skinparam WrapWidth 900
+skinparam maxMessageSize 400
+
+skinparam NoteBackgroundColor #FFF9E6
+skinparam NoteBorderColor #C9A227
+skinparam NoteFontSize 12
+
+skinparam RectangleBackgroundColor #FFFFFF
+skinparam RectangleBorderColor #8794A5
+
+skinparam ComponentBackgroundColor #EAF1FB
+skinparam ComponentBorderColor #4A76B8
+skinparam ComponentFontSize 13
+
+skinparam DatabaseBackgroundColor #F1F3F5
+skinparam DatabaseBorderColor #6C757D
+
+skinparam ActorBackgroundColor #FFFFFF
+skinparam ActorBorderColor #3C4858
+skinparam UsecaseBackgroundColor #EAF1FB
+skinparam UsecaseBorderColor #4A76B8
+
+skinparam ParticipantBackgroundColor #EAF1FB
+skinparam ParticipantBorderColor #4A76B8
+skinparam SequenceLifeLineBorderColor #8794A5
+skinparam SequenceGroupBackgroundColor #FFFFFF
+skinparam SequenceGroupHeaderFontSize 12
+skinparam SequenceBoxBackgroundColor #F7F9FC
+skinparam SequenceBoxBorderColor #B7C2D0
+
+skinparam ActivityBackgroundColor #EAF1FB
+skinparam ActivityBorderColor #4A76B8
+skinparam ActivityDiamondBackgroundColor #FFF3CD
+skinparam ActivityDiamondBorderColor #B8860B
+skinparam ActivityStartColor #3C4858
+skinparam ActivityEndColor #3C4858
+
+skinparam StateBackgroundColor #EAF1FB
+skinparam StateBorderColor #4A76B8
+skinparam StateFontSize 13
+
+skinparam ClassBackgroundColor #EAF1FB
+skinparam ClassBorderColor #4A76B8
+skinparam ClassAttributeFontSize 12
+skinparam StereotypeCBackgroundColor #DCE8F7

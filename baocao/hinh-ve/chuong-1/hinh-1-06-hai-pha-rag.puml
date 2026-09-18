@@ -1,0 +1,45 @@
+@startuml hinh-1-06-hai-pha-rag
+' Hình 1.6. Hai pha của kỹ thuật sinh có tăng cường truy hồi  (Chương 1, mục 1.3.2)
+' Sơ đồ KHÁI NIỆM (lý thuyết chung). Ba chú thích (1)(2)(3) nối tới ba vấn đề kỹ thuật nêu ngay sau hình.
+!include ../_style.puml
+skinparam componentStyle rectangle
+skinparam rectangleBorderThickness 1
+skinparam nodesep 26
+skinparam ranksep 30
+
+rectangle "**PHA NẠP (ingestion)** — chạy trước, một lần cho mỗi phiên bản kho tài liệu" as P1 #F3F9F3 {
+  artifact "**Tài liệu nguồn**\nchính sách, câu hỏi\nthường gặp, quy trình" as DOC
+  component "**Chia đoạn**\n(chunking)\n(1) chiến lược chia đoạn" as CHUNK #FFF3CD
+  component "**Mô hình embedding**\nđoạn văn → vector\nsố thực" as EMB1
+  component "**Vector + siêu dữ liệu**\nnguồn, tiêu đề,\nloại tài liệu…" as VEC
+}
+
+database "**Cơ sở dữ liệu vector**" as VDB
+
+rectangle "**PHA TRUY HỒI (retrieval)** — chạy lại ở mỗi câu hỏi" as P2 #EAF1FB {
+  actor "Người dùng" as USER
+  component "**Mô hình embedding**\n(CÙNG mô hình với pha nạp)\ncâu hỏi → vector\n(2) khoảng cách giọng văn" as EMB2 #FFF3CD
+  component "**Tìm k vector gần nhất**\ntheo độ đo cosine\n(3) ngưỡng quyết định" as TOPK #FFF3CD
+  component "**Dựng prompt**\ncâu hỏi + k đoạn\nliên quan nhất" as PROMPT
+  component "**Mô hình ngôn ngữ lớn**\nsinh câu trả lời\nbám theo các đoạn" as LLM
+}
+
+DOC -right-> CHUNK
+CHUNK -right-> EMB1
+EMB1 -right-> VEC
+VEC -down-> VDB : lưu
+
+USER -right-> EMB2 : câu hỏi
+EMB2 -right-> TOPK
+VDB -down-> TOPK : k đoạn
+TOPK -right-> PROMPT
+PROMPT -right-> LLM
+LLM -[#2E7D32,bold]-> USER : câu trả lời có căn cứ
+
+legend bottom
+  **Ba vấn đề kỹ thuật khi áp dụng RAG vào chăm sóc khách hàng** (được giải quyết ở Chương 2)
+  (1) **Chia đoạn:** cắt theo số ký tự cố định làm vỡ bảng kích cỡ hay mất các bước sau của một quy trình → chia theo từng mục Markdown.
+  (2) **Khoảng cách giọng văn:** khách hỏi bằng lời nói thường ngày, tài liệu viết giọng văn bản trang trọng → vector cách xa nhau dù cùng nội dung.
+  (3) **Ngưỡng quyết định:** cần phân biệt "tìm được tri thức đủ liên quan" với "không có nội dung phù hợp" → ngưỡng phải đo trên kho tri thức thật.
+endlegend
+@enduml

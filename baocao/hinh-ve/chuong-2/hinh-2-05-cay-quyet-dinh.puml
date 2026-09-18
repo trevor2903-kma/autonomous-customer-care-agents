@@ -1,0 +1,92 @@
+@startuml hinh-2-05-cay-quyet-dinh
+' Hình 2.5. Cây quyết định từ tập cờ tới ba kết cục giao phản hồi  (Chương 2, mục 2.5.1)
+' ĐỐI CHIẾU agents/nodes/decision.py + services/gate_service.py
+!include ../_style.puml
+skinparam ConditionEndStyle hline
+
+start
+:**Tập cờ tích luỹ** từ Agent 1 và Agent 2
+(uncertainty_flags — hàm gộp cộng dồn,
+mỗi node chỉ trả về cờ do chính nó phát ra);
+
+if (Có cờ nào thuộc **BLOCKING_FLAGS** không?\n\nmulti_intent · out_of_domain · human_requested · llm_unavailable\nno_relevant_knowledge · low_retrieval_score · search_error · order_unresolved) then (**CÓ** — cổng an toàn chặn)
+  #FDE8E8:action = human_handoff
+  escalation_reason = blocking_flags=[…];
+  #FDE8E8:**KẾT CỤC 3 — CHUYỂN NGƯỜI**
+  Agent 4 phát HANDOFF_NOTICE (không gọi LLM)
+  escalation_service dựng EscalationCard
+  status = **IN_HUMAN_QUEUE**;
+  stop
+else (KHÔNG)
+endif
+
+if (Ý định gắn với đơn (order_status · refund · exchange)\nmà **thiếu** entity order_id?) then (CÓ)
+  if (Lượt trước đã hỏi lại rồi?\n(prior_status == AWAITING_CUSTOMER)) then (ĐÃ HỎI)
+    #FDE8E8:action = human_handoff
+    escalation_reason = clarify_unresolved;
+    #FDE8E8:**KẾT CỤC 3 — CHUYỂN NGƯỜI**
+    status = **IN_HUMAN_QUEUE**;
+    stop
+  else (CHƯA HỎI LẦN NÀO)
+    #FFF3CD:action = clarify · clarify_field = order_id;
+    #FFF3CD:Agent 4 phát **CÂU HỎI CỐ ĐỊNH** (không gọi LLM)
+    status = **AWAITING_CUSTOMER**
+    lượt sau nối tiếp bằng mã đơn khách gửi lại;
+    stop
+  endif
+else (KHÔNG)
+endif
+
+:action = auto_reply
+//(hệ thống đủ tự tin và có căn cứ)//;
+
+:Agent 4 sinh phản hồi **có căn cứ** từ ba nguồn
+facts.md + rag_contexts + order_context;
+
+if (Có ít nhất một nguồn căn cứ **và** gọi được LLM?) then (KHÔNG)
+  #FDE8E8:Phanh chống ảo giác: **không** gọi sinh phản hồi
+  phát cờ hallucination_risk
+  câu dự phòng **không** gửi tới khách;
+  #FDE8E8:**KẾT CỤC 3 — CHUYỂN NGƯỜI**
+  status = **IN_HUMAN_QUEUE**;
+  stop
+else (CÓ)
+endif
+
+if (**Cổng cấu hình** có giữ lại lượt này không?\ngate_service.holds_auto_reply(intent)) then (CỔNG BẬT — không giữ)
+  #E6F4EA:**KẾT CỤC 1 — GỬI THẲNG**
+  AI gửi câu trả lời ngay cho khách
+  status = **REPLIED**;
+  stop
+else (CỔNG TẮT cho ý định này — giữ lại)
+  #FFF3CD:**KẾT CỤC 2 — DUYỆT NHÁP**
+  Giữ nháp; khách chỉ nhận tín hiệu chờ,
+  không nhận bất kỳ phần nội dung nào của nháp.
+  Quản trị viên duyệt, sửa hoặc từ chối rồi mới gửi
+  status = **PENDING_APPROVAL**;
+  stop
+endif
+
+note right
+  **Bất biến FR-GATE-2 — ranh giới không được vượt qua**
+
+  Cổng cấu hình **chỉ** can thiệp vào nhánh mà Agent 3
+  đã quyết định trả lời tự động. Ca có cờ chặn không đi
+  qua cổng mà **luôn** vào hàng đợi người, bất kể cấu
+  hình hiện tại là gì — cơ chế an toàn không bao giờ bị
+  cổng ghi đè.
+
+  • "Hệ thống có đủ căn cứ để trả lời không?"
+    → phạm vi **an toàn**, do mã tất định trả lời,
+      con người không chỉnh được.
+  • "Loại yêu cầu này có được trả lời tự động không?"
+    → phạm vi **chính sách kinh doanh**, do con người
+      cấu hình.
+
+  Mặc định: cổng BẬT toàn hệ thống nhưng TẮT cho ba ý
+  định nhạy cảm refund · exchange · complaint.
+
+  Lỗi đọc cấu hình cổng → **gửi thẳng** chứ không giữ
+  nháp, vì câu trả lời đã qua cổng an toàn của Agent 3.
+end note
+@enduml

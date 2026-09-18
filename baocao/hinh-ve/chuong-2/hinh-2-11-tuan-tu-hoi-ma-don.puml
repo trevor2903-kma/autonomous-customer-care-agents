@@ -1,0 +1,98 @@
+@startuml hinh-2-11-tuan-tu-hoi-ma-don
+' Hình 2.11. Biểu đồ tuần tự — Luồng hỏi lại mã đơn và nối lượt  (Chương 2, mục 2.7.3)
+' Luồng phức tạp nhất về quản lý trạng thái. Nối lượt KHÔNG dùng checkpointer mà dùng DB + status.
+!include ../_style.puml
+autonumber "<b>[0]"
+
+actor "Khách hàng" as KH
+participant ":ChatWebSocket" as WS
+participant ":Pipeline\n//LangGraph//" as PIPE
+participant ":ConversationService" as CONV
+database ":PostgreSQL" as PG
+
+== LƯỢT 1 — phát hiện thiếu mã đơn và hỏi lại ==
+
+KH -> WS : "đơn của em tới đâu rồi ạ?"
+activate WS
+WS -> PIPE : run_pipeline(prior_status = REPLIED)
+activate PIPE
+  PIPE -> PIPE : **Agent 1** → intent = `order_status`\nentities: **thiếu** order_id
+  PIPE -> PIPE : **Agent 2** → truy hồi chính sách;\nkhông có mã nên **không** tra đơn
+  PIPE -> PIPE : **Agent 3** — safety-gate không chặn;\nintent thuộc CLARIFY_MISSING_ENTITY, thiếu order_id,\nprior_status khác AWAITING_CUSTOMER\n→ action = **clarify**, clarify_field = order_id
+  PIPE -> PIPE : **Agent 4** → phát `CLARIFY_QUESTION`\ncâu CỐ ĐỊNH, **không** gọi LLM
+PIPE --> WS : {action = clarify, câu hỏi mã đơn}
+deactivate PIPE
+
+WS -> CONV : transition_status(→ AWAITING_CUSTOMER,\n**current_intent = order_status**)
+CONV -> PG : UPDATE conversation + INSERT message(ai) + COMMIT
+WS --> KH : **reply** "anh/chị cho em xin mã đơn ạ"
+deactivate WS
+
+note over CONV, PG #FFF3CD
+  **Điểm mấu chốt của cơ chế nối lượt:** ý định GỐC được ghi bền vào cột `conversation.current_intent`
+  mỗi khi một lượt kết thúc ở trạng thái `AWAITING_CUSTOMER`. Nhờ đó lượt sau khôi phục được ý định
+  mà **không** cần tới checkpointer của LangGraph.
+end note
+
+== LƯỢT 2 — khách đáp bằng một dãy số trơ ==
+
+KH -> WS : "1234567"
+activate WS
+WS -> CONV : nạp history + prior_status + prior_intent
+CONV -> PG : SELECT conversation, message
+CONV --> WS : {AWAITING_CUSTOMER, order_status, lịch sử}
+
+WS -> PIPE : run_pipeline(prior_status = AWAITING_CUSTOMER,\nprior_intent = order_status)
+activate PIPE
+  PIPE -> PIPE : **Agent 1** — nhận ra ngữ cảnh `resume_order_code`:\ntin nhắn chỉ gồm chữ số và lượt trước đang chờ khách
+  PIPE -> PIPE : **SHORT-CIRCUIT TẤT ĐỊNH — KHÔNG gọi LLM**\nkhôi phục intent = prior_intent, order_id = 1234567
+  PIPE -> PIPE : **Agent 2** — truy hồi bằng **CÂU HỎI GỐC**\n(tin gần nhất không phải dãy số trơ),\nkhông truy hồi bằng chính dãy số
+  PIPE -> PG : lookup(order_code, **customer_id**)
+
+  alt tra ra đơn của chính khách
+    PG --> PIPE : order_context
+    PIPE -> PIPE : **Agent 3** → auto_reply\n//cờ grounding truy hồi KHÔNG chặn: dữ liệu đơn chính là grounding//
+    PIPE -> PIPE : **Agent 4** → trả lời grounded theo order_context
+    PIPE --> WS : {reply, status = REPLIED hoặc PENDING_APPROVAL}
+  else không tra ra — LẦN ĐẦU trong ca
+    PG --> PIPE : không có kết quả
+    PIPE -> PIPE : đặt `order_not_found`\n//tín hiệu, KHÔNG phải cờ chặn//
+    PIPE -> PIPE : **Agent 4** → template "không tìm thấy đơn"\nCỐ ĐỊNH từng chữ, **không** gọi LLM
+    PIPE --> WS : {reply, status = AWAITING_CUSTOMER}
+  else không tra ra — LẦN THỨ HAI trong cùng ca
+    PG --> PIPE : không có kết quả
+    PIPE -> PIPE : **Agent 2** phát cờ chặn `order_unresolved`
+    PIPE -> PIPE : **Agent 3** → human_handoff
+    PIPE --> WS : {HANDOFF_NOTICE, status = IN_HUMAN_QUEUE}
+  end
+deactivate PIPE
+
+WS -> CONV : ghi kết quả lượt trong MỘT giao dịch (CAS)
+CONV -> PG : UPDATE + INSERT + COMMIT
+WS --> KH : câu trả lời tương ứng
+deactivate WS
+
+== NHÁNH KHOÁ CHỐNG LẶP ==
+
+KH -> WS : lượt kế tiếp **vẫn thiếu** mã đơn
+activate WS
+WS -> PIPE : run_pipeline(prior_status = AWAITING_CUSTOMER)
+PIPE -> PIPE : **Agent 3** — đã hỏi lại một lần rồi\n→ human_handoff, lý do `clarify_unresolved`
+PIPE --> WS : {HANDOFF_NOTICE, status = IN_HUMAN_QUEUE}
+WS --> KH : thông báo chuyển tiếp
+deactivate WS
+
+legend bottom
+  **Hai lỗi vận hành thực tế mà luồng này khắc phục**
+  1. **Dãy số trơ bị xếp vào nhóm ngoài phạm vi.** Khi khách chỉ gõ mã đơn, mô hình có xu hướng gán nhãn
+     `other` → cờ `out_of_domain` → chuyển ca **oan**, dù khách vừa trả lời đúng yêu cầu. Cách khắc phục là
+     nhận diện ngữ cảnh nối lượt rồi khôi phục ý định một cách **tất định**, bỏ hẳn lời gọi mô hình ở bước này.
+  2. **Truy hồi bằng dãy số cho điểm rất thấp.** Đo thực tế: độ tương tự cosine giữa một mã đơn với toàn bộ
+     kho tri thức chỉ khoảng **0,253** → cờ `low_retrieval_score` → lại chuyển ca oan. Cách khắc phục là ở lượt
+     nối, Agent 2 truy hồi bằng chính **câu hỏi gốc** của khách thay vì bằng dãy số.
+
+  **Yêu cầu nghiệp vụ kèm theo:** lượt nối phải giữ **nguyên ý định gốc**. Khách đặt vấn đề hoàn đơn thì lượt nối
+  vẫn phải là `refund` để tiếp tục đi theo luồng nhạy cảm qua bước duyệt nháp, chứ không được hạ xuống thành
+  `order_status`.
+endlegend
+@enduml

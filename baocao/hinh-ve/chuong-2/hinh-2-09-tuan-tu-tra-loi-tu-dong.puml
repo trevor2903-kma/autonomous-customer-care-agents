@@ -1,0 +1,82 @@
+@startuml hinh-2-09-tuan-tu-tra-loi-tu-dong
+' Hình 2.9. Biểu đồ tuần tự — Luồng trả lời tự động  (Chương 2, mục 2.7.1)
+' ĐỐI CHIẾU apps/backend/app/api/ws/chat.py (_turn, _persist_turn, _audit_turn)
+!include ../_style.puml
+autonumber "<b>[0]"
+
+actor "Khách hàng" as KH
+participant ":ChatWebSocket" as WS
+participant ":Pipeline\n//LangGraph//" as PIPE
+participant ":GateService" as GATE
+participant ":ConversationService" as CONV
+database ":PostgreSQL" as PG
+
+KH -> WS : message {client_msg_id, text}
+activate WS
+WS -> WS : chống trùng theo client_msg_id
+WS -> WS : giới hạn tần suất theo khách
+WS --> KH : **ack** {duplicate: false}
+WS -> WS : Lớp A — chuẩn hoá, cắt độ dài
+WS -> WS : khoá tuần tự theo khách
+
+WS -> CONV : mở/tìm ca theo customer_id
+CONV -> PG : SELECT / INSERT conversation
+CONV --> WS : {id, **status**, current_intent}
+
+alt status có người xử lý (HUMAN_HANDLING…)
+  WS -> WS : **cổng chặn theo trạng thái**\ntin đi thẳng tới admin qua hub;\npipeline KHÔNG chạy
+end
+
+WS -> CONV : insert_message(customer)
+CONV -> PG : INSERT message + COMMIT
+WS --> KH : **typing**
+WS -> CONV : nạp history + prior_status/intent
+CONV -> PG : SELECT message, conversation
+CONV --> WS : lịch sử + trạng thái lượt trước
+
+WS -> PIPE : run_pipeline(...)
+activate PIPE
+  PIPE -> PIPE : **Agent 1** — phân loại ý định\n//1 lời gọi LLM//
+  PIPE -> PIPE : **Agent 2** — embedding + truy hồi Qdrant\n//1 lời gọi embedding//
+  opt ý định gắn với đơn hàng
+    PIPE -> PG : lookup(order_code, **customer_id**)
+    PG --> PIPE : order_context //(SCOPED)//
+  end
+  PIPE -> PIPE : **Agent 3** — cổng an toàn tất định\nkhông cờ chặn → action = auto_reply
+  PIPE -> PIPE : **Agent 4** — sinh grounded //1 lời gọi LLM//\nfacts.md + rag_contexts + order_context
+PIPE --> WS : {reply, status, intent, cờ}
+deactivate PIPE
+
+WS -> GATE : holds_auto_reply(status, intent)
+GATE -> PG : gate_config + gate_intent_rule
+GATE --> WS : **false** → gửi thẳng
+
+group #E6F4EA MỘT giao dịch — ghi trước, báo sau
+  WS -> CONV : transition_status(→ REPLIED)
+  activate CONV
+  CONV -> PG : UPDATE … **WHERE** status = giá trị đầu lượt
+  alt rowcount = 0 (admin vừa tiếp quản)
+    CONV --> WS : thua CAS
+    WS --> KH : **status** //không gửi câu trả lời//
+  end
+  CONV -> PG : INSERT message(ai) + **COMMIT**
+  CONV --> WS : ghi thành công
+  deactivate CONV
+end
+
+WS --> KH : **reply** {câu trả lời}
+WS -> WS : fan-out qua hub cho tab khác + dashboard
+WS -> PG : 6 dòng audit_log cùng turn_id
+deactivate WS
+
+legend bottom
+  **Bốn điểm thiết kế đọc được từ hình này**
+  1. **Biên nhận trước, xử lý sau:** khung `ack` được trả ngay khi nhận tin, trước mọi bước xử lý. Tin gửi lại
+     mang cùng `client_msg_id` được `ack` với cờ `duplicate` và **không** chạy pipeline lần hai.
+  2. **Trần chi phí cứng:** mỗi lượt tốn tối đa **2 lời gọi mô hình sinh + 1 lời gọi embedding**, biết trước và
+     không phụ thuộc nội dung câu hỏi.
+  3. **Ghi trước, báo sau:** trạng thái và tin nhắn AI được ghi trong **cùng một giao dịch**; chỉ sau khi commit
+     thành công hệ thống mới gửi khung tin cho khách. Thua so-sánh-rồi-ghi thì huỷ cả lượt: không lưu, không gửi.
+  4. **Tra cứu đơn hàng luôn kèm `customer_id`** lấy từ phiên đăng nhập, nên khách chỉ tra được đơn của chính mình.
+endlegend
+@enduml

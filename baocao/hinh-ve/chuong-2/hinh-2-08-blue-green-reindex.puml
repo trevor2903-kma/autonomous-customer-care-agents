@@ -1,0 +1,54 @@
+@startuml hinh-2-08-blue-green-reindex
+' Hình 2.8. Quy trình nạp lại kho tri thức theo cơ chế blue/green  (Chương 2, mục 2.6.4)
+!include ../_style.puml
+
+title **Tên collection dùng để truy vấn (`qdrant_collection`) là một ALIAS, không phải collection vật lý**
+
+start
+:**BƯỚC 1 — Tạo collection vật lý MỚI**
+tên có hậu tố thời gian, ví dụ `kb_20260916_0930`;
+note right #E6F4EA
+  Alias `knowledge` **vẫn trỏ** vào bản CŨ
+  `kb_20260901_1200`.
+  Khách hàng tiếp tục được phục vụ bình thường.
+end note
+
+:**BƯỚC 2 — Nạp toàn bộ kho tri thức vào collection vừa tạo**
+chia đoạn theo section → mở rộng truy vấn → sinh embedding → upsert;
+note right #E6F4EA
+  Trong suốt bước này mọi truy hồi vẫn rơi vào
+  bản CŨ. **Không có lượt nào** gặp collection
+  rỗng hay mới nạp dở — đây chính là hạn chế
+  của phương án xoá-rồi-nạp-lại mà cơ chế này
+  khắc phục.
+end note
+
+if (Nạp có thành công không?) then (**LỖI** giữa chừng)
+  #FDE8E8:Loại bỏ bản dựng dở
+  **Giữ nguyên** alias đang trỏ bản cũ
+  Ném lỗi lên tầng trên để xử lý;
+  #FDE8E8:Tầng truy hồi **không bao giờ** gặp collection rỗng;
+  stop
+else (THÀNH CÔNG)
+endif
+
+:**BƯỚC 3 — Đổi hướng alias bằng MỘT lời gọi duy nhất**
+`update_collection_aliases` — thao tác **NGUYÊN TỬ** của Qdrant;
+note right #FFF3CD
+  Không gián đoạn dịch vụ.
+  **Ngoại lệ:** lần nạp lại ĐẦU TIÊN phải chuyển
+  một collection thật thành alias, nên có gián
+  đoạn dưới 1 giây.
+end note
+
+:**BƯỚC 4 — Dọn dẹp**
+xoá collection cũ và quét dọn mọi collection
+không còn được alias nào tham chiếu (bản mồ côi);
+stop
+
+legend bottom
+  **Khoá ghi in-process:** các thao tác reindex, upload, xoá và reset dùng chung một khoá ghi nên không chạy
+  chồng lên nhau. Thao tác reset xoá sổ tài liệu **trong một giao dịch** rồi mới reset Qdrant, nhờ đó khi Qdrant
+  gặp sự cố thì sổ tài liệu không bị mất.
+endlegend
+@enduml

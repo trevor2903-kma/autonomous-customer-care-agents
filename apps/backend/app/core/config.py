@@ -91,6 +91,12 @@ class Settings(BaseSettings):
     # SSL bật qua connect_args={"ssl": ...} (CLAUDE.md). URL KHÔNG mang '?sslmode='.
     database_url: str
     database_ssl: bool = True  # local docker không TLS -> đặt DATABASE_SSL=false
+    # Hồ kết nối (NFR-10 — cấu hình được, không viết cứng). Một lượt khách mở 4–6 phiên NGẮN nối tiếp
+    # (tìm/mở ca, nạp lịch sử, lưu tin khách, ghi kết quả lượt) nên số kết nối cần tỉ lệ với số hội thoại
+    # ĐỒNG THỜI, không với số worker: benchmark mục 3.5.6 cho thấy hồ mặc định của SQLAlchemy (5 + 10) là điểm
+    # nghẽn ở 100 hội thoại đồng thời — `pre_pipeline_ms` tăng từ 1,0 s lên 6,1 s trong khi `pipeline_ms` không đổi.
+    db_pool_size: int = 20
+    db_max_overflow: int = 30
 
     # ── Qdrant (Vector DB / RAG) ──────────────────────────────────────────────
     qdrant_url: str
