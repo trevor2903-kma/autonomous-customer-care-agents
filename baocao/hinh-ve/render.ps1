@@ -2,7 +2,7 @@
   render.ps1 — dựng lại toàn bộ hình vẽ của báo cáo từ mã nguồn PlantUML.
 
   Dựng cả sơ đồ PlantUML (.puml), biểu đồ số liệu (bieu-do.py, cần uv) và các sơ đồ
-  vẽ theo toạ độ (so-do.py — Hình 2.2, 2.3, 2.6, 2.15, 2.16, 3.1, PL.1, PL.2, cần uv).
+  vẽ theo toạ độ (so-do.py — Hình 2.2, 2.3, 2.6, 2.7, 2.15, 2.16, 3.1, PL.1, PL.2, PL.5, PL.6, cần uv).
 
   Cách dùng (PowerShell, từ thư mục gốc repo hoặc bất kỳ đâu):
       .\baocao\hinh-ve\render.ps1              # dựng lại TẤT CẢ
@@ -56,7 +56,7 @@ if (-not $Scope -or $Scope -in @("chuong-1", "chuong-3")) {
   }
 }
 
-# So do ve theo toa do (matplotlib): Hinh 2.2, 2.3, 2.6, 2.15, 2.16, 3.1 va Phu luc PL.1, PL.2.
+# So do ve theo toa do (matplotlib): Hinh 2.2, 2.3, 2.6, 2.7, 2.15, 2.16, 3.1 va Phu luc PL.1, PL.2, PL.5, PL.6.
 if (-not $Scope -or $Scope -in @("chuong-2", "chuong-3", "phu-luc")) {
   if (Get-Command uv -ErrorAction SilentlyContinue) {
     $env:PYTHONIOENCODING = "utf-8"

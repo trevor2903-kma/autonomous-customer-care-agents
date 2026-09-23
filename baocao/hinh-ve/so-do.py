@@ -4,11 +4,14 @@ Dùng cho những hình mà Graphviz dàn trang khó đọc (luôn bẻ gãy đ�
     Hình 2.2  — Kiến trúc tổng thể hệ thống
     Hình 2.3  — Biểu đồ use case tổng quát
     Hình 2.6  — Máy trạng thái vòng đời hội thoại
+    Hình 2.7  — Hai đường nạp kho tri thức
     Hình 2.15 — Sơ đồ lớp miền dữ liệu
     Hình 2.16 — Bốn lớp phòng thủ chống chèn chỉ dẫn
     Hình 3.1  — Mô hình đồng thời của một kết nối WebSocket
     Hình PL.1 — Biểu đồ use case phân rã, nhóm khách hàng
     Hình PL.2 — Biểu đồ use case phân rã, nhóm quản trị viên
+    Hình PL.5 — Sơ đồ lớp miền hội thoại
+    Hình PL.6 — Sơ đồ lớp miền cấu hình và hỗ trợ
 
 Chạy (không cần cài gì vào dự án, uv tự tạo môi trường tạm):
     uv run --no-project --with matplotlib python baocao/hinh-ve/so-do.py
@@ -587,6 +590,141 @@ def hinh_2_06() -> None:
     cv.ax.add_patch(Circle(end, 0.09, facecolor=INK, edgecolor=INK, lw=LW, zorder=4))
 
     cv.save("chuong-2/hinh-2-06-may-trang-thai.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Hình 2.7 — Hai đường nạp kho tri thức: canonical và ad-hoc (mục 2.6.1)
+# Đối chiếu code (services/rag_service.py, services/knowledge_service.py, api/routes/rag.py):
+#   Đường 1 = ingest_knowledge_base, gọi từ `make ingest-kb` và nút "Nạp lại từ repo" (POST /api/rag/reindex):
+#     load_kb_documents bỏ facts.md + README.md → chunk_sections (mục ##; ≤ 1200 ký tự giữ nguyên văn, dài hơn
+#     cắt theo câu; "Bot Diagnostic Flow" giữ nguyên khối; bỏ "## Internal Note") → một điểm query-expansion cho
+#     mỗi câu hỏi frontmatter (vector = câu hỏi, text = thân tài liệu) → id uuid5 theo (source, chỉ số) →
+#     collection vật lý MỚI → đổi alias; reindex_from_repo xoá hết sổ knowledge_document rồi ghi lại.
+#   Đường 2 = POST /api/rag/upload (.pdf .docx .txt .md; tên tệp chỉ lấy phần cuối; trùng canonical → 409) →
+#     ingest_document: normalize → drop_excluded_sections → sanitize_untrusted_document (Lớp D) → chunk_text
+#     (≈ 800 ký tự, chồng ≈ 120) → ghi vào collection ĐANG phục vụ, id theo phiên bản; ghi sổ doc_type = upload
+#     rồi gỡ bản cũ. intent = None → chỉ lộ ra ở lượt truy hồi KHÔNG lọc của rag_service.search.
+#   facts.md = nodes/response.py load_facts → prompt Agent 4 ở mọi lượt; không vào Qdrant.
+# Bố cục ma trận: mỗi hàng là một bước, hai cột là hai đường, bước tương ứng nằm ngang hàng để so sánh;
+# ô nét đứt = đường đó không có bước này.
+# ══════════════════════════════════════════════════════════════════════════════
+H207_BAT_DOI_XUNG = (
+    "BẤT ĐỐI XỨNG CÓ CHỦ ĐÍCH GIỮA HAI ĐƯỜNG\n"
+    "• Tài liệu tải lên biến mất ở lần nạp lại toàn bộ kế tiếp: collection mới chỉ chứa tài liệu trong repository và sổ được\n"
+    "  ghi lại từ đầu. Đây là hành vi đúng theo thiết kế, vì cơ sở dữ liệu vector chỉ là bản phái sinh của repository.\n"
+    "• Chỉ Đường 2 đi qua Lớp D, vì tài liệu trong repository do nhóm phát triển biên soạn và đã được rà soát qua Git."
+)
+
+H207_BUOC = [  # (nhãn bước, dòng đường 1, đường 1 nét đứt?, dòng đường 2, đường 2 nét đứt?)
+    ("Nguồn",
+     ("knowledge/ trong repository", "faq 7 · reference 4 · case 4 · promotion 0 = 15 tài liệu",
+      "frontmatter: tiêu đề · nhãn ý định · danh sách câu hỏi"), False,
+     ("Quản trị viên tải tệp lên dashboard", "pdf · docx · txt · md"), False),
+    ("Tiếp nhận",
+     ("Nạp lại toàn bộ", "lệnh make ingest-kb hoặc nút “Nạp lại từ repo” trên dashboard"), False,
+     ("Trích văn bản", "tên tệp chỉ lấy phần cuối; trùng tên tài liệu canonical → từ chối"), False),
+    ("Làm sạch",
+     ("Không qua Lớp D", "nguồn tin cậy: do nhóm biên soạn, rà soát qua Git"), True,
+     ("Chuẩn hoá · bỏ mục ## Internal Note", "Lớp D: vô hiệu câu mang tính ra lệnh,",
+      "thay bằng một dấu vết thay vì xoá âm thầm"), False),
+    ("Chia đoạn",
+     ("Theo mục ## của Markdown", "mục ≤ 1200 ký tự giữ nguyên văn, dài hơn cắt theo câu",
+      "mục quy trình giữ nguyên khối · bỏ mục ## Internal Note"), False,
+     ("Theo cửa sổ câu", "≈ 800 ký tự mỗi đoạn, chồng lấn ≈ 120 ký tự"), False),
+    ("Mở rộng\ntruy vấn",
+     ("Thêm một điểm cho mỗi câu hỏi frontmatter", "vector = câu hỏi · nội dung trả về = thân tài liệu"), False,
+     ("Không có", "tệp tải lên không có frontmatter, ý định để trống"), True),
+    ("Ghi vector",
+     ("Ghi vào collection MỚI rồi đổi alias (Hình 2.8)", "định danh điểm tất định → nạp lại luỹ đẳng",
+      "sổ knowledge_document: xoá hết rồi ghi lại"), False,
+     ("Ghi thẳng vào collection đang phục vụ", "mỗi lần tải là một phiên bản, bản mới thay bản cũ",
+      "sổ knowledge_document: ghi dòng doc_type = upload"), False),
+]
+
+
+def component(cv: Canvas, x0: float, x1: float, t0: float, t1: float, lines: tuple[str, ...],
+              dashed: bool = False) -> None:
+    """Thành phần: hộp bo góc, dòng đầu in đậm, các dòng sau là mô tả; chữ phải nằm gọn trong hộp."""
+    Box(cv, (x0 + x1) / 2, cv.y((t0 + t1) / 2), x1 - x0, t1 - t0, dashed=dashed)
+    step = 0.29
+    tc = (t0 + t1) / 2 - step * (len(lines) - 1) / 2
+    for i, ln in enumerate(lines):
+        fs, bold = (FS_BODY, True) if i == 0 else (FS_SMALL, False)
+        assert cv.text_size(ln, fs, bold)[0] < x1 - x0 - 0.18, f"chữ “{ln}” tràn hộp"
+        cv.text((x0 + x1) / 2, cv.y(tc + i * step), ln, fs=fs, bold=bold)
+
+
+def hinh_2_07() -> None:
+    X0, X1 = 0.35, WIDTH - 0.35
+    lane1, lane2 = (2.25, 8.85), (9.00, X1)
+    box1, box2 = (lane1[0] + 0.20, lane1[1] - 0.20), (lane2[0] + 0.20, lane2[1] - 0.20)
+    xc1, xc2 = sum(box1) / 2, sum(box2) / 2
+
+    def h(n: int) -> float:
+        return 0.29 * n + 0.22
+
+    t_top = 0.70
+    gap = 0.38
+    t = t_top + 0.95
+    rows = []
+    for label, l1, d1, l2, d2 in H207_BUOC:
+        hh = h(max(len(l1), len(l2)))
+        rows.append((t, t + hh, label, l1, d1, l2, d2))
+        t += hh + gap
+    t_lane1 = rows[-1][1] + 0.25
+    t_cyl0 = t_lane1 + 0.45
+    t_cyl1 = t_cyl0 + 1.15
+    t_bot0 = t_cyl1 + 0.45
+    t_bot1 = t_bot0 + h(3)
+    t_note = t_bot1 + 0.45
+    cv = Canvas(t_note + 1.35)
+    cv.frame("Hai đường nạp kho tri thức")
+
+    # ── Hai dải đường nạp + cột nhãn bước ────────────────────────────────────
+    for (x0, x1), title, sub in ((lane1, "ĐƯỜNG 1 — CANONICAL", "nguồn chân lý, phiên bản hoá bằng Git"),
+                                 (lane2, "ĐƯỜNG 2 — AD-HOC", "bổ sung tạm thời, không phải nguồn chính thức")):
+        cv.rect(x0, cv.y(t_lane1), x1, cv.y(t_top))
+        cv.text((x0 + x1) / 2, cv.y(t_top + 0.30), title, fs=FS_BODY, bold=True)
+        cv.text((x0 + x1) / 2, cv.y(t_top + 0.58), sub, fs=FS_SMALL, italic=True)
+    cv.text(X0 + 0.08, cv.y(t_top + 0.30), "BƯỚC", fs=FS_BODY, ha="left", bold=True)
+
+    for i, (r0, r1, label, l1, d1, l2, d2) in enumerate(rows):
+        lw = max(cv.text_size(part, FS_SMALL, True)[0] for part in label.split("\n"))
+        assert X0 + 0.08 + lw < lane1[0] - 0.08, f"nhãn bước «{label}» lấn sang dải"
+        cv.text(X0 + 0.08, cv.y((r0 + r1) / 2), label, fs=FS_SMALL, ha="left", bold=True)
+        component(cv, *box1, r0, r1, l1, dashed=d1)
+        component(cv, *box2, r0, r1, l2, dashed=d2)
+        if i + 1 < len(rows):
+            n0 = rows[i + 1][0]
+            cv.arrow((xc1, cv.y(r1)), (xc1, cv.y(n0)))
+            cv.arrow((xc2, cv.y(r1)), (xc2, cv.y(n0)))
+
+    # ── Qdrant: cả hai đường cùng ghi vào MỘT collection phục vụ qua alias ───
+    qx0, qx1 = xc1 - 1.30, xc2 + 1.30
+    b0, b1 = cylinder(cv, (qx0 + qx1) / 2, t_cyl0, qx1 - qx0, t_cyl1 - t_cyl0)
+    for k, ln in enumerate(("Qdrant — collection phục vụ qua alias",
+                            "vector text-embedding-3-small · điểm canonical mang nhãn ý định, điểm tải lên để trống ý định")):
+        fs, bold = (FS_BODY, True) if k == 0 else (FS_SMALL, False)
+        assert cv.text_size(ln, fs, bold)[0] < qx1 - qx0 - 0.3
+        cv.text((qx0 + qx1) / 2, cv.y((b0 + b1) / 2 - 0.145 + k * 0.29), ln, fs=fs, bold=bold)
+    for x in (xc1, xc2):
+        cv.arrow((x, cv.y(rows[-1][1])), (x, cv.y(t_cyl0)))
+
+    # ── Hàng dưới: facts.md → Agent 4 (đi riêng) và Qdrant → Agent 2 ────────
+    fx = (X0 + 0.10, 4.15)
+    a4 = (4.75, box1[1])
+    component(cv, *fx, t_bot0, t_bot1, ("knowledge/facts.md", "sự thật lõi, nằm ngoài cả hai đường:",
+                                         "không chia đoạn, không vào Qdrant"))
+    component(cv, *a4, t_bot0, t_bot1, ("Agent 4 — Response Generator", "nạp facts.md vào prompt hệ thống",
+                                         "ở mọi lượt"))
+    y = cv.y((t_bot0 + t_bot1) / 2)
+    cv.arrow((fx[1], y), (a4[0], y))
+    component(cv, *box2, t_bot0, t_bot1, ("Agent 2 — Knowledge Agent", "lọc theo ý định trước; thiếu kết quả hoặc điểm yếu",
+                                          "mới truy hồi toàn kho — tài liệu tải lên chỉ lộ ra ở lượt này"))
+    cv.arrow((xc2, cv.y(t_cyl1)), (xc2, cv.y(t_bot0)))
+
+    note(cv, X0, X1, cv.y(t_note + 0.62), H207_BAT_DOI_XUNG)
+    cv.save("chuong-2/hinh-2-07-hai-duong-nap-tri-thuc.png")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1220,13 +1358,219 @@ def hinh_3_01() -> None:
     cv.save("chuong-3/hinh-3-01-mo-hinh-dong-thoi-websocket.png")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Hình PL.5, PL.6 — Sơ đồ lớp theo từng miền dữ liệu (Phụ lục D). Tách Hình 2.15 theo miền, cùng hộp lớp, và thêm
+# chi tiết hình tổng không đủ chỗ ghi: kiểu liệt kê của cột trạng thái, khoá ngoại kèm ON DELETE, ràng buộc duy nhất,
+# giá trị mặc định. Đối chiếu app/models/*.py (ForeignKey/ondelete, unique, Index), app/models/enums.py, migration
+# c3f1a9d47b28 + 6de31e7d29b1 (dữ liệu nạp sẵn của gate_config, gate_intent_rule), audit_service.ADMIN_NODE.
+# ══════════════════════════════════════════════════════════════════════════════
+PL5_LOP = {
+    "User": ("UUIDMixin", ["+email: str {unique}", "+password_hash: str", "+role: UserRole", "+display_name: str?",
+                           "+created_at: datetime"]),
+    "Order": ("UUIDMixin", ["+order_code: str {unique}", "+customer_id: UUID {FK}", "+status: OrderStatus",
+                            "+items_summary: str", "+region: str", "+ordered_at: datetime", "+shipped_at: datetime?",
+                            "+delivered_at: datetime?", "+cancelled_at: datetime?", "+estimated_delivery: datetime?",
+                            "+tracking_code: str?", "+created_at: datetime"]),
+    "Conversation": ("UUIDMixin, TimestampMixin", [
+        "+customer_id: UUID? {FK}", "+customer_identifier: str?", "+status: ConversationStatus = NEW",
+        "+current_intent: str?", "+entities: dict", "+confidence: float?", "+uncertainty_flags: list[str]",
+        "+escalation_reason: str?", "+priority: Priority?", "+severity: Severity?", "+escalation_card: dict?",
+        "+assigned_admin_id: UUID?", "+last_message_at: datetime?", "+auto_resolve_reminded_at: datetime?"]),
+    "Message": ("UUIDMixin", ["+conversation_id: UUID {FK}", "+sender: MessageSender", "+content: str",
+                              "+intent: str?", "+confidence: float?", "+client_msg_id: str?", "+created_at: datetime"]),
+}
+PL5_ENUM = {  # đúng thứ tự khai báo trong app/models/enums.py
+    "UserRole": ["admin", "customer"],
+    "MessageSender": ["customer", "ai", "admin"],
+    "Priority": ["low", "medium", "high"],
+    "Severity": ["low", "medium", "high"],
+    "OrderStatus": ["pending", "processing", "shipped", "delivering", "delivered", "cancelled"],
+    "ConversationStatus": ["NEW", "ACTIVE_AI", "CLASSIFYING", "RETRIEVING", "DECIDING", "RESPONDING", "REPLIED",
+                           "AWAITING_CUSTOMER", "PENDING_APPROVAL", "IN_HUMAN_QUEUE", "HUMAN_HANDLING", "RESOLVED",
+                           "CLOSED"],
+}
+PL5_GHI_CHU = (
+    "RÀNG BUỘC Ở CƠ SỞ DỮ LIỆU\n"
+    "• email của User và order_code của Order\n"
+    "  là duy nhất.\n"
+    "• Message có chỉ mục duy nhất trên cặp\n"
+    "  (conversation_id, client_msg_id) khi\n"
+    "  client_msg_id khác rỗng: tin gửi lại\n"
+    "  không bị lưu hai lần.\n"
+    "• customer_id của Order là cơ sở của tra\n"
+    "  đơn theo phạm vi khách: tra cứu luôn lọc\n"
+    "  theo khách đang đăng nhập.\n"
+    "• assigned_admin_id không có khoá ngoại:\n"
+    "  tham chiếu mềm tới quản trị viên giữ ca.\n"
+    "• Cột trạng thái lưu dạng chuỗi; tập giá trị\n"
+    "  hợp lệ là các kiểu liệt kê ở hàng dưới."
+)
+
+
+def enum_row(cv: Canvas, t: float, enums: dict[str, list[str]], widths: dict[str, float], title: str) -> None:
+    """Một hàng kiểu liệt kê dàn đều bề ngang, có dòng tiêu đề phía trên."""
+    names = list(enums)
+    gap = (WIDTH - 0.7 - sum(widths[n] for n in names)) / (len(names) - 1)
+    assert gap >= 0.2, f"hàng kiểu liệt kê chật: khe {gap:.2f} cm"
+    cv.text(0.40, cv.y(t), title, fs=FS_SMALL, ha="left", bold=True)
+    x = 0.35
+    for n in names:
+        uml_class(cv, x, t + 0.30, widths[n], n, "enumeration", enums[n])
+        x += widths[n] + gap
+
+
+def hinh_pl_5() -> None:
+    probe = Canvas(1.0)  # canvas tạm để đo chữ
+    w = {n: class_width(probe, n, st, a) for n, (st, a) in PL5_LOP.items()}
+    we = {n: class_width(probe, n, "enumeration", v) for n, v in PL5_ENUM.items()}
+    note_w, note_h = probe.text_size(PL5_GHI_CHU, FS_SMALL)
+    plt.close(probe.fig)
+    h = {n: class_height(st, len(a)) for n, (st, a) in PL5_LOP.items()}
+    he = {n: class_height("enumeration", len(v)) for n, v in PL5_ENUM.items()}
+
+    col_a, col_b = max(w["User"], w["Order"]), max(w["Conversation"], w["Message"])
+    gap_ab, vgap = 2.70, 1.15
+    xa = 0.50
+    xb = xa + col_a + gap_ab
+    xn0, xn1 = xb + col_b + 0.45, WIDTH - 0.35
+    assert note_w + 0.3 <= xn1 - xn0, f"ghi chú rộng {note_w:.2f} cm, còn {xn1 - xn0:.2f} cm"
+
+    t_top = 0.85
+    t_end_cls = max(t_top + h["User"] + vgap + h["Order"], t_top + h["Conversation"] + vgap + h["Message"],
+                    t_top + note_h + 0.3)
+    t_enum = t_end_cls + 0.55
+    cv = Canvas(t_enum + 0.30 + max(he.values()) + 0.30)
+    cv.frame("Sơ đồ lớp miền hội thoại")
+
+    user = uml_class(cv, xa, t_top, col_a, "User", *PL5_LOP["User"])
+    order = uml_class(cv, xa, t_top + h["User"] + vgap, col_a, "Order", *PL5_LOP["Order"])
+    conv = uml_class(cv, xb, t_top, col_b, "Conversation", *PL5_LOP["Conversation"])
+    msg = uml_class(cv, xb, t_top + h["Conversation"] + vgap, col_b, "Message", *PL5_LOP["Message"])
+
+    # User — Conversation: liên kết thường (customer_id cho phép rỗng, ON DELETE SET NULL).
+    xm = (user.x1 + conv.x0) / 2
+    y1 = user.y1 - 0.70
+    cv.line((user.x1, y1), (conv.x0, y1))
+    cv.text(xm, y1 + 0.16, "sở hữu", fs=FS_ATTR)
+    cv.text(user.x1 + 0.07, y1 + 0.16, "0..1", fs=FS_ATTR, ha="left")
+    cv.text(conv.x0 - 0.07, y1 + 0.16, "0..*", fs=FS_ATTR, ha="right")
+    cv.text(xm, y1 - 0.34, "customer_id\nON DELETE SET NULL", fs=FS_ATTR)
+    # Conversation - -> User: người giữ ca — tham chiếu mềm, KHÔNG có khoá ngoại.
+    y2 = y1 - 1.30
+    assert y2 > user.y0 + 0.1, "đường người giữ ca rơi ra ngoài hộp User"
+    cv.arrow((conv.x0, y2), (user.x1, y2), dashed=True)
+    cv.text(xm, y2 + 0.16, "người giữ ca", fs=FS_ATTR)
+    cv.text(user.x1 + 0.07, y2 + 0.16, "0..1", fs=FS_ATTR, ha="left")
+    cv.text(xm, y2 - 0.34, "assigned_admin_id\nkhông có khoá ngoại", fs=FS_ATTR)
+
+    # User ◆— Order, Conversation ◆— Message: hợp thành (khoá ngoại NOT NULL, ON DELETE CASCADE).
+    for whole, part, lines in ((user, order, "chủ đơn\ncustomer_id\nON DELETE CASCADE"),
+                               (conv, msg, "chứa\nconversation_id\nON DELETE CASCADE")):
+        x = whole.x0 + 0.55
+        cv.line(diamond(cv, (x, whole.y0)), (x, part.y1))
+        cv.text(x - 0.17, whole.y0 - 0.2, "1", fs=FS_ATTR, ha="right")
+        cv.text(x - 0.1, part.y1 + 0.17, "0..*", fs=FS_ATTR, ha="right")
+        cv.text(x + 0.14, (whole.y0 - 0.32 + part.y1) / 2, lines, fs=FS_ATTR, ha="left")
+
+    note(cv, xn0, xn1, cv.y(t_top) - (note_h + 0.28) / 2, PL5_GHI_CHU)
+    enum_row(cv, t_enum, PL5_ENUM, we, "Kiểu liệt kê của các cột trạng thái (app/models/enums.py)")
+    cv.save("phu-luc/hinh-pl-5-so-do-lop-mien-hoi-thoai.png")
+
+
+PL6_CAU_HINH = {
+    "GateConfig": (None, ["+id: int {PK, = 1}", "+auto_reply_enabled: bool = true",
+                          "+auto_resolve_enabled: bool = true", "+auto_resolve_minutes: int = 30",
+                          "+auto_resolve_grace_minutes: int = 15"]),
+    "GateIntentRule": (None, ["+intent: Intent {PK}", "+label: str", "+sensitive: bool = false",
+                              "+send_directly: bool = true"]),
+}
+PL6_HO_TRO = {
+    "AuditLog": ("UUIDMixin", ["+conversation_id: UUID?", "+message_id: UUID?", "+turn_id: UUID?",
+                               "+duration_ms: int?", "+node: AuditNode?", "+action: str?", "+confidence: float?",
+                               "+uncertainty_flags: list[str]", "+escalation_reason: str?", "+detail: dict",
+                               "+created_at: datetime {index}"]),
+    "KnowledgeDocument": ("UUIDMixin", ["+title: str", "+source_type: str?", "+file_ref: str? {unique}",
+                                        "+doc_type: str?", "+intent: str?", "+chunks: int = 0", "+doc_metadata: dict",
+                                        "+status: str = pending", "+embedding_ref: str?", "+created_at: datetime",
+                                        "+indexed_at: datetime?"]),
+}
+PL6_ENUM = {  # đúng thứ tự khai báo trong app/models/enums.py
+    "Intent": ["product_price", "product_information", "size_consulting", "shipping", "order_status", "payment",
+               "membership", "store_information", "return_exchange_policy", "refund", "exchange", "complaint",
+               "promotion", "greeting", "other"],
+    "AuditNode": ["customer", "intent", "knowledge", "decision", "response", "delivery"],
+    "TurnOutcome": ["sent", "held_for_approval", "queued_for_human", "error"],
+}
+PL6_GHI_CHU = (
+    "GHI CHÚ\n"
+    "• Hai lớp cấu hình dùng khoá mang ý nghĩa nghiệp vụ thay cho UUID: GateConfig chỉ có một dòng (id = 1); GateIntentRule\n"
+    "  có một dòng cho mỗi ý định (15 dòng), dữ liệu nạp sẵn đặt refund, exchange, complaint và other ở chế độ không gửi thẳng.\n"
+    "• AuditLog cố ý không có khoá ngoại: conversation_id và message_id là tham chiếu mềm, nhật ký tồn tại cả khi hội thoại\n"
+    "  bị xoá. turn_id gom 6 dòng của một lượt; action của dòng delivery mang giá trị TurnOutcome; node còn nhận giá trị\n"
+    "  \"admin\" cho thao tác của quản trị viên.\n"
+    "• KnowledgeDocument là sổ hiển thị, dựng lại sau mỗi lần nạp: doc_type là faq, reference, case, promotion hoặc upload;\n"
+    "  source_type là md, pdf, docx hoặc txt; status là pending hoặc indexed."
+)
+
+
+def hinh_pl_6() -> None:
+    probe = Canvas(1.0)
+    groups = (PL6_CAU_HINH, PL6_HO_TRO)
+    w = {n: class_width(probe, n, st, a) for g in groups for n, (st, a) in g.items()}
+    we = {n: class_width(probe, n, "enumeration", v) for n, v in PL6_ENUM.items()}
+    note_w, note_h = probe.text_size(PL6_GHI_CHU, FS_SMALL)
+    plt.close(probe.fig)
+    h = {n: class_height(st, len(a)) for g in groups for n, (st, a) in g.items()}
+    he = {n: class_height("enumeration", len(v)) for n, v in PL6_ENUM.items()}
+
+    pad, gcol, ggap, stack, title_h = 0.20, 0.45, 0.30, 0.35, 0.55
+    c1, c2 = max(w["GateConfig"], w["GateIntentRule"]), we["Intent"]
+    s1, s2 = max(w["AuditLog"], w["KnowledgeDocument"]), max(we["AuditNode"], we["TurnOutcome"])
+    wa = 2 * pad + c1 + gcol + c2
+    wb = 2 * pad + s1 + gcol + s2
+    x0 = (WIDTH - (wa + ggap + wb)) / 2
+    assert x0 >= 0.35, f"sơ đồ quá rộng: {wa + ggap + wb:.2f} cm"
+    ax0, ax1 = x0, x0 + wa
+    bx0, bx1 = ax1 + ggap, ax1 + ggap + wb
+    assert note_w + 0.3 <= bx1 - ax0, f"ghi chú rộng {note_w:.2f} cm, khung {bx1 - ax0:.2f} cm"
+
+    t_top = 0.85
+    t_cls = t_top + title_h
+    ha = max(h["GateConfig"] + stack + h["GateIntentRule"], he["Intent"])
+    hb = max(h["AuditLog"] + stack + h["KnowledgeDocument"], he["AuditNode"] + stack + he["TurnOutcome"])
+    t_a1, t_b1 = t_cls + ha + 0.25, t_cls + hb + 0.25
+    t_note = max(t_a1, t_b1) + 0.40
+    cv = Canvas(t_note + note_h + 0.28 + 0.35)
+    cv.frame("Sơ đồ lớp miền cấu hình và hỗ trợ")
+
+    for (gx0, gx1), t_bot, title in (((ax0, ax1), t_a1, "Nhóm cấu hình"), ((bx0, bx1), t_b1, "Nhóm hỗ trợ")):
+        cv.rect(gx0, cv.y(t_bot), gx1, cv.y(t_top), z=1)
+        cv.text((gx0 + gx1) / 2, cv.y(t_top) - 0.36, title, fs=FS_TITLE, va="baseline", bold=True)
+
+    uml_class(cv, ax0 + pad, t_cls, c1, "GateConfig", *PL6_CAU_HINH["GateConfig"])
+    uml_class(cv, ax0 + pad, t_cls + h["GateConfig"] + stack, c1, "GateIntentRule", *PL6_CAU_HINH["GateIntentRule"])
+    uml_class(cv, ax0 + pad + c1 + gcol, t_cls, c2, "Intent", "enumeration", PL6_ENUM["Intent"])
+
+    uml_class(cv, bx0 + pad, t_cls, s1, "AuditLog", *PL6_HO_TRO["AuditLog"])
+    uml_class(cv, bx0 + pad, t_cls + h["AuditLog"] + stack, s1, "KnowledgeDocument", *PL6_HO_TRO["KnowledgeDocument"])
+    xs2 = bx0 + pad + s1 + gcol
+    uml_class(cv, xs2, t_cls, s2, "AuditNode", "enumeration", PL6_ENUM["AuditNode"])
+    uml_class(cv, xs2, t_cls + he["AuditNode"] + stack, s2, "TurnOutcome", "enumeration", PL6_ENUM["TurnOutcome"])
+
+    note(cv, ax0, bx1, cv.y(t_note) - (note_h + 0.28) / 2, PL6_GHI_CHU)
+    cv.save("phu-luc/hinh-pl-6-so-do-lop-mien-cau-hinh-ho-tro.png")
+
+
 if __name__ == "__main__":
     print("Dựng sơ đồ vẽ theo toạ độ ...")
     hinh_2_02()
     hinh_2_03()
     hinh_2_06()
+    hinh_2_07()
     hinh_2_15()
     hinh_2_16()
     hinh_3_01()
     hinh_pl_1()
     hinh_pl_2()
+    hinh_pl_5()
+    hinh_pl_6()

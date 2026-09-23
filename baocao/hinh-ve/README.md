@@ -7,8 +7,8 @@ Kiểu hình bám báo cáo mẫu CT060102: use case, tuần tự (khung `alt` /
 - **Biểu đồ số liệu** — `bieu-do.py` (matplotlib), dựng **chỉ** từ số liệu các bảng trong báo cáo;
   ảnh xuất đúng khổ in rộng 16 cm, 300 dpi.
 - **Sơ đồ vẽ theo toạ độ** — `so-do.py` (matplotlib) cho Hình 2.2 (kiến trúc tổng thể), Hình 2.3 (use case),
-  Hình 2.6 (máy trạng thái), Hình 2.15 (sơ đồ lớp), Hình 2.16 (bốn lớp phòng thủ),
-  Hình 3.1 (mô hình đồng thời WebSocket) và Hình PL.1, PL.2 (use case phân rã):
+  Hình 2.6 (máy trạng thái), Hình 2.7 (hai đường nạp tri thức), Hình 2.15 (sơ đồ lớp), Hình 2.16 (bốn lớp phòng thủ),
+  Hình 3.1 (mô hình đồng thời WebSocket), Hình PL.1, PL.2 (use case phân rã) và Hình PL.5, PL.6 (sơ đồ lớp theo miền):
   kiểu báo cáo mẫu (khung có nhãn tab, nét đen, đường thẳng, nhãn giữa đường), vì PlantUML luôn bẻ gãy đường ở
   mép khung và tại vị trí nhãn; khổ in rộng 16 cm, 300 dpi.
 
@@ -53,7 +53,7 @@ và Hình 1.10 – 1.21 (logo công nghệ, lấy từ trang thương hiệu ch�
 | 2.4 Pipeline bốn tác tử cố định trên LangGraph | `chuong-2/hinh-2-04-pipeline-bon-tac-tu` | Đầu mục 2.4 |
 | 2.5 Cây quyết định từ tập cờ tới ba kết cục | `chuong-2/hinh-2-05-cay-quyet-dinh` | Mục 2.5.1, sau Bảng 2.9 |
 | 2.6 Máy trạng thái vòng đời hội thoại | `chuong-2/hinh-2-06-may-trang-thai` (vẽ bằng `so-do.py`) | Mục 2.5.2, sau Bảng 2.10 |
-| 2.7 Hai đường nạp kho tri thức | `chuong-2/hinh-2-07-hai-duong-nap-tri-thuc` | Cuối mục 2.6.1 |
+| 2.7 Hai đường nạp kho tri thức | `chuong-2/hinh-2-07-hai-duong-nap-tri-thuc` (vẽ bằng `so-do.py`) | Cuối mục 2.6.1 |
 | 2.8 Nạp lại kho tri thức theo blue/green | `chuong-2/hinh-2-08-blue-green-reindex` | Cuối mục 2.6.4 |
 | 2.9 Tuần tự — Trả lời tự động | `chuong-2/hinh-2-09-tuan-tu-tra-loi-tu-dong` | Mục 2.7.1 |
 | 2.10 Tuần tự — Chuyển tiếp cho nhân viên | `chuong-2/hinh-2-10-tuan-tu-chuyen-tiep` | Mục 2.7.2 |
@@ -79,16 +79,34 @@ và Hình 1.10 – 1.21 (logo công nghệ, lấy từ trang thương hiệu ch�
 
 **Không vẽ — cần chụp:** Hình 3.4 – 3.12 (ảnh chụp giao diện).
 
-## Phụ lục — 2 hình vẽ
+## Phụ lục — 6 hình vẽ
 
 | Hình | Tệp | Vị trí chèn |
 |---|---|---|
 | PL.1 Biểu đồ use case phân rã — nhóm khách hàng | `phu-luc/hinh-pl-1-use-case-khach-hang` (vẽ bằng `so-do.py`) | Phụ lục B, mục "Phân rã use case nhóm khách hàng" |
 | PL.2 Biểu đồ use case phân rã — nhóm quản trị viên | `phu-luc/hinh-pl-2-use-case-quan-tri` (vẽ bằng `so-do.py`) | Phụ lục B, mục "Phân rã use case nhóm quản trị viên" |
+| PL.3 Tuần tự — Đăng nhập và làm mới phiên qua httpOnly cookie | `phu-luc/hinh-pl-3-tuan-tu-dang-nhap-lam-moi-phien` | Phụ lục C, mục "Luồng đăng nhập và làm mới phiên" |
+| PL.4 Tuần tự — Tiếp quản ca và chat trực tiếp với khách hàng | `phu-luc/hinh-pl-4-tuan-tu-tiep-quan-ca` | Phụ lục C, mục "Luồng tiếp quản ca và chat trực tiếp với khách hàng" |
+| PL.5 Sơ đồ lớp miền hội thoại | `phu-luc/hinh-pl-5-so-do-lop-mien-hoi-thoai` (vẽ bằng `so-do.py`) | Phụ lục D, mục "Miền hội thoại" |
+| PL.6 Sơ đồ lớp miền cấu hình và hỗ trợ | `phu-luc/hinh-pl-6-so-do-lop-mien-cau-hinh-ho-tro` (vẽ bằng `so-do.py`) | Phụ lục D, mục "Miền cấu hình và hỗ trợ" |
+
+**PL.3, PL.4** cao hơn khổ ngang (khoảng 16 × 25 cm khi đặt rộng 16 cm) — nên dành trọn một trang cho mỗi hình.
+**PL.5, PL.6** tách Hình 2.15 theo miền, cùng hộp lớp, thêm kiểu liệt kê của cột trạng thái, khoá ngoại kèm
+`ON DELETE`, ràng buộc duy nhất và giá trị mặc định.
 
 ## Đối chiếu với mã nguồn
 
 Các hình vẽ theo code thật; những chỗ tài liệu đang lệch với code:
+
+- **PL.3 — WebSocket xác thực SAU `accept()`.** Phụ lục C viết back-end đọc vai trò "trước khi chấp nhận kết nối";
+  code (`api/ws/chat.py`, `api/ws/admin.py`) gọi `accept()` trước rồi mới `authenticate_websocket`, để còn gửi được
+  khung đóng có mã (4401 sai mã hoặc sai vai trò, 1011 CSDL lỗi). Kết nối chỉ được phục vụ sau khi xác thực xong.
+
+- **2.7 — hai đường nạp KHÔNG có bước xử lý chung.** Đường 1 (`rag_service.ingest_knowledge_base`) chia theo mục
+  `##` rồi mở rộng truy vấn; Đường 2 (`ingest_document`) chuẩn hoá → bỏ `## Internal Note` → Lớp D → chia theo cửa
+  sổ câu ≈ 800 ký tự, không mở rộng truy vấn (tệp tải lên không có frontmatter, `intent` rỗng nên chỉ lộ ra ở lượt
+  truy hồi không lọc). Lệnh nạp lại là `make ingest-kb` (không có `make reindex`). Mục 2.6.1 còn viết "cơ chế xoá
+  sạch rồi nạp lại", trong khi code (và mục 2.6.4, mục 3.3) dựng collection mới rồi đổi alias.
 
 - **2.2 — điểm phát ngôn duy nhất chỉ đúng TRONG pipeline.** Tác vụ nền (`services/auto_resolve.py`, hàm `_act`)
   tự chèn và phát hai câu cố định tới khách (nhắc, báo đóng ca) mà không qua tác tử response. Vì vậy ghi chú của

@@ -1,0 +1,100 @@
+@startuml hinh-pl-3-tuan-tu-dang-nhap-lam-moi-phien
+' Hình PL.3. Biểu đồ tuần tự — Đăng nhập và làm mới phiên qua httpOnly cookie  (Phụ lục C)
+' ĐỐI CHIẾU: api/routes/auth.py (login: giới hạn tần suất theo IP rồi email, bcrypt trong threadpool, hash giả khi
+' email không tồn tại, _set_auth_cookies; refresh: decode_refresh_token + đọc user), core/security.py (type = access |
+' refresh), api/ws/auth.py (authenticate_websocket gọi SAU accept(): cookie trước, ?token= sau; vai trò đọc từ DB;
+' 4401 / 1011), dashboard lib/api.ts (req: 401 → refreshToken() single-flight → chạy lại MỘT lần; probeSession),
+' lib/realtime.ts (4401 → hỏi /api/auth/me mới quyết định dừng), components/auth/RequireAuth.tsx (→ /login).
+!include ../_style.puml
+autonumber "<b>[0]"
+
+actor "Người dùng" as U
+participant ":Giao diện Next.js\n//lib/api.ts//" as FE
+participant ":AuthAPI\n///api/auth//" as AUTH
+participant ":API nghiệp vụ\n///api/…//" as API
+participant ":WebSocket\n///ws/chat · /ws/admin…//" as WS
+database ":PostgreSQL" as PG
+
+== 1. Đăng nhập ==
+
+U -> FE : nhập email, mật khẩu
+FE -> AUTH : POST /api/auth/login {email, mật khẩu}
+activate AUTH
+AUTH -> AUTH : giới hạn tần suất theo IP, rồi theo email
+alt vượt trần
+  AUTH --> FE : **429** + Retry-After
+else trong trần
+  AUTH -> PG : SELECT user WHERE email = …
+  PG --> AUTH : user (hoặc không có)
+  AUTH -> AUTH : bcrypt.verify trong threadpool\n//email không tồn tại vẫn so trên một hash giả//
+  alt sai email hoặc mật khẩu
+    AUTH --> FE : **401**
+  else đúng
+    AUTH -> AUTH : phát **access token** (type = access, sub, role)\nvà **refresh token** (type = refresh, sub)
+    AUTH --> FE : **200** + Set-Cookie **access_token**, **refresh_token**\n(httpOnly · Secure và SameSite theo môi trường)\nthân JSON: hai mã, vai trò, tên hiển thị
+  end
+end
+deactivate AUTH
+note right of FE
+  Giao diện không tự lưu mã: trình duyệt giữ
+  cả hai mã trong cookie httpOnly và tự gửi
+  kèm mỗi yêu cầu cùng nguồn.
+end note
+
+== 2. Mã truy cập hết hạn giữa phiên ==
+
+FE -> API : GET /api/… (kèm cookie)
+API --> FE : **401** — access token hết hạn
+FE -> FE : refreshToken(): nếu đã có lần làm mới đang chạy\nthì **chờ chung** thay vì gọi thêm (single-flight)
+FE -> AUTH : POST /api/auth/refresh (kèm cookie refresh_token)
+activate AUTH
+AUTH -> AUTH : giải mã, kiểm **type = refresh** và hạn dùng
+AUTH -> PG : SELECT user theo sub
+alt mã sai loại, hết hạn, hoặc người dùng không còn
+  AUTH --> FE : **401**
+  FE --> U : lời gọi gốc nhận 401; khi /api/auth/me\ncũng thất bại, RequireAuth chuyển về **/login**
+else hợp lệ
+  AUTH --> FE : **200** + Set-Cookie **cặp mã mới**
+  deactivate AUTH
+  FE -> API : chạy lại yêu cầu gốc **một lần**
+  API --> FE : 200
+end
+
+== 3. Bắt tay WebSocket ==
+
+FE -> WS : mở wss://…/ws/chat (kèm cookie)
+activate WS
+WS -> WS : accept()
+WS -> WS : lấy mã: cookie access_token,\nkhông có thì ?token=;\nkiểm type = access
+WS -> PG : đọc **vai trò hiện tại** của user
+note left of WS
+  Vai trò đọc từ cơ sở dữ liệu, không tin
+  claim trong token: quản trị viên bị hạ quyền
+  hoặc tài khoản bị xoá thì token cũ còn hạn
+  cũng không mở được kết nối.
+end note
+alt CSDL lỗi khi đọc vai trò
+  WS --> FE : đóng **1011** — nối lại theo backoff
+else token hỏng, sai vai trò hoặc user không còn
+  WS --> FE : đóng **4401**
+  FE -> AUTH : GET /api/auth/me (cùng cơ chế tự làm mới ở phần 2)
+  alt phiên còn hiệu lực, hoặc chưa xác định được (lỗi mạng, 5xx, quá hạn chờ)
+    FE -> WS : nối lại theo backoff, dùng mã hiện tại
+  else phiên đã hết hoặc vai trò không còn đúng
+    FE --> U : dừng nối lại, kênh chuyển sang **ngoại tuyến**
+  end
+else hợp lệ
+  WS --> FE : bắt đầu phục vụ: gắn hub, nhận khung
+end
+deactivate WS
+
+legend bottom
+  **Ba điểm thiết kế đọc được từ hình này**
+  1. **Giao diện không giữ mã trong localStorage.** Cả hai mã nằm trong cookie httpOnly do back-end ghi; trình duyệt
+     tự gửi kèm mỗi yêu cầu, kể cả lúc bắt tay WebSocket.
+  2. **Nhiều yêu cầu cùng nhận 401 chỉ gây một lần làm mới.** Yêu cầu gốc được chạy lại đúng một lần, nên không thể
+     rơi vào vòng lặp làm mới.
+  3. **Quyền được kiểm lại theo cơ sở dữ liệu.** WebSocket đọc vai trò từ PostgreSQL ở mỗi lần nối, và kênh quản trị
+     còn đọc lại vai trò ở mỗi tin gửi đi; token còn hạn không đủ để giữ một quyền đã bị thu hồi.
+endlegend
+@enduml

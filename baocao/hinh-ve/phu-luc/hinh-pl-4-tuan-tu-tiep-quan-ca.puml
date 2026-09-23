@@ -1,0 +1,98 @@
+@startuml hinh-pl-4-tuan-tu-tiep-quan-ca
+' Hình PL.4. Biểu đồ tuần tự — Tiếp quản ca và chat trực tiếp với khách hàng  (Phụ lục C)
+' ĐỐI CHIẾU: api/routes/admin.py (takeover / resolve qua _transition = bảng chuyển + CAS + audit node = admin trong
+' CÙNG giao dịch, commit rồi mới hub.notify_status), services/conversation_service.transition_status (UPDATE … WHERE
+' status = giá trị vừa đọc AND không do admin khác giữ; rowcount = 1 mới là thắng), api/ws/chat.py
+' (HUMAN_HANDLED_STATUSES → should_run_ai = False: tin khách lưu rồi phát hub, pipeline không chạy; khung status tới
+' khách bị bỏ assigned_admin_id), api/ws/admin.py (_persist_admin_message: đọc lại vai trò, SELECT … FOR UPDATE, chỉ
+' người đang giữ ca gửi được, không thì error not_assigned).
+!include ../_style.puml
+autonumber "<b>[0]"
+
+actor "Khách hàng" as KH
+participant ":ChatWebSocket\n///ws/chat//" as CWS
+participant ":Hub\n//in-process//" as HUB
+participant ":Điểm cuối quản trị\n//REST /api/admin · WS /ws/admin/{id}//" as ADM
+database ":PostgreSQL" as PG
+actor "Quản trị viên A" as QA
+actor "Quản trị viên B" as QB
+
+== 1. Hai quản trị viên cùng bấm nhận một ca đang chờ (IN_HUMAN_QUEUE) ==
+
+QA -> ADM : POST /api/admin/conversations/{id}/takeover
+QB -> ADM : POST …/takeover (gần như cùng lúc)
+activate ADM
+ADM -> PG : UPDATE conversation\nSET status = 'HUMAN_HANDLING',\n      assigned_admin_id = A\n**WHERE** status = giá trị vừa đọc\n  **AND** không do người khác giữ
+PG --> ADM : rowcount = 1
+ADM -> PG : INSERT audit_log(node = admin,\naction = takeover) + **COMMIT**
+ADM -> HUB : notify_status(HUMAN_HANDLING, người giữ = A)
+HUB -> CWS : khung **status**
+CWS --> KH : status = HUMAN_HANDLING\n//assigned_admin_id bị xoá trước khi gửi//
+ADM --> QA : **200** — A giữ ca
+ADM -> PG : cùng câu UPDATE cho B
+PG --> ADM : rowcount = **0** — trạng thái đã đổi
+ADM --> QB : **409 Conflict** — giao diện tải lại trạng thái
+deactivate ADM
+
+== 2. Chat trực tiếp — AI tạm dừng trên hội thoại này ==
+
+QA -> ADM : mở /ws/admin/{id} (xác thực như Hình PL.3),\nđăng ký hàng đợi của ca trên hub
+KH -> CWS : tin nhắn
+activate CWS
+CWS --> KH : **ack**
+CWS -> PG : đọc trạng thái ca → HUMAN_HANDLING
+CWS -> PG : INSERT message(sender = customer) + COMMIT
+CWS -> HUB : phát tin của khách
+HUB -> ADM : khung **message**
+ADM -> QA : hiển thị tin
+note over CWS #FDE8E8
+  **Cổng trạng thái:** ca ở IN_HUMAN_QUEUE, HUMAN_HANDLING
+  hoặc PENDING_APPROVAL thì pipeline **không chạy**;
+  tin của khách chỉ được lưu và chuyển tới người giữ ca.
+end note
+deactivate CWS
+
+QA -> ADM : gửi tin (khung message + client_msg_id)
+activate ADM
+ADM -> PG : đọc lại **vai trò** của A;\nSELECT conversation **FOR UPDATE**:\nstatus = HUMAN_HANDLING và người giữ = A?
+alt A không còn giữ ca hoặc đã bị hạ quyền
+  ADM --> QA : error **not_assigned**
+else đang giữ ca
+  ADM -> PG : INSERT message(sender = admin) + **COMMIT**
+  ADM -> HUB : phát tin (sender = admin)
+  HUB -> CWS : khung **message**
+  CWS --> KH : tin của nhân viên\n//không mang định danh tài khoản nhân viên//
+  ADM --> QA : **ack**
+end
+deactivate ADM
+
+== 3. Đóng ca ==
+
+QA -> ADM : POST /api/admin/conversations/{id}/resolve
+activate ADM
+ADM -> PG : UPDATE … SET status = 'RESOLVED'\n**WHERE** status = giá trị vừa đọc\n  **AND** không do người khác giữ\n+ INSERT audit_log(node = admin,\n  action = resolve) + **COMMIT**
+alt rowcount = 0
+  ADM --> QA : **409 Conflict**
+else rowcount = 1
+  ADM -> HUB : notify_status(RESOLVED)
+  HUB -> CWS : khung **status**
+  CWS --> KH : status = RESOLVED
+  ADM --> QA : **200**
+end
+deactivate ADM
+note right of KH
+  Tin tiếp theo của khách mở
+  **ca mới**; pipeline xử lý lại từ đầu.
+end note
+
+legend bottom
+  **Ba điểm thiết kế đọc được từ hình này**
+  1. **Nhận ca và đóng ca đều là so-sánh-rồi-ghi.** Câu UPDATE chỉ ghi khi trạng thái vẫn như lúc đọc và ca không do
+     người khác giữ; hai người bấm cùng lúc thì một người nhận 409 thay vì ghi đè lên nhau. Mỗi thao tác thành công
+     ghi đúng một dòng audit_log với node = admin, trong cùng giao dịch.
+  2. **AI dừng theo trạng thái hội thoại, không theo một cờ riêng.** Khi ca đã có người giữ, pipeline không chạy trên
+     hội thoại đó; tin của khách đi thẳng tới người giữ ca qua hub.
+  3. **Chỉ người đang giữ ca mới gửi được tin.** Mỗi tin của quản trị viên được kiểm lại vai trò và quyền giữ ca dưới
+     khoá dòng; khách chỉ thấy tin của "nhân viên", không thấy định danh tài khoản của người trả lời.
+endlegend
+@enduml
