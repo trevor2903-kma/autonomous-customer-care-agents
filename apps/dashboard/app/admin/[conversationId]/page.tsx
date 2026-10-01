@@ -28,6 +28,7 @@ import { useReconnectingSocket } from "@/lib/useReconnectingSocket";
 import { ApprovalPanel } from "@/components/admin/ApprovalPanel";
 import { EscalationCardPanel } from "@/components/admin/EscalationCardPanel";
 import { StatusPill } from "@/components/admin/StatusPill";
+import { ScrollToLatestButton } from "@/components/chat/ScrollToLatestButton";
 import { ConfirmModal } from "@/components/ConfirmModal";
 
 function CloseCaseIcon() {
@@ -71,6 +72,9 @@ function initials(s?: string | null): string {
 // Server từ chối tin admin vì ca không (còn) do mình giữ (contract §4.2 `error/not_assigned`).
 const NOT_ASSIGNED_NOTICE =
   "Tin chưa được gửi: bạn không còn giữ ca này (chưa tiếp quản, ca đã đổi trạng thái hoặc nhân viên khác đã nhận).";
+
+// Còn cách đáy tối đa 80px vẫn được xem là đang theo dõi tin mới nhất.
+const NEAR_BOTTOM_PX = 80;
 
 // URL socket ca: gắn token WS ngắn hạn lấy MỚI mỗi lần nối (iOS không gửi cookie khác site lúc handshake).
 async function currentAdminWsUrl(conversationId: string): Promise<string | null> {
@@ -171,7 +175,10 @@ export default function AdminConversationPage({
   const [actionError, setActionError] = useState<string | null>(null);
   const [replyError, setReplyError] = useState<string | null>(null);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);
+  const prevCountRef = useRef(0);
+  const [isAwayFromBottom, setIsAwayFromBottom] = useState(false);
   // Hẹn giờ ack theo client_msg_id; `genRef` = thế hệ socket (+1 mỗi lần mở) — xem app/chat/page.tsx.
   const ackTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const genRef = useRef(0);
@@ -297,9 +304,38 @@ export default function AdminConversationPage({
     [conv?.messages, live],
   );
 
+  const lastMessage = messages[messages.length - 1];
+  const justSent = lastMessage?.sender === "admin" && lastMessage.sendState === "sending";
+
+  function scrollToLatest(behavior: ScrollBehavior) {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+    stickRef.current = true;
+    setIsAwayFromBottom(false);
+  }
+
+  function onConversationScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const away = el.scrollHeight - el.scrollTop - el.clientHeight > NEAR_BOTTOM_PX;
+    stickRef.current = !away;
+    setIsAwayFromBottom(away);
+  }
+
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length]);
+    const previous = prevCountRef.current;
+    const count = messages.length;
+    prevCountRef.current = count;
+
+    if (previous === 0 && count > 0) {
+      scrollToLatest("auto");
+      return;
+    }
+    if (stickRef.current || justSent) {
+      scrollToLatest(count - previous > 1 ? "auto" : "smooth");
+    }
+  }, [messages.length, justSent]);
 
   async function act(fn: () => Promise<AdminConversation>) {
     setBusy(true);
@@ -433,38 +469,48 @@ export default function AdminConversationPage({
         </div>
       )}
 
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto bg-panel px-[26px] py-6 mob:px-4">
-        {isLoading && <p className="text-sm text-dim">Đang tải hội thoại…</p>}
-        {isError && (
-          <p className="text-sm text-terracotta">Lỗi: {error.message}</p>
-        )}
+      <div className="relative flex min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          onScroll={onConversationScroll}
+          className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto bg-panel px-[26px] py-6 mob:px-4"
+        >
+          {isLoading && <p className="text-sm text-dim">Đang tải hội thoại…</p>}
+          {isError && (
+            <p className="text-sm text-terracotta">Lỗi: {error.message}</p>
+          )}
 
-        {conv?.escalation_card &&
-          (status === "IN_HUMAN_QUEUE" || isPending) && (
-            <EscalationCardPanel
-              card={conv.escalation_card}
-              identifier={conv.customer_identifier}
+          {conv?.escalation_card &&
+            (status === "IN_HUMAN_QUEUE" || isPending) && (
+              <EscalationCardPanel
+                card={conv.escalation_card}
+                identifier={conv.customer_identifier}
+              />
+            )}
+
+          {isPending && conv?.escalation_card?.suggested_reply && (
+            <ApprovalPanel
+              draft={conv.escalation_card.suggested_reply}
+              busy={busy}
+              onApprove={(content, shown) => act(() => approveDraft(id, content, shown))}
+              onReject={(shown) => act(() => rejectDraft(id, shown))}
             />
           )}
 
-        {isPending && conv?.escalation_card?.suggested_reply && (
-          <ApprovalPanel
-            draft={conv.escalation_card.suggested_reply}
-            busy={busy}
-            onApprove={(content, shown) => act(() => approveDraft(id, content, shown))}
-            onReject={(shown) => act(() => rejectDraft(id, shown))}
-          />
-        )}
-
-        <div className="flex flex-col gap-[18px]">
-          {messages.map((m, i) => (
-            <Fragment key={m.key}>
-              {startsNewDay(m.at, messages[i - 1]?.at) && <DayDivider at={m.at} />}
-              <Bubble msg={m} canRetry={isHandling && online} onRetry={retry} />
-            </Fragment>
-          ))}
-          <div ref={endRef} />
+          <div className="flex flex-col gap-[18px]">
+            {messages.map((m, i) => (
+              <Fragment key={m.key}>
+                {startsNewDay(m.at, messages[i - 1]?.at) && <DayDivider at={m.at} />}
+                <Bubble msg={m} canRetry={isHandling && online} onRetry={retry} />
+              </Fragment>
+            ))}
+          </div>
         </div>
+
+        <ScrollToLatestButton
+          visible={isAwayFromBottom}
+          onClick={() => scrollToLatest("smooth")}
+        />
       </div>
 
       <footer className="flex-none border-t border-line bg-white px-[26px] py-3.5 mob:px-4">

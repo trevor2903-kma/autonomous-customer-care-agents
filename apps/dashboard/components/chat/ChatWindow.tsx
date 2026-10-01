@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { dayLabel, startsNewDay } from "@/lib/dayDivider";
 import type { SendState } from "@/lib/messageMerge";
+import { ScrollToLatestButton } from "@/components/chat/ScrollToLatestButton";
 
 export type ChatMessage = {
   id: number;
@@ -45,7 +46,7 @@ function DayDivider({ at }: { at?: string }) {
 // bẻ chuỗi dài liền (URL, mã) để không tràn khỏi bong bóng (UX-01.3).
 //
 // Cuộn DÍNH ĐÁY (UX-02.1): chỉ tự cuộn khi đang ở gần đáy hoặc vừa gửi tin; đang đọc lịch sử phía trên thì hiện
-// nút "Tin nhắn mới ↓" thay vì giật xuống. Lần nạp lịch sử đầu nhảy thẳng xuống đáy (không cuộn animation).
+// nút mũi tên về tin mới nhất thay vì giật xuống. Lần nạp lịch sử đầu nhảy thẳng xuống đáy (không cuộn animation).
 export function ChatWindow({
   messages,
   typing = false,
@@ -61,10 +62,9 @@ export function ChatWindow({
   canRetry?: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const stickRef = useRef(true); // đang "bám đáy" — chỉ tắt khi CHÍNH người dùng cuộn lên
-  const lastTopRef = useRef(0);
+  const stickRef = useRef(true);
   const prevCountRef = useRef(0);
-  const [hasNew, setHasNew] = useState(false);
+  const [isAwayFromBottom, setIsAwayFromBottom] = useState(false);
 
   const last = messages[messages.length - 1];
   const justSent = last?.from === "you" && last.sendState === "sending";
@@ -74,19 +74,15 @@ export function ChatWindow({
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior });
     stickRef.current = true;
-    setHasNew(false);
+    setIsAwayFromBottom(false);
   }
 
   function onScroll() {
     const el = scrollRef.current;
     if (!el) return;
-    if (el.scrollHeight - el.scrollTop - el.clientHeight <= NEAR_BOTTOM_PX) {
-      stickRef.current = true;
-      setHasNew(false);
-    } else if (el.scrollTop < lastTopRef.current) {
-      stickRef.current = false; // người dùng cuộn LÊN (cuộn tự động chỉ đi xuống)
-    }
-    lastTopRef.current = el.scrollTop;
+    const away = el.scrollHeight - el.scrollTop - el.clientHeight > NEAR_BOTTOM_PX;
+    stickRef.current = !away;
+    setIsAwayFromBottom(away);
   }
 
   useEffect(() => {
@@ -102,7 +98,6 @@ export function ChatWindow({
       scrollToEnd(count - prev > 1 ? "auto" : "smooth");
       return;
     }
-    if (count > prev) setHasNew(true);
   }, [messages.length, typing, waiting, justSent]);
 
   // Một bong bóng (không kèm `key` — phần tử bọc ở dưới giữ key React).
@@ -230,15 +225,10 @@ export function ChatWindow({
         )}
       </div>
 
-      {hasNew && (
-        <button
-          type="button"
-          onClick={() => scrollToEnd("smooth")}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-line-olive bg-white px-3.5 py-1.5 text-[12.5px] font-medium text-olive-dark shadow-card hover:bg-olive-soft"
-        >
-          Tin nhắn mới ↓
-        </button>
-      )}
+      <ScrollToLatestButton
+        visible={isAwayFromBottom}
+        onClick={() => scrollToEnd("smooth")}
+      />
     </div>
   );
 }
