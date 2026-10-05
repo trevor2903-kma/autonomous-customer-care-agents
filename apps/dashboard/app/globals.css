@@ -75,6 +75,21 @@ body {
   animation: blink 1.3s infinite;
 }
 
+/* Toast trượt vào từ phải (components/ui/Toast.tsx) */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.animate-toast-in {
+  animation: toast-in 0.22s ease-out;
+}
+
 /* scrollbar mảnh tông kem */
 ::-webkit-scrollbar {
   width: 9px;
@@ -90,7 +105,8 @@ body {
 
 /* tôn trọng người dùng tắt hiệu ứng */
 @media (prefers-reduced-motion: reduce) {
-  .animate-blink {
+  .animate-blink,
+  .animate-toast-in {
     animation: none;
   }
 }

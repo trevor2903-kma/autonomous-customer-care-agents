@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { formatIntent } from "@/components/reports/labels";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { useToast } from "@/components/ui/Toast";
 
 // Console tri thức (P3). Đường nạp CHÍNH = "Nạp lại từ repo" (reset-and-reingest từ apps/backend/knowledge).
 // Upload chỉ là AD-HOC: non-canonical, mất khi nạp lại. Doc canonical không xoá được ở đây (xoá file trong repo).
@@ -86,6 +87,7 @@ function DocRow({
 
 export function DocumentsPanel() {
   const qc = useQueryClient();
+  const toast = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
   const [selected, setSelected] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -114,15 +116,21 @@ export function DocumentsPanel() {
   });
   const remove = useMutation<KnowledgeDocument, Error, string>({
     mutationFn: deleteRagDocument,
-    onSuccess: refreshAll,
+    onSuccess: (doc) => {
+      refreshAll();
+      toast.success("Đã xoá tài liệu", `“${doc.title}” đã được gỡ khỏi tri thức.`);
+    },
+    onError: (e) => toast.error("Xoá tài liệu thất bại", e.message),
   });
   const upload = useMutation({
     mutationFn: uploadKnowledgeDoc,
-    onSuccess: () => {
+    onSuccess: (res, file) => {
       refreshAll();
       setSelected(null);
       if (fileRef.current) fileRef.current.value = "";
+      toast.success("Đã tải lên tài liệu", `${file.name} · ${res.chunks} chunk`);
     },
+    onError: (e, file) => toast.error("Tải lên thất bại", `${file.name}: ${e.message}`),
   });
 
   const handleFileChange = (file: File | null) => {
@@ -153,7 +161,8 @@ export function DocumentsPanel() {
     }
   };
 
-  const err = reindex.error ?? remove.error ?? upload.error ?? docs.error;
+  // Lỗi tải lên / xoá báo qua toast — dòng lỗi inline chỉ còn cho nạp lại + danh sách.
+  const err = reindex.error ?? docs.error;
 
   return (
     <>

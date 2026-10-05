@@ -30,6 +30,7 @@ import { EscalationCardPanel } from "@/components/admin/EscalationCardPanel";
 import { StatusPill } from "@/components/admin/StatusPill";
 import { ScrollToLatestButton } from "@/components/chat/ScrollToLatestButton";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { useToast } from "@/components/ui/Toast";
 
 function CloseCaseIcon() {
   return (
@@ -165,6 +166,7 @@ export default function AdminConversationPage({
   const id = params.conversationId;
   const qc = useQueryClient();
   const { user } = useAuth();
+  const toast = useToast();
   const [live, setLive] = useState<AdminMsg[]>([]);
   // Trạng thái / người giữ ca theo socket (system lúc (nối lại) mở, frame status) hoặc theo body của hành động
   // vừa thành công — mới hơn bản REST. `wsAssigned === undefined` = chưa biết → dùng số liệu REST.
@@ -337,7 +339,11 @@ export default function AdminConversationPage({
     }
   }, [messages.length, justSent]);
 
-  async function act(fn: () => Promise<AdminConversation>) {
+  // `notify` = tiêu đề toast thành công / thất bại; có → kết quả báo qua toast thay cho dòng lỗi inline.
+  async function act(
+    fn: () => Promise<AdminConversation>,
+    notify?: { success: string; error: string },
+  ) {
     setBusy(true);
     setActionError(null);
     try {
@@ -345,10 +351,13 @@ export default function AdminConversationPage({
       // Áp trạng thái CHỈ SAU khi server nhận — lấy từ chính body trả về (không đoán trước).
       setWsStatus(res.status);
       setWsAssigned(res.assigned_admin_id ?? null);
+      if (notify) toast.success(notify.success);
     } catch (e) {
       // FE-03: 409 (ca đã đổi trạng thái / nhân viên khác đang giữ) → hiện đúng lý do backend rồi nạp lại ca;
       // bỏ trạng thái socket có thể đã cũ để số liệu vừa nạp lại quyết định.
-      setActionError(e instanceof Error ? e.message : "Thao tác không thành công.");
+      const reason = e instanceof Error ? e.message : "Thao tác không thành công.";
+      if (notify) toast.error(notify.error, reason);
+      else setActionError(reason);
       setWsStatus(null);
       setWsAssigned(undefined);
     } finally {
@@ -594,7 +603,10 @@ export default function AdminConversationPage({
         onClose={() => setConfirmCloseOpen(false)}
         onConfirm={() => {
           setConfirmCloseOpen(false);
-          act(() => resolveConversation(id));
+          act(() => resolveConversation(id), {
+            success: "Đã đóng ca hội thoại",
+            error: "Đóng ca thất bại",
+          });
         }}
         title="Xác nhận đóng ca"
         message={

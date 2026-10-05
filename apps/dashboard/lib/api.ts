@@ -213,7 +213,7 @@ export async function uploadKnowledgeDoc(file: File): Promise<RagUploadResult> {
   form.append("file", file);
   // KHÔNG tự set Content-Type — để trình duyệt gắn multipart boundary.
   const res = await req("/api/rag/upload", { method: "POST", body: form });
-  if (!res.ok) throw new Error(`upload ${res.status}: ${await res.text()}`);
+  if (!res.ok) await fail(res, `upload ${res.status}`);
   return res.json();
 }
 
