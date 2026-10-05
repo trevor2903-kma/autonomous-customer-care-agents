@@ -1,0 +1,122 @@
+/* Khung trình chiếu dùng chung cho các mẫu slide.
+   Mỗi slide là một canvas cố định 1920×1080 (16:9), co giãn vừa cửa sổ; chế độ lưới (phím G),
+   chế độ nhúng cho trang chọn mẫu (?embed) và in ra PDF mỗi slide một trang (Ctrl+P). */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { margin: 0; height: 100%; }
+
+body {
+  background: #000;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.deck {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1920px;
+  height: 1080px;
+  transform-origin: 0 0;
+}
+
+.slide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  transform-origin: 0 0;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity .28s ease, visibility 0s linear .28s;
+}
+
+.slide.is-active {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity .28s ease;
+}
+
+/* ── Lưới tất cả slide ─────────────────────────────────────────── */
+.deck-overview body { overflow-x: hidden; overflow-y: scroll; background: #2a2d33; }
+.deck-overview .deck { position: relative; width: 100%; }
+.deck-overview .slide { visibility: visible; opacity: 1; transition: none; cursor: pointer; }
+.deck-overview .slide.is-active { outline: 12px solid #7fb0ff; }
+
+/* ── Nhúng trong trang chọn mẫu ────────────────────────────────── */
+.deck-embed body { background: transparent; }
+.deck-embed .slide { transition: none; }
+
+/* ── Thanh điều khiển (hiện khi rê chuột) ──────────────────────── */
+.deck-ui {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(22, 24, 29, .86);
+  color: #fff;
+  font: 500 14px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  opacity: 0;
+  transition: opacity .2s ease;
+}
+.deck-ui.is-visible, .deck-ui:focus-within { opacity: 1; }
+.deck-ui button {
+  appearance: none;
+  display: inline-grid;
+  place-items: center;
+  min-width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.deck-ui button:hover { background: rgba(255, 255, 255, .14); }
+.deck-ui button:focus-visible { outline: 2px solid #8fb8ff; outline-offset: 1px; }
+.deck-ui svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.deck-count { min-width: 64px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
+
+.deck-idle, .deck-idle * { cursor: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  .slide, .slide.is-active { transition: none; }
+}
+
+/* ── In / lưu PDF: mỗi slide một trang 1920×1080 ───────────────── */
+@media print {
+  @page { size: 1920px 1080px; margin: 0; }
+  html, body { height: auto; overflow: visible !important; background: none; }
+  .deck { position: static; width: 1920px; height: auto !important; transform: none !important; }
+  .slide {
+    position: relative;
+    visibility: visible;
+    opacity: 1;
+    transform: none !important;
+    transition: none;
+    outline: 0 !important;
+    break-after: page;
+  }
+  .slide:last-child { break-after: auto; }
+  .deck-ui { display: none !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

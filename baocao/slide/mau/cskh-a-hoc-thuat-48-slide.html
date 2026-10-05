@@ -1,0 +1,1772 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bảo vệ đồ án – Hệ thống CSKH tự trị Multi-Agent AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap" rel="stylesheet">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="deck.css">
+<style>
+/* Mẫu A – Học thuật: bám bìa báo cáo in (khung viền kép, logo Học viện), tiêu đề chữ có chân,
+   bảng kẻ ô đủ như bản mẫu của Khoa. Đỏ Học viện dành cho dấu cấu trúc, vàng chỉ dùng cho đường kẻ.
+   Bản trình bày đầy đủ: nội dung bám theo báo cáo đồ án (Chương 1–3 và Tổng kết). */
+:root {
+  --ink: #16243B;
+  --muted: #5A6477;
+  --crimson: #A3182C;
+  --gold: #B08A33;
+  --rule: #C9D0DA;
+  --grid: #97A3B4;
+  --tint: #F3F5F8;
+  --pink: #FBF2F3;
+  --green: #1E6B3C;
+  --paper: #FFFFFF;
+  --serif: "Source Serif 4", "Noto Serif", Georgia, serif;
+  --sans: "Source Sans 3", "Segoe UI", Arial, sans-serif;
+  --mono: "Source Code Pro", Consolas, monospace;
+}
+
+.slide { background: var(--paper); color: var(--ink); font: 400 36px/1.4 var(--sans); }
+:where(.slide) :where(h1, h2, h3, h4, p, ul, ol, dl, figure, pre) { margin: 0; }
+:where(.slide) :where(h1, h2, h3) { text-wrap: balance; }
+:where(.slide) :where(p, li, dd, span, small) { text-wrap: pretty; }
+
+/* ── Đầu trang, tiêu đề, chân trang ── */
+.head { position: absolute; left: 96px; right: 96px; top: 40px; height: 88px; display: flex; align-items: center; gap: 20px; }
+.head img { height: 76px; width: auto; }
+.head .inst { font: 600 22px/1.3 var(--sans); }
+.head .inst span { display: block; font-weight: 400; color: var(--muted); }
+.head .part { margin-left: auto; font: italic 400 25px/1.2 var(--serif); color: var(--muted); }
+.head::after { content: ""; position: absolute; left: 0; right: 0; bottom: -14px; height: 8px; border-top: 3px solid var(--ink); border-bottom: 1.5px solid var(--gold); }
+
+.title { position: absolute; left: 96px; right: 96px; top: 180px; font: 600 64px/1.12 var(--serif); letter-spacing: -.005em; }
+.body { position: absolute; left: 96px; right: 96px; top: 300px; bottom: 124px; }
+
+.foot { position: absolute; left: 96px; right: 96px; bottom: 40px; display: flex; justify-content: space-between; align-items: baseline; padding-top: 14px; border-top: 1px solid var(--rule); font: 400 21px/1 var(--sans); color: var(--muted); }
+.foot .pg { font: 600 24px/1 var(--serif); color: var(--ink); font-variant-numeric: lining-nums; }
+
+/* ── Danh sách ── */
+.list { padding: 0; list-style: none; }
+.list li { position: relative; padding-left: 46px; }
+.list li + li { margin-top: 28px; }
+.list li::before { content: ""; position: absolute; left: 6px; top: .7em; width: 14px; height: 14px; background: var(--crimson); transform: translateY(-50%) rotate(45deg); }
+.list.lg li { font-size: 40px; }
+.list.sm li { font-size: 31px; line-height: 1.38; }
+.list.sm li + li { margin-top: 22px; }
+
+/* ── Bìa ── */
+.cover .frame, .thanks .frame { position: absolute; inset: 32px; border: 4px solid var(--ink); }
+.cover .frame::after, .thanks .frame::after { content: ""; position: absolute; inset: 8px; border: 1.5px solid var(--gold); }
+.cover .inner, .thanks .inner { position: absolute; inset: 64px 140px 60px; display: flex; flex-direction: column; align-items: center; text-align: center; }
+.cover .org { font: 600 24px/1.4 var(--sans); letter-spacing: .06em; }
+.cover .org b { display: block; font-size: 32px; font-weight: 700; letter-spacing: .05em; }
+.cover .mid { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 12px; }
+.cover .crest { height: 210px; width: auto; }
+.cover .kind { margin-top: 24px; font: 700 40px/1.2 var(--serif); letter-spacing: .08em; color: var(--crimson); }
+.cover h1 { margin-top: 14px; font: 600 62px/1.16 var(--serif); letter-spacing: -.005em; }
+.cover .people { margin-top: 36px; display: grid; grid-template-columns: auto auto; column-gap: 26px; row-gap: 6px; font: 400 29px/1.45 var(--sans); text-align: left; }
+.cover .people dt { color: var(--muted); text-align: right; }
+.cover .people dd { margin: 0; font-weight: 600; }
+.cover .place { font: italic 400 27px/1 var(--serif); color: var(--muted); }
+
+/* ── Mục lục ── */
+.toc { padding: 0; list-style: none; max-width: 1400px; border-top: 1px solid var(--rule); }
+.toc li { display: grid; grid-template-columns: 150px 1fr; align-items: baseline; padding: 20px 0 22px; border-bottom: 1px solid var(--rule); }
+.toc .n { font: 600 58px/1 var(--serif); color: var(--crimson); }
+.toc b { display: block; font: 600 44px/1.2 var(--serif); }
+.toc span { display: block; margin-top: 6px; font-size: 29px; color: var(--muted); }
+
+/* ── Chương mục ── */
+.section .band { position: absolute; left: 0; top: 0; bottom: 0; width: 620px; background: var(--ink); color: #fff; display: flex; flex-direction: column; justify-content: center; align-items: center; }
+.section .band::after { content: ""; position: absolute; top: 0; bottom: 0; right: 0; width: 8px; background: var(--gold); }
+.section .band small { font: 400 36px/1 var(--serif); font-style: italic; color: #C7D1E0; }
+.section .band b { font: 700 340px/1 var(--serif); margin-top: 12px; }
+.section .main { position: absolute; left: 740px; right: 120px; top: 50%; transform: translateY(-52%); }
+.section h2 { font: 600 92px/1.08 var(--serif); letter-spacing: -.01em; }
+.section .main > p { margin-top: 24px; font-size: 36px; color: var(--muted); }
+.section .topics { margin-top: 56px; padding-top: 36px; border-top: 1px solid var(--rule); }
+.section .topics li { font-size: 32px; }
+.section .topics li + li { margin-top: 16px; }
+.section .foot { left: 740px; }
+
+/* ── Bố cục hai cột và ô nhấn ── */
+.cols { display: grid; grid-template-columns: 1fr 600px; column-gap: 96px; align-items: start; }
+.callout { background: var(--tint); border-left: 6px solid var(--crimson); padding: 40px 44px 46px; }
+.callout .lbl { font: 600 26px/1.2 var(--sans); color: var(--crimson); }
+.callout .txt { margin-top: 18px; font: italic 400 40px/1.35 var(--serif); }
+
+/* ── Bảng kẻ ô đủ (như bản mẫu báo cáo) ── */
+.tbl { width: 100%; border-collapse: collapse; font: 400 32px/1.3 var(--sans); }
+.tbl th, .tbl td { border: 1.5px solid var(--grid); padding: 18px 28px; text-align: left; vertical-align: top; }
+.tbl thead th { background: var(--ink); color: #fff; font: 600 28px/1.25 var(--sans); }
+.tbl tbody th { background: var(--tint); font-weight: 600; }
+.tbl caption { caption-side: top; text-align: left; padding-bottom: 16px; font: italic 400 27px/1.3 var(--serif); color: var(--muted); }
+.tbl .num { text-align: center; font-variant-numeric: lining-nums tabular-nums; }
+.tbl.tech tbody th { width: 380px; }
+.tbl.gates tbody th { width: 300px; }
+.tbl.gates thead th { font-size: 32px; }
+.tbl.data th:not(:first-child), .tbl.data td:not(:first-child) { width: 300px; }
+.tbl.data td.best { font-weight: 700; }
+.note { margin-top: 40px; padding: 4px 0 4px 28px; border-left: 6px solid var(--crimson); font-size: 32px; }
+
+/* ── Hình pipeline ── */
+.figure { position: absolute; left: 96px; right: 96px; top: 284px; display: flex; flex-direction: column; align-items: center; }
+.figure figcaption { margin-top: 20px; max-width: 1400px; text-align: center; font: italic 400 28px/1.35 var(--serif); color: var(--muted); }
+.pipeline { display: block; width: 1640px; height: 570px; overflow: visible; }
+.pipeline .edge { fill: none; stroke: var(--ink); stroke-width: 3; }
+.pipeline .edge--human { stroke: var(--crimson); }
+.pipeline .edge--decision { stroke-dasharray: 12 9; }
+.pipeline #ah path { fill: var(--ink); }
+.pipeline #ah-hr path { fill: var(--crimson); }
+.pipeline .node rect { fill: #fff; stroke: var(--ink); stroke-width: 3; rx: 4px; }
+.pipeline .node--human rect { fill: #FBF2F3; stroke: var(--crimson); }
+.pipeline text { text-anchor: middle; }
+.pipeline .node-name { font: 600 34px var(--sans); fill: var(--ink); }
+.pipeline .node-desc { font: 400 25px var(--sans); fill: var(--muted); }
+.pipeline .gate { fill: var(--gold); stroke: var(--ink); stroke-width: 2.5; }
+.pipeline .elabel { font: italic 400 26px var(--serif); fill: var(--ink); }
+.pipeline .elabel--gate { font: 600 26px var(--sans); }
+.pipeline .elabel--start { text-anchor: start; }
+
+/* ── Số liệu ── */
+.figs { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1.5px solid var(--grid); border-left: 1.5px solid var(--grid); }
+.figs > div { min-height: 290px; padding: 30px 36px 32px; border-right: 1.5px solid var(--grid); border-bottom: 1.5px solid var(--grid); }
+.figs b { display: block; font: 600 86px/1 var(--serif); font-variant-numeric: lining-nums tabular-nums; }
+.figs span { display: block; margin-top: 18px; font: 600 29px/1.3 var(--sans); }
+.figs small { display: block; margin-top: 10px; font: 400 23px/1.35 var(--sans); color: var(--muted); }
+.src { margin-top: 22px; font: italic 400 24px/1.35 var(--serif); color: var(--muted); }
+
+/* ── Ảnh giao diện ── */
+.shot { display: grid; grid-template-columns: 890px 1fr; column-gap: 72px; align-items: start; }
+.shot img { display: block; width: 890px; height: 601px; object-fit: cover; object-position: top left; border: 1.5px solid var(--grid); }
+.shot figcaption { margin-top: 14px; text-align: center; font: italic 400 26px/1.3 var(--serif); color: var(--muted); }
+.shot .list { margin-top: 8px; }
+
+/* ── Kết luận ba cột ── */
+.cols3 { display: grid; grid-template-columns: repeat(3, 1fr); }
+.cols3 > section { padding: 0 44px; border-left: 1px solid var(--rule); }
+.cols3 > section:first-child { padding-left: 0; border-left: 0; }
+.cols3 > section:last-child { padding-right: 0; }
+.cols3 h3 { display: inline-block; padding-top: 20px; border-top: 5px solid var(--crimson); font: 600 40px/1.2 var(--serif); }
+.cols3 .list { margin-top: 30px; }
+
+/* ── Lời cảm ơn ── */
+.thanks .inner { justify-content: center; }
+.thanks .crest { height: 150px; width: auto; }
+.thanks h2 { margin-top: 44px; font: 600 70px/1.18 var(--serif); letter-spacing: -.005em; }
+.thanks .rule { width: 160px; margin: 40px auto; border-top: 1.5px solid var(--gold); }
+.thanks .ask { font-size: 34px; color: var(--muted); }
+.thanks .who { margin-top: 20px; font: 600 28px/1.3 var(--sans); }
+
+/* ══ Bổ sung cho bản trình bày đầy đủ ══════════════════════════════════
+   --z trên .body: hệ số cỡ chữ riêng cho từng slide để nội dung lấp vừa khung. */
+
+/* Định danh trong mã (tên cờ, trạng thái, bảng…) */
+.slide code { font: 500 .82em/1.2 var(--mono); padding: 1px 6px 2px; border: 1px solid var(--rule); border-radius: 4px; background: var(--tint); white-space: nowrap; }
+
+/* Bố cục chung */
+.stack > * + * { margin-top: 22px; }
+.stack > .sub + * { margin-top: 14px; }
+.split { display: grid; grid-template-columns: var(--cols, 1fr 1fr); column-gap: 56px; align-items: start; }
+.grid { display: grid; grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr)); gap: 22px; align-content: start; }
+.lead { font: italic 400 calc(30px * var(--z, 1))/1.4 var(--serif); color: var(--muted); }
+.sub { font: 600 calc(34px * var(--z, 1))/1.2 var(--serif); }
+.sub small { margin-left: 12px; font: italic 400 calc(25px * var(--z, 1))/1 var(--serif); color: var(--muted); }
+.cap { font: italic 400 calc(23px * var(--z, 1))/1.35 var(--serif); color: var(--muted); }
+.note.sm { padding: 2px 0 2px 24px; font-size: calc(26px * var(--z, 1)); line-height: 1.4; }
+
+/* Ô nội dung */
+.box { padding: 22px 26px 24px; border: 1.5px solid var(--grid); background: var(--paper); }
+.box.tint { background: var(--tint); }
+.box.warn { border-color: var(--crimson); background: var(--pink); }
+.box h3 { font: 600 calc(30px * var(--z, 1))/1.22 var(--serif); }
+.box h3 .n { margin-right: 10px; color: var(--crimson); }
+.box h3 small { margin-left: 8px; font: italic 400 calc(22px * var(--z, 1))/1 var(--serif); color: var(--muted); }
+.box p { margin-top: 10px; font-size: calc(26px * var(--z, 1)); line-height: 1.4; }
+.box p.ex { color: var(--muted); }
+.box .list { margin-top: 12px; }
+.box p.stat { margin-top: 0; }
+.stat b { display: block; margin-bottom: 6px; font: 600 calc(72px * var(--z, 1))/1 var(--serif); color: var(--crimson); font-variant-numeric: lining-nums; }
+
+.list.xs li { padding-left: 32px; font-size: calc(26px * var(--z, 1)); line-height: 1.38; }
+.list.xs li + li { margin-top: 10px; }
+.list.xs li::before { left: 4px; width: 10px; height: 10px; }
+
+/* Bảng dày */
+.tbl.sm { font-size: calc(24px * var(--z, 1)); line-height: 1.32; }
+.tbl.sm th, .tbl.sm td { padding: calc(9px * var(--z, 1)) calc(15px * var(--z, 1)); }
+.tbl.sm thead th { font-size: calc(22px * var(--z, 1)); }
+.tbl.xs { font-size: calc(22px * var(--z, 1)); line-height: 1.3; }
+.tbl.xs th, .tbl.xs td { padding: calc(7px * var(--z, 1)) calc(12px * var(--z, 1)); }
+.tbl.xs thead th { font-size: calc(20px * var(--z, 1)); }
+.tbl tr.hl > *, .tbl td.hl { background: var(--pink); }
+.tbl thead th.hl { background: var(--crimson); }
+.tbl .ok { color: var(--green); font-weight: 600; }
+.tbl .bad { color: var(--crimson); font-weight: 600; }
+.tbl .sub-row td:first-child { padding-left: 34px; color: var(--muted); }
+
+/* Hình lấy từ báo cáo */
+.fig { text-align: center; }
+.fig img { display: block; margin: 0 auto; max-width: 100%; height: var(--h, 520px); width: auto; object-fit: contain; }
+.fig img.bd { border: 1.5px solid var(--grid); }
+.fig figcaption { margin-top: 10px; font: italic 400 calc(23px * var(--z, 1))/1.3 var(--serif); color: var(--muted); }
+
+/* Chuỗi bước ngang */
+.flow { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); column-gap: 46px; padding: 0; list-style: none; }
+.flow > li { position: relative; padding: 18px 20px 20px; border: 1.5px solid var(--grid); font-size: calc(24px * var(--z, 1)); line-height: 1.36; }
+.flow > li b { display: block; margin-bottom: 8px; font: 600 calc(28px * var(--z, 1))/1.2 var(--serif); }
+.flow > li b .n { margin-right: 8px; color: var(--crimson); }
+.flow > li + li::before { content: ""; position: absolute; left: -32px; top: 50%; width: 16px; height: 16px; border-top: 3px solid var(--crimson); border-right: 3px solid var(--crimson); transform: translateY(-50%) rotate(45deg); }
+
+.chain { display: flex; flex-wrap: wrap; align-items: center; row-gap: 10px; }
+.chain span { padding: 6px 12px; border: 1.5px solid var(--grid); background: var(--paper); font-size: calc(23px * var(--z, 1)); line-height: 1.25; }
+.chain i { padding: 0 9px; font-style: normal; font-size: calc(24px * var(--z, 1)); color: var(--crimson); }
+
+/* Danh sách đánh số (các nhánh của tác tử 4) */
+.steps { padding: 0; list-style: none; counter-reset: st; }
+.steps li { position: relative; padding: 9px 0 9px 50px; border-top: 1px solid var(--rule); font-size: calc(24px * var(--z, 1)); line-height: 1.35; counter-increment: st; }
+.steps li:last-child { border-bottom: 1px solid var(--rule); }
+.steps li::before { content: counter(st); position: absolute; left: 0; top: 11px; display: grid; place-items: center; width: 32px; height: 32px; background: var(--ink); color: #fff; font: 600 19px/1 var(--sans); }
+.steps b { margin-right: 6px; font: 600 calc(21px * var(--z, 1))/1.3 var(--mono); color: var(--crimson); }
+.steps em { font: italic 400 calc(22px * var(--z, 1))/1.3 var(--serif); color: var(--muted); }
+
+/* Use case theo tác nhân */
+.uc { margin-top: 12px; padding: 0; list-style: none; }
+.uc li { display: grid; grid-template-columns: calc(118px * var(--z, 1)) 1fr; font-size: calc(24px * var(--z, 1)); line-height: 1.32; }
+.uc li + li { margin-top: 6px; }
+.uc li span { font: 500 calc(19px * var(--z, 1))/1.7 var(--mono); color: var(--crimson); }
+
+/* Kiến trúc bốn lớp */
+.arch { display: grid; row-gap: 12px; }
+.arch .layer { display: grid; grid-template-columns: 170px minmax(0, 1fr); border: 1.5px solid var(--grid); }
+.arch .ln { display: flex; flex-direction: column; justify-content: center; padding: 10px 14px; background: var(--ink); color: #fff; font: 600 calc(23px * var(--z, 1))/1.2 var(--sans); }
+.arch .ln small { margin-top: 4px; font: italic 400 calc(19px * var(--z, 1))/1.2 var(--serif); color: #C7D1E0; }
+.arch .cs { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 10px; padding: 10px; }
+.arch .c { padding: 8px 12px 10px; border: 1.5px solid var(--rule); background: var(--tint); font-size: calc(22px * var(--z, 1)); line-height: 1.32; color: var(--muted); }
+.arch .c b { display: block; margin-bottom: 2px; font: 600 calc(23px * var(--z, 1))/1.25 var(--sans); color: var(--ink); }
+.arch .c.key { border-color: var(--crimson); background: var(--pink); }
+.arch .wire { text-align: center; font: italic 400 calc(22px * var(--z, 1))/1.2 var(--serif); color: var(--muted); }
+
+/* Sơ đồ thực thể rút gọn */
+.erd { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px 20px; align-items: start; }
+.ent { border: 1.5px solid var(--ink); background: var(--paper); }
+.ent h4 { padding: 7px 12px; background: var(--ink); color: #fff; font: 600 calc(22px * var(--z, 1))/1.25 var(--mono); }
+.ent.cfg h4 { background: #3A4A63; }
+.ent.sup h4 { background: var(--muted); }
+.ent ul { padding: 8px 12px 10px; list-style: none; font: 400 calc(20px * var(--z, 1))/1.45 var(--mono); }
+.ent li em { margin-left: 6px; font: 600 calc(16px * var(--z, 1))/1 var(--sans); font-style: normal; color: var(--crimson); }
+.ent p { padding: 6px 12px 8px; border-top: 1px solid var(--rule); font: italic 400 calc(20px * var(--z, 1))/1.3 var(--serif); color: var(--muted); }
+
+/* Cây thư mục, cặp lệnh – mô tả */
+.tree { padding: 18px 22px; border: 1.5px solid var(--grid); background: var(--tint); font: 400 calc(21px * var(--z, 1))/1.5 var(--mono); white-space: pre; }
+.tree em { font-style: normal; color: var(--muted); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; font-size: calc(24px * var(--z, 1)); line-height: 1.35; }
+.kv dt { font: 500 calc(21px * var(--z, 1))/1.55 var(--mono); }
+.kv dd { margin: 0; color: var(--muted); }
+
+/* Ô số liệu thu nhỏ */
+.figs.mini { grid-template-columns: repeat(6, 1fr); }
+.figs.mini > div { min-height: 0; padding: 16px 18px 18px; }
+.figs.mini b { font-size: calc(54px * var(--z, 1)); }
+.figs.mini b.bad { color: var(--crimson); }
+.figs.mini span { margin-top: 10px; font: 600 calc(22px * var(--z, 1))/1.3 var(--sans); }
+
+.quote { padding: 34px 44px 38px; border-left: 6px solid var(--crimson); background: var(--tint); font: italic 400 calc(40px * var(--z, 1))/1.4 var(--serif); }
+
+/* Máy trạng thái vòng đời hội thoại */
+.life { display: block; width: 1728px; height: 610px; overflow: visible; }
+.life .st rect { fill: #fff; stroke: var(--ink); stroke-width: 2.5; }
+.life .st.wait rect { fill: var(--tint); }
+.life .st.hum rect { fill: var(--pink); stroke: var(--crimson); }
+.life .st.done rect { fill: var(--tint); stroke-width: 3.5; }
+.life .ps rect { fill: #fff; stroke: var(--grid); stroke-width: 2; }
+.life .ps.unused rect { stroke-dasharray: 8 6; }
+.life .grp { fill: var(--tint); stroke: var(--grid); stroke-width: 2; stroke-dasharray: 12 8; }
+.life .nm { font: 600 24px var(--mono); fill: var(--ink); text-anchor: middle; }
+.life .ds { font: 400 22px var(--sans); fill: var(--muted); text-anchor: middle; }
+.life .ps .nm { font-size: 21px; }
+.life .ps .ds { font-size: 19px; }
+.life .ed { fill: none; stroke: var(--ink); stroke-width: 2.5; }
+.life .ed.adm { stroke: var(--crimson); }
+.life .ed.auto { stroke: var(--muted); stroke-dasharray: 9 7; }
+.life .lb { font: italic 400 22px var(--serif); fill: var(--ink); }
+.life .lb.s { font-size: 20px; }
+.life .lb.mid { text-anchor: middle; }
+.life .lb.end { text-anchor: end; }
+.life .lb.adm { fill: var(--crimson); }
+.life .lb.auto { fill: var(--muted); }
+.life .dot { fill: var(--ink); }
+.life .ring { fill: none; stroke: var(--ink); stroke-width: 2.5; }
+.life .note rect { fill: var(--paper); stroke: var(--rule); stroke-width: 1.5; }
+.life .note text { font: 400 21px var(--sans); fill: var(--ink); }
+.life #lf-a path { fill: var(--ink); }
+.life #lf-r path { fill: var(--crimson); }
+.life #lf-m path { fill: var(--muted); }
+</style>
+</head>
+<body>
+<main class="deck">
+
+  <!-- 1 · Bìa -->
+  <section class="slide cover">
+    <div class="frame" aria-hidden="true"></div>
+    <div class="inner">
+      <p class="org">BAN CƠ YẾU CHÍNH PHỦ<b>HỌC VIỆN KỸ THUẬT MẬT MÃ</b>KHOA CÔNG NGHỆ THÔNG TIN</p>
+      <div class="mid">
+        <img class="crest" src="assets/logo-kma.png" alt="Logo Học viện Kỹ thuật Mật mã">
+        <p class="kind">ĐỒ ÁN TỐT NGHIỆP</p>
+        <h1>Xây dựng hệ thống chăm sóc khách hàng<br>tự trị sử dụng Multi-Agent AI</h1>
+        <dl class="people">
+          <dt>Sinh viên thực hiện:</dt><dd>Bùi Anh Tuấn – CT060144</dd>
+          <dt>Người hướng dẫn:</dt><dd>ThS. Vũ Thị Hòa<br>ThS. Cao Thanh Vinh</dd>
+        </dl>
+      </div>
+      <p class="place">Hà Nội, 2026</p>
+    </div>
+  </section>
+
+  <!-- 2 · Nội dung trình bày -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+    </header>
+    <h2 class="title">Nội dung trình bày</h2>
+    <div class="body">
+      <ol class="toc">
+        <li><span class="n">I</span><div><b>Tổng quan đề tài</b><span>Bối cảnh, khảo sát, mục tiêu, cơ sở lý thuyết và công nghệ</span></div></li>
+        <li><span class="n">II</span><div><b>Phân tích và thiết kế</b><span>Kiến trúc, pipeline bốn tác tử, cơ chế an toàn, dữ liệu và bảo mật</span></div></li>
+        <li><span class="n">III</span><div><b>Thực nghiệm và triển khai</b><span>Thách thức kỹ thuật, giao diện, kiểm thử và đo đạc</span></div></li>
+        <li><span class="n">IV</span><div><b>Kết luận</b><span>Kết quả, đóng góp, hạn chế và hướng phát triển</span></div></li>
+      </ol>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- ═════════════ PHẦN I · TỔNG QUAN ĐỀ TÀI ═════════════ -->
+
+  <!-- 3 · Chương mục I -->
+  <section class="slide section">
+    <div class="band"><small>Phần</small><b>I</b></div>
+    <div class="main">
+      <h2>Tổng quan đề tài</h2>
+      <p>Bài toán CSKH cho cửa hàng thời trang trực tuyến và hướng tiếp cận của đồ án</p>
+      <ul class="list topics">
+        <li>Bối cảnh và khảo sát các giải pháp hiện có</li>
+        <li>Bài toán, mục tiêu, phạm vi và yêu cầu hệ thống</li>
+        <li>Cơ sở lý thuyết: LLM, RAG, đa tác tử, grounding, HITL</li>
+        <li>Công nghệ sử dụng</li>
+      </ul>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 4 · Bối cảnh -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần I. Tổng quan đề tài</p>
+    </header>
+    <h2 class="title">Bối cảnh: CSKH thủ công và rủi ro của LLM</h2>
+    <div class="body stack" style="--z: 1.20">
+      <div class="grid" style="--n: 3">
+        <div class="box"><h3><span class="n">1</span>Câu hỏi lặp lại</h3><p>Phần lớn tin nhắn xoay quanh giá, size, vận chuyển, trạng thái đơn, đổi trả; câu trả lời đã có trong tài liệu chính sách.</p></div>
+        <div class="box"><h3><span class="n">2</span>Phản hồi chậm</h3><p>Thời gian phản hồi ảnh hưởng trực tiếp tỉ lệ chốt đơn; tin dồn vào buổi tối, cuối tuần, ngoài giờ làm việc.</p></div>
+        <div class="box"><h3><span class="n">3</span>Thiếu nhất quán</h3><p>Chất lượng trả lời khác nhau giữa các nhân viên, khó truy vết khi có khiếu nại, không đo được chỗ tốt, chỗ hỏng.</p></div>
+      </div>
+      <div class="split" style="--cols: 1fr 600px">
+        <div class="box tint"><h3>Nếu để LLM trả lời trực tiếp</h3>
+          <ul class="list xs">
+            <li><b>Ảo giác:</b> tự đưa ra chính sách đổi trả, mã giảm giá không tồn tại với giọng rất chắc chắn.</li>
+            <li><b>Supervisor tự chọn bước:</b> cùng loại câu hỏi đi nhiều đường khác nhau, số lần gọi mô hình khó dự đoán, khó truy nguyên lỗi.</li>
+          </ul>
+        </div>
+        <aside class="callout"><p class="lbl">Hướng tiếp cận</p><p class="txt">Tự động phần lặp lại theo một nguồn tri thức thống nhất; dành con người cho tình huống cần phán đoán.</p></aside>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 5 · Khảo sát giải pháp -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần I. Tổng quan đề tài</p>
+    </header>
+    <h2 class="title">Khảo sát bốn nhóm giải pháp hiện có</h2>
+    <div class="body stack" style="--z: 1.11">
+      <table class="tbl sm">
+        <thead><tr><th style="width: 400px">Tiêu chí</th><th>Chatbot kịch bản</th><th>NLU truyền thống</th><th>LLM/RAG một bước</th><th>Đa tác tử có Supervisor</th><th class="hl">Hệ thống đề xuất</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Hiểu ngôn ngữ tự do</th><td>Không</td><td>Trung bình</td><td>Tốt</td><td>Tốt</td><td class="hl">Tốt</td></tr>
+          <tr><th scope="row">Dự đoán được luồng chạy</th><td>Cao</td><td>Cao</td><td>Trung bình</td><td>Thấp</td><td class="hl">Cao</td></tr>
+          <tr><th scope="row">Khả năng kiểm toán</th><td>Cao</td><td>Trung bình</td><td>Thấp</td><td>Thấp</td><td class="hl">Cao</td></tr>
+          <tr><th scope="row">Chống trả lời sai chính sách</th><td>Cao</td><td>Cao</td><td>Thấp</td><td>Thấp</td><td class="hl">Cao</td></tr>
+          <tr><th scope="row">Chuyển người có cấu trúc</th><td>Thô sơ</td><td>Thô sơ</td><td>Không có</td><td>Không tất định</td><td class="hl">Có, tất định</td></tr>
+          <tr><th scope="row">Chi phí, độ trễ một lượt</th><td>Rất thấp</td><td>Thấp</td><td>Thấp</td><td>Không có trần</td><td class="hl">Có trần: ≤ 2 lời gọi LLM + 1 embedding</td></tr>
+          <tr><th scope="row">Công sức soạn, bảo trì nội dung</th><td>Rất cao</td><td>Cao</td><td>Thấp</td><td>Thấp</td><td class="hl">Thấp</td></tr>
+        </tbody>
+      </table>
+      <p class="note sm">Các giải pháp hiện có đánh đổi giữa hiểu ngôn ngữ tự nhiên và kiểm soát luồng xử lý. Đề tài giữ năng lực ngôn ngữ ở tầng tác tử, rút quyền tự trị khỏi tầng điều phối.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 6 · Bài toán và mục tiêu -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần I. Tổng quan đề tài</p>
+    </header>
+    <h2 class="title">Bài toán và sáu mục tiêu của đề tài</h2>
+    <div class="body stack">
+      <p class="lead">Nhiều tác tử AI phối hợp theo quy trình cố định; nhân viên chỉ can thiệp ở ca rủi ro, cần phán đoán hoặc thiếu thông tin.</p>
+      <div class="grid" style="--n: 3">
+        <div class="box"><h3><span class="n">M1</span>Hiểu câu hỏi</h3><p>Phân loại ý định, trích thực thể từ tin nhắn tiếng Việt tự do.</p></div>
+        <div class="box"><h3><span class="n">M2</span>Có căn cứ</h3><p>Truy hồi chính sách, FAQ, thông tin sản phẩm làm căn cứ trả lời.</p></div>
+        <div class="box"><h3><span class="n">M3</span>Quyết định an toàn</h3><p>Đánh giá rủi ro; trả lời hay chuyển người theo luật cố định.</p></div>
+        <div class="box"><h3><span class="n">M4</span>Sinh phản hồi</h3><p>Tạo câu trả lời sau cổng kiểm soát mức tự động do Admin cấu hình.</p></div>
+        <div class="box"><h3><span class="n">M5</span>Dashboard thời gian thực</h3><p>Hàng đợi ca cần nhân viên, duyệt nháp trước khi gửi.</p></div>
+        <div class="box"><h3><span class="n">M6</span>Kiểm soát được</h3><p>Nhật ký mọi bước, HITL, cấu hình mức tự động, quản lý tri thức.</p></div>
+      </div>
+      <div class="grid" style="--n: 2">
+        <div class="box tint"><h3>Chỉ tiêu nghiệp vụ</h3><p>Tự động xử lý <b>≥ 70%</b> số lượt hội thoại, thời gian phản hồi <b>&lt; 5 giây</b>.</p></div>
+        <div class="box warn"><h3>Nguyên tắc xuyên suốt</h3><p>Không đủ chắc chắn thì chuyển nhân viên: sai chính sách ở 5% số lượt gây hại hơn chỉ trả lời 80% và chuyển phần còn lại.</p></div>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 7 · Đối tượng, phạm vi, giới hạn -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần I. Tổng quan đề tài</p>
+    </header>
+    <h2 class="title">Đối tượng sử dụng, phạm vi và giới hạn</h2>
+    <div class="body stack" style="--z: 1.16">
+      <div class="grid" style="--n: 2">
+        <div class="box"><h3>Khách hàng <small>đăng nhập tuỳ chọn</small></h3><p>Chat với cửa hàng, tra cứu đơn của chính mình, xem lại lịch sử; được chuyển tới nhân viên thật khi hệ thống không trả lời được.</p></div>
+        <div class="box"><h3>Quản trị viên (nhân viên CSKH) <small>bắt buộc đăng nhập</small></h3><p>Nhận ca chuyển tiếp, duyệt nháp, chat trực tiếp, quản lý tri thức, cấu hình cổng, xem báo cáo; dùng được trên điện thoại (PWA).</p></div>
+      </div>
+      <div class="split">
+        <div class="stack">
+          <p class="sub">Trong phạm vi</p>
+          <ul class="list xs">
+            <li>Chat văn bản trên web, thời gian thực qua WebSocket</li>
+            <li>Bốn tác tử AI theo thứ tự cố định, không có Supervisor</li>
+            <li>Tri thức Markdown trong Git, nạp vào Qdrant; Admin tải thêm</li>
+            <li>Tra cứu đơn mô phỏng, chỉ đơn của tài khoản đang đăng nhập</li>
+            <li>Hàng đợi kèm EscalationCard, nhận ca, duyệt nháp, cổng</li>
+            <li>JWT, phân quyền theo vai trò, bốn lớp chống prompt injection</li>
+            <li>Nhật ký kiểm toán, báo cáo, tự nhắc và tự đóng ca im lặng</li>
+          </ul>
+        </div>
+        <div class="stack">
+          <p class="sub">Giới hạn</p>
+          <ul class="list xs">
+            <li>Chưa có bộ nhớ xuyên hội thoại, hồ sơ khách hàng, gợi ý sản phẩm</li>
+            <li>Không thao tác làm thay đổi đơn: huỷ đơn, hoàn tiền, đổi đơn</li>
+            <li>Chưa tích hợp thoại, hình ảnh, mạng xã hội; vòng học bán tự động mới dự trù</li>
+            <li>Không cho tác tử tự đổi quy trình: lựa chọn có chủ đích, ưu tiên độ tin cậy và khả năng kiểm tra lại</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 8 · Cơ sở lý thuyết: RAG và điều phối -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần I. Tổng quan đề tài</p>
+    </header>
+    <h2 class="title">Cơ sở lý thuyết: RAG và điều phối đa tác tử</h2>
+    <div class="body split" style="--z: 1.14">
+      <div class="stack">
+        <p class="sub">RAG: tìm tài liệu trước khi sinh</p>
+        <div class="box tint">
+          <p class="cap">Pha nạp: chạy một lần cho mỗi phiên bản kho tài liệu</p>
+          <p class="chain"><span>Tài liệu nguồn</span><i>→</i><span>Chia đoạn</span><i>→</i><span>Embedding</span><i>→</i><span>Qdrant</span></p>
+          <p class="cap" style="margin-top: 18px">Pha truy hồi: chạy lại ở mỗi câu hỏi</p>
+          <p class="chain"><span>Câu hỏi</span><i>→</i><span>Embedding</span><i>→</i><span>Top-k cosine</span><i>→</i><span>Prompt</span><i>→</i><span>LLM</span></p>
+        </div>
+        <ul class="list xs">
+          <li><b>Chia đoạn:</b> cắt theo số ký tự làm vỡ bảng size, quy trình nhiều bước</li>
+          <li><b>Giọng văn:</b> khách hỏi đời thường, tài liệu chính sách viết trang trọng</li>
+          <li><b>Ngưỡng:</b> “đủ liên quan” phải đo trên kho thật, không chọn cảm tính</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <p class="sub">Điều phối: động hay cố định</p>
+        <div class="box"><h3>Supervisor (điều phối động)</h3><p>Một lời gọi LLM quyết gọi tác tử nào, thứ tự nào, lặp bao nhiêu vòng. Linh hoạt, nhưng cùng câu hỏi có thể đi hai đường; chi phí, độ trễ không có trần; khó truy nguyên.</p></div>
+        <div class="box warn"><h3>Pipeline cố định (đề tài chọn)</h3><p>Mọi lượt đi đúng một thứ tự; có trần số lời gọi; kiểm toán từng bước; tác tử chỉ quyết nội dung, không quyết luồng.</p></div>
+        <p class="cap">LangGraph: State (dữ liệu một lượt) · Node (một bước) · Edge (thứ tự) · Reducer (gộp dữ liệu) · Checkpointer (lưu trạng thái)</p>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 9 · Grounding, ảo giác, HITL -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần I. Tổng quan đề tài</p>
+    </header>
+    <h2 class="title">Grounding: ba dạng ảo giác và HITL ba mức</h2>
+    <div class="body stack">
+      <p class="sub">Ba dạng ảo giác <small>chặn cứng: không có nguồn thì không gọi mô hình sinh</small></p>
+      <div class="grid" style="--n: 3">
+        <div class="box"><h3><span class="n">a</span>Bịa ra cái “có”</h3><p class="ex">Đưa ra mã giảm giá, chính sách, mốc thời gian không tồn tại.</p><p><b>Chống:</b> chỉ cấp nguồn đã kiểm soát, cấm tri thức ngoài nguồn.</p></div>
+        <div class="box"><h3><span class="n">b</span>Bịa ra cái “không có”</h3><p class="ex">Kho không nhắc giao quốc tế, mô hình nói “shop không giao nước ngoài”.</p><p><b>Chống:</b> “chưa có thông tin về X” khác “X không tồn tại”; danh sách trong nguồn là danh sách mở.</p></div>
+        <div class="box"><h3><span class="n">c</span>Bịa ra hành động</h3><p class="ex">“Em đã hoàn tiền”, “đang kết nối nhân viên” khi hệ thống chưa làm.</p><p><b>Chống:</b> giới hạn hành động trong prompt; tác tử sinh phản hồi không có quyền tự chuyển ca.</p></div>
+      </div>
+      <p class="sub">HITL ba mức <small>mức 3 do cơ chế an toàn quyết định, cấu hình chỉ chọn giữa mức 1 và 2</small></p>
+      <div class="grid" style="--n: 3">
+        <div class="box"><h3>Mức 1 · Gửi thẳng</h3><p>Đủ căn cứ, ý định được phép trả lời ngay. Con người: không tham gia.</p></div>
+        <div class="box tint"><h3>Mức 2 · Duyệt nháp</h3><p>Có câu trả lời nhưng thuộc nhóm nhạy cảm: hoàn tiền, đổi hàng, khiếu nại. Con người: duyệt, sửa.</p></div>
+        <div class="box warn"><h3>Mức 3 · Chuyển nhân viên</h3><p>Không có tri thức, ngoài phạm vi, khách xin gặp người thật. Con người: xử lý từ đầu.</p></div>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 10 · Yêu cầu và KPI -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần I. Tổng quan đề tài</p>
+    </header>
+    <h2 class="title">Yêu cầu hệ thống và chỉ số đánh giá</h2>
+    <div class="body split" style="--cols: 1.5fr 1fr; --z: 1.10">
+      <div class="stack">
+        <p class="sub">Yêu cầu chức năng <small>bảy nhóm FR</small></p>
+        <table class="tbl xs">
+          <thead><tr><th style="width: 190px">Nhóm</th><th>Yêu cầu tiêu biểu</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Pipeline</th><td>State độc lập mỗi hội thoại; thứ tự intent → knowledge → decision → response; mỗi tác tử ghi độ tin cậy, cờ, nhật ký; thiếu căn cứ thì chuyển người</td></tr>
+            <tr><th scope="row">Tri thức</th><td>Nạp, chia đoạn, embedding; truy hồi theo ý định kèm điểm; nạp lại, xoá tài liệu</td></tr>
+            <tr><th scope="row">Cổng</th><td>Lưu CSDL, đặt theo ý định; chỉ can thiệp ca auto_reply; mặc định tắt cho nhóm nhạy cảm</td></tr>
+            <tr><th scope="row">HITL</th><td>Mọi ca chuyển người kèm EscalationCard; nhận ca, chat, đóng ca; duyệt hoặc sửa nháp; ghi nhật ký</td></tr>
+            <tr><th scope="row">Bất đồng bộ</th><td>P95 ≤ 5 s; hỏi lại tối đa một lần; chuyển người thì AI dừng; ngoài giờ giữ ca; realtime không polling</td></tr>
+            <tr><th scope="row">Quản trị, khách</th><td>Hội thoại và bộ lọc, hàng đợi, tri thức, cổng, báo cáo; khách nhận phản hồi thời gian thực, xem lịch sử</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="stack">
+        <p class="sub">Phi chức năng chính</p>
+        <ul class="list xs">
+          <li><b>NFR-1</b> phản hồi tự động P95 ≤ 5 s</li>
+          <li><b>NFR-2</b> ≥ 100 người dùng đồng thời</li>
+          <li><b>NFR-4</b> 100% hành động được ghi log</li>
+          <li><b>NFR-7</b> chống chèn chỉ dẫn độc hại</li>
+          <li><b>NFR-11</b> phản hồi phải có căn cứ</li>
+        </ul>
+        <p class="sub">KPI mục tiêu</p>
+        <table class="tbl xs">
+          <tbody>
+            <tr><th scope="row">Tỉ lệ tự trả lời</th><td class="num">≥ 70%</td></tr>
+            <tr><th scope="row">Tỉ lệ chuyển người</th><td class="num">&lt; 30%</td></tr>
+            <tr><th scope="row">Chuyển người oan</th><td class="num">≤ 5%</td></tr>
+            <tr><th scope="row">Phản hồi dự phòng oan</th><td class="num">→ 0%</td></tr>
+            <tr><th scope="row">Thời gian phản hồi</th><td class="num">&lt; 5 s</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 11 · Công nghệ -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần I. Tổng quan đề tài</p>
+    </header>
+    <h2 class="title">Công nghệ sử dụng và lý do lựa chọn</h2>
+    <div class="body stack" style="--z: 1.09">
+      <table class="tbl sm">
+        <thead><tr><th style="width: 250px">Thành phần</th><th style="width: 560px">Công nghệ</th><th>Lý do lựa chọn</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Back-end</th><td>Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic v2</td><td>Một lượt chủ yếu là chờ LLM, CSDL, tìm kiếm: bất đồng bộ phục vụ xen kẽ nhiều hội thoại trên một tiến trình</td></tr>
+          <tr><th scope="row">Multi-agent</th><td>LangGraph 0.2</td><td>Đồ thị tĩnh với cạnh cố định, có sẵn cơ chế gộp trạng thái</td></tr>
+          <tr><th scope="row">Mô hình</th><td>gpt-4o-mini, text-embedding-3-small</td><td>Quyết định quan trọng đã chuyển sang luật cố định; mô hình nhỏ chỉ đảm nhiệm hiểu và diễn đạt</td></tr>
+          <tr><th scope="row">Dữ liệu</th><td>PostgreSQL (Neon), Qdrant Cloud</td><td>ACID, JSONB, UPDATE có điều kiện làm nền cho CAS; cosine, lọc payload, alias để nạp lại không gián đoạn</td></tr>
+          <tr><th scope="row">Front-end</th><td>Next.js 14, Tailwind CSS, TanStack Query, PWA</td><td>Một ứng dụng hai vai, cài được lên điện thoại; làm mới theo sự kiện WebSocket thay vì hỏi vòng</td></tr>
+          <tr><th scope="row">Vận hành</th><td>WebSocket, Langfuse, uv, pnpm workspaces, pytest</td><td>Realtime không polling; trace token, chi phí; monorepo dùng chung tập trạng thái; kiểm thử ngoại tuyến</td></tr>
+        </tbody>
+      </table>
+      <p class="note sm">Hạ tầng dùng gói miễn phí (NFR-9); khoá bí mật, địa chỉ dịch vụ, ngưỡng đều đọc từ biến môi trường, không viết cứng trong mã (NFR-10).</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- ═════════════ PHẦN II · PHÂN TÍCH VÀ THIẾT KẾ ═════════════ -->
+
+  <!-- 12 · Chương mục II -->
+  <section class="slide section">
+    <div class="band"><small>Phần</small><b>II</b></div>
+    <div class="main">
+      <h2>Phân tích và thiết kế</h2>
+      <p>Kiến trúc pipeline bốn tác tử cố định và các cơ chế an toàn</p>
+      <ul class="list topics">
+        <li>Tác nhân, use case, bốn trụ cột và kiến trúc tổng thể</li>
+        <li>Pipeline bốn tác tử và cơ chế ra quyết định</li>
+        <li>Vòng đời hội thoại, kho tri thức và RAG</li>
+        <li>Cơ sở dữ liệu và bảo mật</li>
+      </ul>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 13 · Tác nhân và use case -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Tác nhân và biểu đồ use case</h2>
+    <div class="body stack" style="--z: 1.21">
+      <div class="grid" style="grid-template-columns: 1fr 1.25fr .8fr">
+        <div class="box"><h3>Khách hàng <small>đăng nhập tuỳ chọn</small></h3>
+          <ul class="uc">
+            <li><span>UC-01</span>Đăng ký tài khoản</li>
+            <li><span>UC-02</span>Mở hội thoại, gửi tin nhắn</li>
+            <li><span>UC-03</span>Nhận phản hồi tự động</li>
+            <li><span>UC-04</span>Gửi mã đơn khi được hỏi lại</li>
+            <li><span>UC-05</span>Tra cứu đơn hàng của mình</li>
+            <li><span>UC-06</span>Yêu cầu gặp nhân viên</li>
+            <li><span>UC-07</span>Xem lịch sử hội thoại</li>
+          </ul>
+        </div>
+        <div class="box"><h3>Quản trị viên <small>bắt buộc đăng nhập (UC-08)</small></h3>
+          <ul class="uc">
+            <li><span>UC-09</span>Xem, lọc danh sách hội thoại</li>
+            <li><span>UC-10</span>Xem chi tiết kèm nhật ký tác tử</li>
+            <li><span>UC-11</span>Nhận ca từ hàng đợi (takeover)</li>
+            <li><span>UC-12</span>Chat trực tiếp với khách hàng</li>
+            <li><span>UC-13–15</span>Duyệt nháp · sửa rồi gửi · từ chối</li>
+            <li><span>UC-16</span>Đóng ca (resolve)</li>
+            <li><span>UC-17–18</span>Upload, xoá tài liệu · nạp lại kho</li>
+            <li><span>UC-19</span>Cấu hình cổng theo từng ý định</li>
+            <li><span>UC-20</span>Xem báo cáo, chi tiết một lượt</li>
+          </ul>
+        </div>
+        <div class="box tint"><h3>Tác vụ nền <small>hệ thống</small></h3>
+          <p>Quét định kỳ các hội thoại im lặng: gửi một tin nhắc sau ngưỡng T1, tự đóng ca sau ngưỡng T2.</p>
+          <p class="ex">UC-08 Đăng nhập, duy trì phiên dùng chung cho cả khách hàng và quản trị viên.</p>
+        </div>
+      </div>
+      <p class="note sm">Ranh giới quyền hạn: mọi truy vấn đơn mang định danh chủ đơn, không có định danh thì không trả đơn nào; mã của người khác và mã không tồn tại cho cùng một kết quả, không lộ sự tồn tại.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 14 · Bốn trụ cột thiết kế -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Bốn trụ cột thiết kế</h2>
+    <div class="body stack" style="--z: 1.08">
+      <p class="lead">Bốn nguyên tắc nền tảng chi phối mọi quyết định kỹ thuật ở các phần sau.</p>
+      <div class="grid" style="--n: 2">
+        <div class="box"><h3><span class="n">1</span>Quy trình cố định, dự đoán được</h3><p>Thứ tự bốn tác tử xác định sẵn; không tác tử nào tự chọn bước tiếp theo trong lúc chạy.</p><p class="ex">Đổi tính linh hoạt lấy luồng theo dõi được, trần số lời gọi mô hình và chi phí mỗi lượt.</p></div>
+        <div class="box"><h3><span class="n">2</span>Tự trị có giới hạn</h3><p>Tác tử chỉ tự quyết trong nhiệm vụ của mình: chọn nhãn ý định, cách tìm thông tin, cách diễn đạt.</p><p class="ex">Không được đổi thứ tự xử lý hay tự mở thêm bước ngoài quy trình đã định nghĩa.</p></div>
+        <div class="box warn"><h3><span class="n">3</span>Không chắc thì chuyển người</h3><p>Mỗi bước có thể phát cờ cảnh báo; dấu hiệu thiếu căn cứ hoặc lỗi thì chuyển nhân viên.</p><p class="ex">Không tìm thấy nguồn phù hợp thì không được tự tạo câu trả lời.</p></div>
+        <div class="box"><h3><span class="n">4</span>Cải thiện có con người phê duyệt</h3><p>Nhật ký cho thấy câu hỏi hay bị chuyển, chủ đề kho tri thức còn thiếu.</p><p class="ex">Hệ thống chỉ được đề xuất; không tự sửa kho tri thức hay quy trình xử lý.</p></div>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 15 · Kiến trúc tổng thể -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Kiến trúc tổng thể bốn lớp</h2>
+    <div class="body split" style="--cols: 1fr 470px; --z: 1.04">
+      <div class="arch">
+        <div class="layer"><p class="ln">Giao diện<small>Next.js 14</small></p>
+          <div class="cs">
+            <div class="c"><b>Cổng chat khách hàng</b><code>/chat</code></div>
+            <div class="c"><b>Bảng điều khiển quản trị</b><code>/admin</code></div>
+            <div class="c"><b>Một codebase, hai vai</b>Tailwind, TanStack Query, cài lên điện thoại (PWA)</div>
+          </div>
+        </div>
+        <p class="wire">HTTPS: REST, JSON · WSS: khung JSON v2 · JWT trong cookie httpOnly, cả hai kênh</p>
+        <div class="layer"><p class="ln">Giao tiếp<small>FastAPI</small></p>
+          <div class="cs">
+            <div class="c"><b>REST API</b>auth · me · rag · admin · health</div>
+            <div class="c"><b>WebSocket ba kênh</b>chat · admin-inbox · admin/{id}; chống trùng, khoá lượt</div>
+            <div class="c"><b>Hub pub/sub in-process</b>đẩy sự kiện tới mọi socket đang mở</div>
+          </div>
+        </div>
+        <div class="layer"><p class="ln">Xử lý</p>
+          <div class="cs">
+            <div class="c key"><b>Pipeline bốn tác tử</b>LangGraph, đồ thị tuyến tính, không Supervisor</div>
+            <div class="c"><b>Tầng dịch vụ</b>hội thoại, cổng, RAG, đơn hàng, chuyển tiếp, kiểm toán, báo cáo</div>
+            <div class="c"><b>Tác vụ nền</b>nhắc, rồi tự đóng ca im lặng</div>
+          </div>
+        </div>
+        <div class="layer"><p class="ln">Lưu trữ</p>
+          <div class="cs" style="--n: 2">
+            <div class="c"><b>PostgreSQL (Neon)</b>8 bảng gồm audit_log; bộ nhớ đa lượt đọc từ đây</div>
+            <div class="c"><b>Qdrant Cloud</b>vector tri thức; alias blue/green khi nạp lại</div>
+          </div>
+        </div>
+      </div>
+      <div class="stack">
+        <div class="box"><h3>Dịch vụ bên ngoài</h3><p><b>OpenAI:</b> chat completion, embeddings; mỗi lượt tối đa 2 lời gọi sinh và 1 lời gọi embedding.</p><p><b>Langfuse:</b> trace lời gọi LLM, tuỳ chọn, tự vô hiệu khi thiếu khoá.</p></div>
+        <div class="box warn"><h3>Hai nguyên tắc bất biến</h3><p><b>1.</b> Chuyển người dựa trên cờ, không dò từ khoá trong câu trả lời của mô hình.</p><p><b>2.</b> Chỉ tác tử response được gửi nội dung tới khách hàng.</p></div>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 16 · Pipeline -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Pipeline bốn tác tử có trình tự cố định</h2>
+    <figure class="figure">
+      <svg class="pipeline" viewBox="0 50 1640 570" role="img" aria-label="Pipeline gồm intent, knowledge, decision, response chạy theo thứ tự cố định; response rẽ ba kết cục: gửi thẳng khi cổng auto-reply bật, duyệt nháp khi cổng tắt, chuyển người khi có cờ chặn; thiếu mã đơn thì hỏi lại khách">
+        <defs>
+          <marker id="ah" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L12,6 L0,12 z"/></marker>
+          <marker id="ah-hr" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L12,6 L0,12 z"/></marker>
+        </defs>
+        <path class="edge" d="M175,124 V196" marker-end="url(#ah)"/>
+        <path class="edge" d="M315,270 H461" marker-end="url(#ah)"/>
+        <path class="edge" d="M745,270 H891" marker-end="url(#ah)"/>
+        <path class="edge" d="M1175,270 H1321" marker-end="url(#ah)"/>
+        <path class="edge edge--decision" d="M1465,200 V105 H276" marker-end="url(#ah)"/>
+        <path class="edge" d="M1465,340 V496" marker-end="url(#ah)"/>
+        <path class="edge edge--human edge--decision" d="M1439,440 H1035 V496" marker-end="url(#ah-hr)"/>
+        <path class="edge edge--human" d="M1395,340 V392 H605 V496" marker-end="url(#ah-hr)"/>
+        <polygon class="gate" points="1465,414 1491,440 1465,466 1439,440"/>
+        <g class="node"><rect x="35" y="200" width="280" height="140"/><text class="node-name" x="175" y="262">intent</text><text class="node-desc" x="175" y="305">Phân loại ý định</text></g>
+        <g class="node"><rect x="465" y="200" width="280" height="140"/><text class="node-name" x="605" y="262">knowledge</text><text class="node-desc" x="605" y="305">RAG, tra cứu đơn</text></g>
+        <g class="node"><rect x="895" y="200" width="280" height="140"/><text class="node-name" x="1035" y="262">decision</text><text class="node-desc" x="1035" y="305">Luật tất định</text></g>
+        <g class="node"><rect x="1325" y="200" width="280" height="140"/><text class="node-name" x="1465" y="262">response</text><text class="node-desc" x="1465" y="305">Phát ngôn duy nhất</text></g>
+        <g class="node node--human"><rect x="455" y="500" width="300" height="110"/><text class="node-name" x="605" y="548">Chuyển người</text><text class="node-desc" x="605" y="586">IN_HUMAN_QUEUE</text></g>
+        <g class="node node--human"><rect x="885" y="500" width="300" height="110"/><text class="node-name" x="1035" y="548">Duyệt nháp</text><text class="node-desc" x="1035" y="586">PENDING_APPROVAL</text></g>
+        <g class="node"><rect x="1315" y="500" width="300" height="110"/><text class="node-name" x="1465" y="548">Gửi thẳng</text><text class="node-desc" x="1465" y="586">REPLIED</text></g>
+        <text class="elabel" x="175" y="114">Tin nhắn khách</text>
+        <text class="elabel" x="870" y="91">thiếu mã đơn: hỏi lại, chờ khách gửi mã</text>
+        <text class="elabel" x="1000" y="380">có cờ chặn</text>
+        <text class="elabel elabel--gate elabel--start" x="1504" y="448">auto-reply</text>
+        <text class="elabel elabel--start" x="1480" y="490">bật</text>
+        <text class="elabel" x="1240" y="474">tắt</text>
+      </svg>
+      <figcaption>Đồ thị LangGraph chỉ có cạnh cố định, mỗi lượt tối đa 2 lời gọi LLM và 1 embedding. Cổng auto-reply chỉ áp dụng cho ca đã an toàn; mọi ca có cờ chặn luôn chuyển cho nhân viên.</figcaption>
+    </figure>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 17 · Tác tử 1 và 2 -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Tác tử 1 và 2: hiểu câu hỏi, tìm căn cứ</h2>
+    <div class="body split" style="--z: 1.05">
+      <div class="stack">
+        <p class="sub">Tác tử 1 · Intent Classifier</p>
+        <table class="tbl xs">
+          <thead><tr><th style="width: 170px">Nhóm</th><th>15 ý định, mô tả và ví dụ đặt ngay trong prompt</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Trước bán</th><td><code>product_price</code> <code>product_information</code> <code>size_consulting</code> <code>promotion</code></td></tr>
+            <tr><th scope="row">Tra cứu chung</th><td><code>shipping</code> <code>payment</code> <code>membership</code> <code>store_information</code> <code>return_exchange_policy</code></td></tr>
+            <tr><th scope="row">Sau bán</th><td><code>order_status</code> <code>refund</code> <code>exchange</code> <code>complaint</code></td></tr>
+            <tr><th scope="row">Xã giao, khác</th><td><code>greeting</code> <code>other</code></td></tr>
+          </tbody>
+        </table>
+        <ul class="list xs">
+          <li>Hỏi chính sách đổi trả tách khỏi refund, exchange: tra cứu thì trả lời thẳng, giao dịch thì duyệt nháp</li>
+          <li>Thực thể hai đường: LLM kết hợp biểu thức chính quy, không mất mã đơn khi mô hình lỗi</li>
+          <li>Cờ: <code>multi_intent</code> <code>out_of_domain</code> <code>human_requested</code> <code>llm_unavailable</code></li>
+        </ul>
+      </div>
+      <div class="stack">
+        <p class="sub">Tác tử 2 · Knowledge Agent</p>
+        <div class="box"><h3>Nhánh tri thức</h3><p>Top-k đoạn gần nhất trong Qdrant, ưu tiên đúng ý định; ít kết quả hoặc điểm thấp thì mở rộng ra toàn kho.</p></div>
+        <div class="box"><h3>Nhánh đơn hàng</h3><p>Chỉ khi câu hỏi gắn với đơn và có mã; luôn kèm định danh khách. Ba tình huống: tìm thấy, không tìm thấy, lỗi CSDL; chỉ lỗi CSDL mới chuyển người.</p></div>
+        <ul class="list xs">
+          <li>Cờ: <code>no_relevant_knowledge</code> <code>low_retrieval_score</code> <code>search_error</code> <code>order_unresolved</code></li>
+          <li><code>search_error</code> (Qdrant, embedding hỏng) tách khỏi “kho chưa bao phủ”</li>
+        </ul>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 18 · Tác tử 3 -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Tác tử 3: Decision Engine tất định</h2>
+    <div class="body split" style="--cols: 1.15fr 1fr">
+      <div class="stack">
+        <table class="tbl sm">
+          <thead><tr><th>Cờ chặn</th><th>Nguồn</th><th>Vì sao chặn</th></tr></thead>
+          <tbody>
+            <tr><td><code>multi_intent</code></td><td>Tác tử 1</td><td>Hỏi hai việc, trả lời một việc là thiếu</td></tr>
+            <tr><td><code>out_of_domain</code></td><td>Tác tử 1</td><td>Câu thật sự ngoài phạm vi cửa hàng</td></tr>
+            <tr><td><code>human_requested</code></td><td>Tác tử 1</td><td>Khách xin gặp người rõ ràng</td></tr>
+            <tr><td><code>llm_unavailable</code></td><td>Tác tử 1</td><td>Không phân loại được</td></tr>
+            <tr><td><code>no_relevant_knowledge</code></td><td>Tác tử 2</td><td>Không có tri thức để bám</td></tr>
+            <tr><td><code>low_retrieval_score</code></td><td>Tác tử 2</td><td>Tri thức truy hồi quá yếu</td></tr>
+            <tr><td><code>search_error</code></td><td>Tác tử 2</td><td>Sự cố hạ tầng truy hồi</td></tr>
+            <tr><td><code>order_unresolved</code></td><td>Tác tử 2</td><td>Tra đơn hỏng, hoặc mã sai lần thứ hai</td></tr>
+          </tbody>
+        </table>
+        <p class="cap">Ưu tiên và mức nghiêm trọng gán theo bảng tra ý định (khiếu nại cao nhất), chỉ dùng để sắp hàng đợi.</p>
+      </div>
+      <div class="stack">
+        <div class="box warn"><h3>Không gọi LLM</h3><p>Chỉ đọc cờ của hai bước trước; quyết định không phụ thuộc lời lẽ hay mức tự tin mô hình tự khai.</p></div>
+        <div class="box"><h3>Không gộp hai độ tin cậy</h3><p>Độ tin cậy phân loại và điểm truy hồi chỉ lưu để phân tích; chỉ ngưỡng truy hồi tham gia quyết định.</p></div>
+        <div class="box"><h3>Nhánh hỏi lại</h3><p>Ý định gắn với đơn mà thiếu mã: hỏi lại tối đa một lần, vẫn thiếu thì chuyển người; luôn xét sau cổng an toàn.</p></div>
+        <p class="cap">Hai cờ cố ý không chặn: ý định mơ hồ (chỉ để thông tin) và <code>hallucination_risk</code> (tác tử 4 tự chuyển ca).</p>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 19 · Tác tử 4 -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Tác tử 4: điểm phát ngôn duy nhất</h2>
+    <div class="body split" style="--z: 1.04">
+      <div class="stack">
+        <p class="sub">Năm nhánh, xét theo thứ tự</p>
+        <ol class="steps">
+          <li><b>clarify</b> câu hỏi mã đơn cố định, không gọi LLM <em>→ AWAITING_CUSTOMER</em></li>
+          <li><b>human_handoff</b> thông báo chuyển tiếp, có bản ngoài giờ, không gọi LLM <em>→ IN_HUMAN_QUEUE</em></li>
+          <li><b>greeting</b> câu mẫu xã giao, xét trước phanh chống ảo giác <em>→ REPLIED</em></li>
+          <li><b>order_not_found</b> câu cố định, dùng chung cho mã sai và mã của người khác <em>→ AWAITING_CUSTOMER</em></li>
+          <li><b>grounded reply</b> LLM sinh từ facts.md, rag_contexts, order_context <em>→ REPLIED hoặc PENDING_APPROVAL</em></li>
+        </ol>
+        <div class="box warn"><h3>Phanh cứng chống ảo giác</h3><p>Không có nguồn hoặc không gọi được LLM: không sinh câu trả lời nghiệp vụ, phát <code>hallucination_risk</code> và chuyển người.</p></div>
+      </div>
+      <div class="stack">
+        <p class="sub">Quy tắc bám nguồn trong prompt</p>
+        <table class="tbl xs">
+          <thead><tr><th>Quy tắc</th><th style="width: 220px">Chống lỗi</th></tr></thead>
+          <tbody>
+            <tr><td>Chỉ dùng facts.md, rag_contexts, order_context</td><td>Bịa ra cái “có”</td></tr>
+            <tr><td>Nguồn im lặng không có nghĩa là không tồn tại; danh sách trong nguồn là danh sách mở</td><td>Bịa ra cái “không có”</td></tr>
+            <tr><td>Chỉ tra cứu được trạng thái đơn; không nói đã hoàn tiền, huỷ, đổi đơn</td><td>Bịa ra hành động</td></tr>
+            <tr><td>Không tự hứa chuyển nhân viên: việc chuyển ca do hệ thống quyết định</td><td>Bịa ra hành động</td></tr>
+            <tr><td>Làm đúng thứ tự “Quy trình xử lý”, mỗi lượt chỉ hỏi 1–2 điều</td><td>Nhảy tới kết luận</td></tr>
+            <tr><td>Trạng thái đơn chỉ lấy từ dữ liệu đơn của lượt hiện tại</td><td>Dữ liệu cũ</td></tr>
+            <tr><td>Văn xuôi thuần, không ký hiệu định dạng</td><td>Lỗi hiển thị</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 20 · Hai lớp quyết định và ba kết cục -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Hai lớp quyết định và ba kết cục</h2>
+    <div class="body stack" style="--z: 1.21">
+      <table class="tbl sm">
+        <thead><tr><th style="width: 250px">Kết cục</th><th>Điều kiện</th><th style="width: 400px">Ai gửi cho khách</th><th style="width: 320px">Trạng thái</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Gửi thẳng</th><td>auto_reply, không cờ chặn, cổng bật cho ý định</td><td>AI</td><td><code>REPLIED</code></td></tr>
+          <tr><th scope="row">Duyệt nháp</th><td>auto_reply, không cờ chặn, cổng tắt cho ý định</td><td>Admin duyệt hoặc sửa nháp</td><td><code>PENDING_APPROVAL</code></td></tr>
+          <tr><th scope="row">Chuyển người</th><td>Có ít nhất một cờ chặn</td><td>Admin xử lý từ đầu</td><td><code>IN_HUMAN_QUEUE</code></td></tr>
+        </tbody>
+      </table>
+      <div class="grid" style="--n: 2">
+        <div class="box warn"><h3>Lớp an toàn · tác tử 3</h3><p>“Hệ thống có đủ căn cứ để trả lời không?” Luật tất định trên 8 cờ chặn trả lời; con người không chỉnh được.</p></div>
+        <div class="box"><h3>Lớp cấu hình · cổng auto-reply</h3><p>“Loại yêu cầu này có được trả lời tự động không?” Admin bật, tắt theo ý định; mặc định bật, tắt cho refund, exchange, complaint.</p></div>
+      </div>
+      <p class="note sm">FR-GATE-2: cổng chỉ chọn giữa gửi ngay và chờ duyệt cho ca đã an toàn; không có đường nào để cấu hình ghi đè cơ chế an toàn. Cổng cố ý không chứa ngưỡng truy hồi; lỗi đọc cấu hình thì gửi thẳng vì câu trả lời đã qua cổng an toàn.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 21 · Vòng đời hội thoại -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Vòng đời hội thoại</h2>
+    <div class="body">
+      <svg class="life" viewBox="0 0 1728 610" role="img" aria-label="Máy trạng thái vòng đời hội thoại: ACTIVE_AI; một lượt xử lý gồm CLASSIFYING, RETRIEVING, DECIDING, RESPONDING; kết cục REPLIED, PENDING_APPROVAL, IN_HUMAN_QUEUE; AWAITING_CUSTOMER khi hỏi lại mã đơn; HUMAN_HANDLING khi Admin nhận ca; RESOLVED khi đóng ca">
+        <defs>
+          <marker id="lf-a" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L12,6 L0,12 z"/></marker>
+          <marker id="lf-r" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L12,6 L0,12 z"/></marker>
+          <marker id="lf-m" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L12,6 L0,12 z"/></marker>
+        </defs>
+        <!-- Mở hội thoại -->
+        <circle class="dot" cx="36" cy="63" r="13"/>
+        <path class="ed" d="M49,63 H186" marker-end="url(#lf-a)"/>
+        <text class="lb s mid" x="118" y="48">mở hội thoại</text>
+        <g class="st"><rect x="190" y="22" width="320" height="82"/><text class="nm" x="350" y="57">ACTIVE_AI</text><text class="ds" x="350" y="89">ca mới, AI phụ trách</text></g>
+        <g class="note"><rect x="880" y="14" width="828" height="112"/>
+          <text x="902" y="48">Mỗi mũi tên là một phép so-sánh-rồi-ghi trên conversation.status.</text>
+          <text x="902" y="80">Admin đóng ca được ở mọi trạng thái còn mở.</text>
+          <text x="902" y="112">Ca đang có người xử lý: tin của khách đi thẳng tới Admin, AI không chạy.</text>
+        </g>
+        <path class="ed" d="M350,104 V146" marker-end="url(#lf-a)"/>
+        <text class="lb" x="366" y="134">khách gửi tin nhắn</text>
+        <!-- Một lượt xử lý -->
+        <rect class="grp" x="20" y="150" width="1688" height="124"/>
+        <text class="lb s" x="40" y="182">Một lượt xử lý: trạng thái trung gian chỉ tồn tại trong bộ nhớ của lượt (ConversationState), không ghi xuống CSDL</text>
+        <g class="ps"><rect x="60" y="198" width="360" height="62"/><text class="nm" x="240" y="225">CLASSIFYING</text><text class="ds" x="240" y="251">tác tử 1</text></g>
+        <g class="ps"><rect x="470" y="198" width="360" height="62"/><text class="nm" x="650" y="225">RETRIEVING</text><text class="ds" x="650" y="251">tác tử 2</text></g>
+        <g class="ps"><rect x="880" y="198" width="360" height="62"/><text class="nm" x="1060" y="225">DECIDING</text><text class="ds" x="1060" y="251">tác tử 3</text></g>
+        <g class="ps unused"><rect x="1290" y="198" width="360" height="62"/><text class="nm" x="1470" y="225">RESPONDING (*)</text><text class="ds" x="1470" y="251">tác tử 4</text></g>
+        <!-- Từ lượt xử lý tới các trạng thái -->
+        <path class="ed" d="M110,396 V278" marker-end="url(#lf-a)"/>
+        <text class="lb s end" x="98" y="330">khách</text>
+        <text class="lb s end" x="98" y="354">trả lời</text>
+        <path class="ed" d="M260,274 V392" marker-end="url(#lf-a)"/>
+        <text class="lb s" x="274" y="312">hỏi lại mã đơn /</text>
+        <text class="lb s" x="274" y="338">không tìm thấy đơn</text>
+        <path class="ed" d="M530,396 V278" marker-end="url(#lf-a)"/>
+        <text class="lb s end" x="518" y="374">khách nhắn tiếp</text>
+        <path class="ed" d="M690,274 V392" marker-end="url(#lf-a)"/>
+        <text class="lb s" x="704" y="312">kết cục 1:</text>
+        <text class="lb s" x="704" y="338">gửi thẳng</text>
+        <path class="ed" d="M1070,274 V392" marker-end="url(#lf-a)"/>
+        <text class="lb s" x="1084" y="312">kết cục 2:</text>
+        <text class="lb s" x="1084" y="338">cổng tắt, giữ nháp</text>
+        <path class="ed" d="M1538,274 V392" marker-end="url(#lf-a)"/>
+        <text class="lb s end" x="1524" y="312">kết cục 3: cờ chặn,</text>
+        <text class="lb s end" x="1524" y="338">rủi ro ảo giác, lỗi kỹ thuật</text>
+        <!-- Hàng trạng thái giữa -->
+        <g class="st"><rect x="20" y="396" width="380" height="84"/><text class="nm" x="210" y="430">AWAITING_CUSTOMER</text><text class="ds" x="210" y="462">chờ khách bổ sung mã đơn</text></g>
+        <g class="st"><rect x="470" y="396" width="300" height="84"/><text class="nm" x="620" y="430">REPLIED</text><text class="ds" x="620" y="462">đã trả lời tự động</text></g>
+        <g class="st wait"><rect x="900" y="396" width="340" height="84"/><text class="nm" x="1070" y="430">PENDING_APPROVAL</text><text class="ds" x="1070" y="462">nháp chờ Admin duyệt</text></g>
+        <g class="st hum"><rect x="1368" y="396" width="340" height="84"/><text class="nm" x="1538" y="430">IN_HUMAN_QUEUE</text><text class="ds" x="1538" y="462">chờ nhân viên nhận ca</text></g>
+        <path class="ed adm" d="M900,438 H774" marker-end="url(#lf-r)"/>
+        <text class="lb s mid adm" x="835" y="424">Admin duyệt</text>
+        <text class="lb s mid adm" x="835" y="468">sửa rồi gửi</text>
+        <path class="ed adm" d="M1240,438 H1364" marker-end="url(#lf-r)"/>
+        <text class="lb s mid adm" x="1304" y="424">Admin từ</text>
+        <text class="lb s mid adm" x="1304" y="468">chối nháp</text>
+        <!-- Hàng dưới -->
+        <path class="ed adm" d="M1538,480 V516" marker-end="url(#lf-r)"/>
+        <text class="lb s adm" x="1552" y="506">Admin nhận ca</text>
+        <path class="ed auto" d="M620,480 V516" marker-end="url(#lf-m)"/>
+        <text class="lb s auto" x="636" y="506">tự động: im lặng ≥ T1 + T2</text>
+        <path class="ed auto" d="M300,480 L466,546" marker-end="url(#lf-m)"/>
+        <g class="st done"><rect x="470" y="520" width="300" height="80"/><text class="nm" x="620" y="553">RESOLVED</text><text class="ds" x="620" y="584">ca đã đóng</text></g>
+        <g class="st hum"><rect x="1368" y="520" width="340" height="80"/><text class="nm" x="1538" y="553">HUMAN_HANDLING</text><text class="ds" x="1538" y="584">Admin xử lý, AI tạm dừng</text></g>
+        <path class="ed adm" d="M1364,560 H774" marker-end="url(#lf-r)"/>
+        <text class="lb s mid adm" x="1069" y="548">Admin đóng ca</text>
+        <path class="ed" d="M466,580 H176" marker-end="url(#lf-a)"/>
+        <circle class="ring" cx="156" cy="580" r="18"/>
+        <circle class="dot" cx="156" cy="580" r="11"/>
+      </svg>
+      <p class="cap" style="margin-top: 12px">Nét đỏ: thao tác của Admin · nét đứt: tác vụ nền tự đóng ca · (*) khai báo trong enum nhưng không dùng · NEW chỉ là giá trị mặc định của cột, CLOSED chỉ dùng khi lọc.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 22 · Đúng đắn khi đồng thời và phiếu chuyển ca -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Đúng đắn khi đồng thời và phiếu chuyển ca</h2>
+    <div class="body split" style="--z: 1.05">
+      <div class="stack">
+        <p class="sub">Một lượt AI kéo dài vài giây</p>
+        <ul class="list xs">
+          <li><b>So sánh rồi ghi (CAS):</b> chỉ ghi khi trạng thái lúc ghi vẫn như lúc đọc; Admin vừa nhận ca thì kết quả lượt AI bị huỷ, không có cảnh AI và nhân viên cùng trả lời.</li>
+          <li><b>Ghi trước, báo sau:</b> trạng thái, tin nhắn AI, EscalationCard ghi trong một giao dịch; commit xong mới gửi, không báo “đã chuyển nhân viên” khi bản ghi chưa tồn tại.</li>
+          <li><b>Tuần tự theo khách:</b> khoá theo khách cho mọi tab, hai tin gần như cùng lúc không tạo hai luồng hay hai ca.</li>
+        </ul>
+        <div class="box tint"><h3>Tự nhắc, tự đóng ca</h3><p>Im lặng quá T1: gửi một tin nhắc bằng câu mẫu; thêm T2: đóng ca. UPDATE có điều kiện kiểm tra lại trạng thái lúc ghi; ca đang chờ nhân viên không bao giờ tự đóng.</p></div>
+      </div>
+      <div class="stack">
+        <p class="sub">EscalationCard <small>nhân viên không phải đọc lại từ đầu</small></p>
+        <table class="tbl xs">
+          <thead><tr><th style="width: 250px">Trường</th><th>Nội dung</th></tr></thead>
+          <tbody>
+            <tr><td><code>summary</code></td><td>Tin nhắn khách kích hoạt việc chuyển tiếp</td></tr>
+            <tr><td><code>intent</code>, <code>entities</code></td><td>Ý định và thực thể đã nhận diện</td></tr>
+            <tr><td><code>rag_context</code></td><td>Tối đa 3 nguồn tri thức hàng đầu, kèm điểm và trích đoạn</td></tr>
+            <tr><td><code>escalation_reason</code></td><td>Danh sách cờ chặn, hoặc <code>clarify_unresolved</code></td></tr>
+            <tr><td><code>priority</code>, <code>severity</code></td><td>Mức ưu tiên và mức nghiêm trọng</td></tr>
+            <tr><td><code>suggested_reply</code></td><td>Rỗng với ca chuyển người; nháp của tác tử 4 với ca chờ duyệt</td></tr>
+          </tbody>
+        </table>
+        <p class="cap">Hàng đợi sắp theo ưu tiên giảm dần (ánh xạ chuỗi sang số ngay trong truy vấn), rồi theo tin nhắn mới nhất.</p>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 23 · Kho tri thức -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Kho tri thức, chia đoạn và mở rộng truy vấn</h2>
+    <div class="body split" style="--z: 1.06">
+      <div class="stack">
+        <table class="tbl sm">
+          <thead><tr><th style="width: 190px">Thư mục</th><th>Nội dung</th><th class="num" style="width: 120px; white-space: nowrap">Số tệp</th></tr></thead>
+          <tbody>
+            <tr><td><code>facts.md</code></td><td>Sự thật lõi cửa hàng, nạp thẳng vào prompt, không vào vector DB</td><td class="num">1</td></tr>
+            <tr><td><code>faq/</code></td><td>Giá, đặt hàng, thanh toán, thành viên, theo dõi đơn, khuyến mãi, cửa hàng</td><td class="num">7</td></tr>
+            <tr><td><code>reference/</code></td><td>Chính sách đổi trả, vận chuyển, hướng dẫn chọn size, bảo quản</td><td class="num">4</td></tr>
+            <tr><td><code>case/</code></td><td>Quy trình xử lý: hàng lỗi, giao chậm, đổi size, hoàn tiền</td><td class="num">4</td></tr>
+            <tr><td><code>promotion/</code></td><td>Khuyến mãi theo đợt, đã dựng sẵn thư mục, chưa có tài liệu</td><td class="num">0</td></tr>
+          </tbody>
+        </table>
+        <p class="cap">Kho chuẩn là tệp Markdown trong Git: thay đổi có lịch sử, rà soát như mã nguồn; vector DB chỉ là bản phái sinh, dựng lại được. Tài liệu Admin tải lên đi đường riêng, qua lớp làm sạch.</p>
+      </div>
+      <div class="stack">
+        <div class="box"><h3>Chia đoạn theo mục Markdown</h3><p>Giữ nguyên bảng, danh sách, quy trình; mục ≤ 1200 ký tự giữ nguyên văn, dài hơn cắt theo câu; bỏ mục <code>## Internal Note</code>.</p></div>
+        <div class="box warn"><h3>Mở rộng truy vấn</h3><p>Mỗi câu hỏi mẫu trong frontmatter thêm một điểm vector: so khớp câu hỏi với câu hỏi, trả về toàn bộ đoạn tài liệu tương ứng.</p></div>
+        <div class="box"><h3>Định danh điểm ổn định</h3><p>Id tất định từ đường dẫn tệp và vị trí đoạn: nạp lại nhiều lần không trùng, sửa một tài liệu không đổi id tài liệu khác.</p></div>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 24 · Nạp lại blue/green -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Nạp lại kho tri thức không gián đoạn</h2>
+    <div class="body stack" style="--z: 1.15">
+      <p class="lead">Tên collection dùng để truy vấn là một alias trỏ tới collection vật lý; khách luôn được phục vụ bằng một bản đầy đủ.</p>
+      <ol class="flow" style="--n: 4">
+        <li><b><span class="n">1</span>Tạo bản mới</b>Collection vật lý mới có hậu tố thời gian, ví dụ <code>kb_20260916_0930</code>; alias vẫn trỏ bản cũ.</li>
+        <li><b><span class="n">2</span>Nạp toàn bộ</b>Chia đoạn theo mục, mở rộng truy vấn, sinh embedding, ghi vào bản mới.</li>
+        <li><b><span class="n">3</span>Đổi alias</b>Một lời gọi <code>update_collection_aliases</code>, thao tác nguyên tử của Qdrant.</li>
+        <li><b><span class="n">4</span>Dọn dẹp</b>Xoá collection cũ và các bản mồ côi không còn alias tham chiếu.</li>
+      </ol>
+      <div class="grid" style="--n: 3">
+        <div class="box warn"><h3>Lỗi giữa chừng</h3><p>Bỏ bản dựng dở, giữ alias trỏ bản cũ: truy hồi không bao giờ gặp collection rỗng.</p></div>
+        <div class="box"><h3>Timeout khi đổi alias</h3><p>Đọc lại trạng thái thật trước khi dọn: alias đã trỏ bản mới thì coi là thành công, không xoá nhầm.</p></div>
+        <div class="box tint"><h3>Khoá ghi chung</h3><p>Nạp lại, upload, xoá, reset dùng chung một khoá; reset xoá sổ tài liệu trong giao dịch rồi mới reset Qdrant.</p></div>
+      </div>
+      <p class="cap">Riêng lần nạp lại đầu tiên phải chuyển collection thật thành alias, gián đoạn dưới 1 giây.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 25 · Cơ sở dữ liệu -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Thiết kế cơ sở dữ liệu</h2>
+    <div class="body stack">
+      <div class="erd">
+        <div class="ent"><h4>user</h4><ul><li>id<em>PK</em></li><li>email<em>unique</em></li><li>password_hash</li><li>role</li><li>display_name</li></ul><p>khách hàng và quản trị viên</p></div>
+        <div class="ent"><h4>conversation</h4><ul><li>id<em>PK</em></li><li>customer_id<em>FK user</em></li><li>status, current_intent</li><li>priority, severity</li><li>escalation_card<em>jsonb</em></li><li>assigned_admin_id</li><li>auto_resolve_reminded_at</li></ul><p>nhiều ca thuộc một user</p></div>
+        <div class="ent"><h4>message</h4><ul><li>id<em>PK</em></li><li>conversation_id<em>FK</em></li><li>sender, content</li><li>intent, confidence</li><li>client_msg_id</li></ul><p>nhiều tin thuộc một ca</p></div>
+        <div class="ent"><h4>order</h4><ul><li>id<em>PK</em></li><li>order_code<em>unique</em></li><li>customer_id<em>FK user</em></li><li>status, items_summary</li><li>estimated_delivery</li><li>tracking_code</li></ul><p>nhiều đơn thuộc một user</p></div>
+        <div class="ent cfg"><h4>gate_config</h4><ul><li>id = 1<em>PK</em></li><li>auto_reply_enabled</li><li>auto_resolve_enabled</li><li>auto_resolve_minutes</li><li>auto_resolve_grace_minutes</li></ul><p>một bản ghi toàn cục, T1 và T2</p></div>
+        <div class="ent cfg"><h4>gate_intent_rule</h4><ul><li>intent<em>PK</em></li><li>label</li><li>sensitive</li><li>send_directly</li></ul><p>một luật cho mỗi ý định</p></div>
+        <div class="ent sup"><h4>audit_log</h4><ul><li>conversation_id, message_id</li><li>turn_id, node, action</li><li>duration_ms</li><li>uncertainty_flags, detail</li></ul><p>không khoá ngoại: nhật ký bền</p></div>
+        <div class="ent sup"><h4>knowledge_document</h4><ul><li>title, source_type</li><li>file_ref<em>unique</em></li><li>doc_type, intent</li><li>chunks, status</li></ul><p>sổ tài liệu, dựng lại khi nạp</p></div>
+      </div>
+      <p class="cap">Ba nhóm: hội thoại (xanh đậm) · cấu hình · hỗ trợ (xám). UUID sinh phía ứng dụng để biết id tin nhắn trước khi commit; <code>client_msg_id</code> chống xử lý trùng ở mức CSDL.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 26 · Xác thực, phân quyền, giới hạn tần suất -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Xác thực, phân quyền và giới hạn tần suất</h2>
+    <div class="body split" style="--z: 1.09">
+      <div class="stack">
+        <div class="box"><h3>Mật khẩu</h3><p>Băm bcrypt; email không tồn tại vẫn chạy một phép băm có thời gian tương tự, không lộ tài khoản qua thời gian phản hồi.</p></div>
+        <div class="box"><h3>Phiên đăng nhập JWT</h3><p>Access ngắn hạn, refresh dài hạn, cả hai trong cookie httpOnly; gặp 401 thì tự làm mới một lần rồi chạy lại yêu cầu.</p></div>
+        <div class="box"><h3>Phân quyền theo vai trò</h3><p>Kiểm tra phía máy chủ; kênh WebSocket quản trị đọc lại vai trò từ CSDL để thu hồi quyền có hiệu lực sớm; khách không nhận id nội bộ của nhân viên.</p></div>
+      </div>
+      <div class="stack">
+        <table class="tbl sm">
+          <thead><tr><th style="width: 250px">Đối tượng</th><th class="num" style="width: 190px">Giới hạn</th><th>Lý do</th></tr></thead>
+          <tbody>
+            <tr><td>Chat theo khách</td><td class="num" style="white-space: nowrap">20 tin / 60 s</td><td>Mỗi tin tốn 2 lời gọi mô hình + 1 embedding</td></tr>
+            <tr><td>Đăng nhập theo IP</td><td class="num" style="white-space: nowrap">10 / 60 s</td><td>Chống dò mật khẩu</td></tr>
+            <tr><td>Đăng nhập theo email</td><td class="num" style="white-space: nowrap">5 / 60 s</td><td>Chống dò theo tài khoản cụ thể</td></tr>
+            <tr><td>Đăng ký theo IP</td><td class="num" style="white-space: nowrap">5 / 60 s</td><td>Chống tạo tài khoản hàng loạt</td></tr>
+            <tr><td>Khung WebSocket</td><td class="num" style="white-space: nowrap">64 KiB</td><td>Chống khung quá lớn làm nghẽn worker</td></tr>
+            <tr><td>Độ dài tin nhắn</td><td class="num" style="white-space: nowrap">2000 ký tự</td><td>Giới hạn đầu vào prompt</td></tr>
+          </tbody>
+        </table>
+        <p class="cap">Quá 20 tin trong 60 giây: khách nhận khung lỗi <code>rate_limited</code>, pipeline không chạy.</p>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 27 · Bốn lớp chống prompt injection -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần II. Phân tích và thiết kế</p>
+    </header>
+    <h2 class="title">Bốn lớp phòng vệ trước prompt injection</h2>
+    <div class="body stack" style="--z: 1.23">
+      <div class="grid" style="--n: 2">
+        <div class="box tint"><h3>Tấn công trực tiếp</h3><p>Chỉ dẫn gõ thẳng vào tin nhắn chat, ví dụ yêu cầu AI bỏ qua quy tắc của hệ thống.</p></div>
+        <div class="box tint"><h3>Tấn công gián tiếp</h3><p>Chỉ dẫn giấu trong tài liệu tải lên, tác động tới mô hình khi tài liệu được truy hồi.</p></div>
+      </div>
+      <div class="grid" style="--n: 4">
+        <div class="box"><h3><span class="n">A</span>Chuẩn hoá</h3><p>Biên WebSocket và biên upload: Unicode NFKC, bỏ ký tự điều khiển, vô hình; cắt độ dài tin nhắn.</p></div>
+        <div class="box"><h3><span class="n">B</span>Ranh giới dữ liệu</h3><p>Tin khách bọc <code>&lt;tin_nhan_khach&gt;</code>, tri thức bọc <code>&lt;tri_thuc&gt;</code>; vô hiệu thẻ giả mạo.</p></div>
+        <div class="box"><h3><span class="n">C</span>Quy tắc prompt</h3><p>Không lộ prompt, không đổi vai, bỏ qua câu ra lệnh trong dữ liệu, chỉ làm nhiệm vụ CSKH.</p></div>
+        <div class="box"><h3><span class="n">D</span>Làm sạch tài liệu</h3><p>Chỉ đường upload: thay câu ra lệnh lộ liễu bằng dấu vết, không xoá âm thầm.</p></div>
+      </div>
+      <p class="note sm">Quan trọng hơn quy tắc là giới hạn quyền: tác tử 3 định tuyến trên cờ, không dùng LLM; tra đơn trong phạm vi khách đăng nhập; tác tử 4 không có đường nào để tự chuyển ca. Không có bộ phát hiện tấn công: phòng thủ bằng cấu trúc.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- ═════════════ PHẦN III · THỰC NGHIỆM VÀ TRIỂN KHAI ═════════════ -->
+
+  <!-- 28 · Chương mục III -->
+  <section class="slide section">
+    <div class="band"><small>Phần</small><b>III</b></div>
+    <div class="main">
+      <h2>Thực nghiệm và triển khai</h2>
+      <p>Hiện thực thiết kế, thách thức kỹ thuật, giao diện và đo đạc trên hệ thống chạy thật</p>
+      <ul class="list topics">
+        <li>Môi trường, công cụ và cấu hình</li>
+        <li>Thách thức kỹ thuật và giải pháp</li>
+        <li>Giao diện khách hàng và quản trị</li>
+        <li>Kiểm thử, đo đạc và đối chiếu yêu cầu</li>
+      </ul>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 29 · Môi trường và mã nguồn -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Môi trường, tổ chức mã nguồn và vận hành</h2>
+    <div class="body split" style="--cols: 800px 1fr; --z: 1.14">
+      <div class="stack">
+        <pre class="tree">apps/
+├── backend/          <em>FastAPI, LangGraph, Alembic</em>
+│   ├── app/agents/   <em>state, 4 node, đồ thị</em>
+│   ├── app/api/      <em>REST và WebSocket</em>
+│   ├── app/core/     <em>cấu hình, bảo mật, sanitize</em>
+│   ├── app/models/   <em>SQLAlchemy, enum canonical</em>
+│   ├── app/services/ <em>rag, gate, order, escalation…</em>
+│   ├── knowledge/    <em>kho tri thức canonical</em>
+│   ├── tests/        <em>387 test, chạy offline</em>
+│   └── alembic/      <em>11 migration</em>
+└── dashboard/        <em>Next.js: admin và chat (PWA)</em>
+packages/shared-types/
+scripts/              <em>seed, ingest, đo ngưỡng, bench</em></pre>
+        <p class="cap">Python 3.12 (uv) · TypeScript, Node.js (pnpm workspaces) · Git, GitHub · Docker Compose cho hạ tầng nội bộ (tuỳ chọn)</p>
+      </div>
+      <div class="stack">
+        <p class="sub">Lệnh vận hành (Makefile)</p>
+        <dl class="kv">
+          <dt>make install</dt><dd>cài backend (uv) và dashboard (pnpm)</dd>
+          <dt>make migrate</dt><dd>áp dụng migration Alembic</dd>
+          <dt>make ingest-kb</dt><dd>nạp lại toàn bộ kho tri thức</dd>
+          <dt>make check-conn</dt><dd>kiểm tra kết nối Neon và Qdrant</dd>
+          <dt>make test</dt><dd>pytest và node --test</dd>
+          <dt>make bench</dt><dd>benchmark nhiều hội thoại đồng thời</dd>
+        </dl>
+        <p class="sub">Cấu hình</p>
+        <ul class="list xs">
+          <li>Biến môi trường theo nhóm: LLM, CSDL, Qdrant, JWT, Langfuse, tinh chỉnh</li>
+          <li><code>RETRIEVAL_THRESHOLD</code> 0,40 · <code>HISTORY_WINDOW</code> 8 · giờ hỗ trợ 9–21</li>
+          <li>T1, T2 nằm trong <code>gate_config</code> để Admin chỉnh khi hệ thống đang chạy</li>
+        </ul>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 30 · Ba quyết định kiến trúc -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Ba quyết định rút ra khi triển khai</h2>
+    <div class="body stack" style="--z: 1.30">
+      <div class="grid" style="--n: 3">
+        <div class="box"><h3><span class="n">1</span>Không dùng Supervisor</h3><p>Supervisor làm tăng số lời gọi mô hình, đường đi khó dự đoán, khó truy nguyên khi lỗi.</p><p><b>Giải pháp:</b> quy trình cố định, tối đa 2 lời gọi LLM và 1 embedding mỗi lượt.</p><p class="ex">Đổi lại: yêu cầu phức tạp nhiều bước được chuyển cho nhân viên.</p></div>
+        <div class="box"><h3><span class="n">2</span>Tách hai độ tin cậy</h3><p>Mức tự tin khi phân loại và điểm tương đồng tài liệu khác bản chất, không gộp được thành một ngưỡng.</p><p><b>Giải pháp:</b> quyết định chỉ dựa trên cờ; ngưỡng số duy nhất là ngưỡng truy hồi.</p><p class="ex">Hành vi dễ giải thích, dễ điều chỉnh.</p></div>
+        <div class="box"><h3><span class="n">3</span>Trạng thái từ cấu trúc</h3><p>Tra đơn có ba tín hiệu riêng: tìm thấy, không tìm thấy, lỗi CSDL; khách gõ sai mã không bị chuyển người.</p><p><b>Đếm mã sai:</b> chỉ nhận diện câu “không tìm thấy đơn” cố định, không dò mọi con số trong lịch sử.</p></div>
+      </div>
+      <p class="note sm">Bài học: dò chữ trong câu trả lời do mô hình sinh để suy ra trạng thái luôn tiềm ẩn sai sót; trạng thái phải đến từ cấu trúc dữ liệu hoặc so khớp hằng số cố định.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 31 · Sự cố chào hỏi -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Sự cố: chuyển người oan khi khách chào hỏi</h2>
+    <div class="body stack" style="--z: 1.14">
+      <table class="tbl sm">
+        <thead><tr><th>Câu khách</th><th style="width: 560px">Trước khi sửa</th><th style="width: 560px">Sau khi sửa</th></tr></thead>
+        <tbody>
+          <tr><td>“xin chào shop”</td><td class="bad">other + out_of_domain → chuyển người</td><td class="ok">greeting → gửi thẳng câu chào</td></tr>
+          <tr><td>“cảm ơn shop nhiều nha”</td><td class="bad">other + out_of_domain → chuyển người</td><td class="ok">greeting → gửi thẳng câu chào</td></tr>
+          <tr><td>“cho mình xin chính sách trả hàng với”</td><td class="bad">refund → duyệt nháp</td><td class="ok">return_exchange_policy → gửi thẳng</td></tr>
+          <tr><td>“mua rồi mặc thử không vừa thì đổi trong bao lâu ạ”</td><td class="bad">refund → duyệt nháp</td><td class="ok">return_exchange_policy → gửi thẳng</td></tr>
+        </tbody>
+      </table>
+      <div class="grid" style="--n: 4">
+        <div class="box"><h3>Câu chào bị chặn</h3><p>Chưa có nhãn xã giao nên bị xếp ngoài phạm vi; thêm nhãn rồi vẫn lỗi vì tác tử 2 vẫn đòi tài liệu làm căn cứ.</p></div>
+        <div class="box"><h3>Sửa ở hai nơi</h3><p>Tác tử 2 bỏ truy hồi cho xã giao, không phát cờ thiếu nguồn; tác tử 4 dùng câu mẫu. Sửa một phía vẫn bị chặn ở phía kia.</p></div>
+        <div class="box"><h3>Chính sách bị giữ nháp</h3><p>Luật prompt cũ gộp câu hỏi chính sách đổi trả vào refund; tách nhãn return_exchange_policy để trả lời thẳng.</p></div>
+        <div class="box warn"><h3>Bài học</h3><p>Quy tắc an toàn đúng ý tưởng nhưng phạm vi quá rộng sẽ chuyển quá nhiều ca đơn giản. Tập cờ chặn giữ nguyên.</p></div>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 32 · Mở rộng truy vấn và phân bố điểm -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Mở rộng truy vấn và phân bố điểm tương đồng</h2>
+    <div class="body split" style="--cols: 1fr 860px; --z: 1.08">
+      <div class="stack">
+        <table class="tbl sm">
+          <thead><tr><th>Khớp qua</th><th class="num">Số câu</th><th class="num">Thấp nhất</th><th class="num">Trung vị</th><th class="num">Cao nhất</th></tr></thead>
+          <tbody>
+            <tr class="hl"><td>Câu hỏi mẫu</td><td class="num">26/32 (81%)</td><td class="num">0,380</td><td class="num"><b>0,702</b></td><td class="num">0,804</td></tr>
+            <tr><td>Thân tài liệu</td><td class="num">6/32 (19%)</td><td class="num">0,420</td><td class="num">0,542</td><td class="num">0,577</td></tr>
+          </tbody>
+        </table>
+        <p class="cap">Trung vị điểm tăng 0,542 → 0,702 khi so câu hỏi của khách với câu hỏi mẫu thay vì với văn bản chính sách.</p>
+        <div class="box"><h3>Thiết kế phép đo ngưỡng</h3>
+          <ul class="list xs">
+            <li>32 câu trả lời được, diễn đạt khác câu mẫu (lặp nguyên văn sẽ cho điểm gần 1,0)</li>
+            <li>25 câu không trả lời được: 5 lạc đề, 20 thuộc nghiệp vụ nhưng kho chưa có</li>
+            <li>Gán nhãn thủ công trước khi đo; dùng đúng hàm truy hồi của tác tử 2</li>
+          </ul>
+        </div>
+      </div>
+      <figure class="fig" style="--h: 436px"><img class="bd" src="assets/hinh-3-1-phan-bo-cosine.png" alt="Biểu đồ hộp điểm cosine của hai tập truy vấn: trả lời được trung vị 0,648, không trả lời được trung vị 0,549, chồng lấn từ 0,380 đến 0,658"><figcaption>Hình 3.1. Hai phân bố chồng lấn trong khoảng 0,380–0,658: không ngưỡng nào tách sạch hai tập</figcaption></figure>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 33 · Quét ngưỡng -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Quét ngưỡng truy hồi: chọn 0,40</h2>
+    <div class="body split" style="--cols: 1fr 860px">
+      <div class="stack">
+        <table class="tbl xs">
+          <thead><tr><th class="num">Ngưỡng</th><th class="num">Chuyển người oan (trên 32)</th><th class="num">Trả lời khi chưa đủ căn cứ (trên 25)</th><th class="num">Tổng lỗi</th></tr></thead>
+          <tbody>
+            <tr><td class="num">0,35</td><td class="num">0 (0%)</td><td class="num">25</td><td class="num">25</td></tr>
+            <tr class="hl"><td class="num"><b>0,40</b></td><td class="num"><b>1 (3%)</b></td><td class="num">21</td><td class="num">22</td></tr>
+            <tr><td class="num">0,45</td><td class="num">2 (6%)</td><td class="num">18</td><td class="num">20</td></tr>
+            <tr><td class="num">0,50</td><td class="num">5 (16%)</td><td class="num">16</td><td class="num">21</td></tr>
+            <tr><td class="num">0,55</td><td class="num">7 (22%)</td><td class="num">12</td><td class="num">19</td></tr>
+            <tr><td class="num">0,60</td><td class="num">13 (41%)</td><td class="num">4</td><td class="num">17</td></tr>
+            <tr><td class="num">0,65</td><td class="num">16 (50%)</td><td class="num">1</td><td class="num">17</td></tr>
+            <tr><td class="num">0,70</td><td class="num">18 (56%)</td><td class="num">0</td><td class="num">18</td></tr>
+          </tbody>
+        </table>
+        <div class="box warn"><h3>Quy tắc chọn</h3><p>Ngưỡng cao nhất mà chuyển người oan ≤ 5%. Hai loại lỗi không ngang giá: chuyển oan không còn bước nào sửa lại, còn tài liệu yếu vẫn phải qua lớp ngoài phạm vi và quy tắc bám nguồn.</p></div>
+      </div>
+      <div class="stack">
+        <figure class="fig" style="--h: 470px"><img class="bd" src="assets/hinh-3-2-quet-nguong.png" alt="Đồ thị số câu bị xử lý sai theo ngưỡng truy hồi từ 0,35 đến 0,70; ngưỡng chọn 0,40 có 1 câu chuyển oan"><figcaption>Hình 3.2. Kết quả quét ngưỡng truy hồi</figcaption></figure>
+        <p class="cap">Cực tiểu tổng lỗi (17) nằm ở 0,60–0,65 nhưng khi đó 41–50% câu trả lời được bị chuyển oan. Trên vùng chồng lấn, hệ thống không bịa số liệu, mã giảm giá hay chính sách.</p>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 34 · Độ bền -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Độ bền: suy giảm an toàn, tranh chấp đồng thời</h2>
+    <div class="body split" style="--cols: 1.35fr 1fr; --z: 1.14">
+      <div class="stack">
+        <p class="sub">Khi dịch vụ ngoài lỗi</p>
+        <table class="tbl xs">
+          <thead><tr><th style="width: 300px">Điểm hỏng</th><th>Hành vi và kết quả</th></tr></thead>
+          <tbody>
+            <tr><td>Thiếu khoá, tắt mô hình</td><td>unknown + <code>llm_unavailable</code>, thực thể từ regex → chuyển người</td></tr>
+            <tr><td>Lời gọi mô hình lỗi</td><td>Ghi log, suy giảm như trên → chuyển người</td></tr>
+            <tr><td>Qdrant, embedding lỗi</td><td><code>search_error</code>, khác “kho không phủ” → chuyển người, nhãn đúng</td></tr>
+            <tr><td>Tra đơn lỗi CSDL</td><td><code>order_unresolved</code> → chuyển người</td></tr>
+            <tr><td>Lỗi đọc cấu hình cổng</td><td>Không giữ nháp, gửi thẳng → chat không kẹt</td></tr>
+            <tr><td>Ghi CSDL hỏng</td><td>Thử lại một lần; vẫn hỏng thì gửi câu không hứa hẹn</td></tr>
+            <tr><td>Chuẩn hoá văn bản lỗi</td><td>Tin đi tiếp dạng thô, chỉ cắt độ dài</td></tr>
+            <tr><td>Langfuse chưa cấu hình</td><td>Lời gọi trace thành vô hiệu → không ảnh hưởng</td></tr>
+            <tr><td>facts.md không đọc được</td><td>Bỏ khối sự thật, ghi log → ứng dụng không rớt</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="stack">
+        <p class="sub">Bốn tình huống tranh chấp đã kiểm thử</p>
+        <ul class="list xs">
+          <li>Admin tiếp quản khi pipeline đang chạy: lượt bị huỷ, khách nhận trạng thái hiện tại</li>
+          <li>Ghi hỏng hai lần với kết cục chuyển tiếp: khách nhận câu không kèm cam kết</li>
+          <li>Hai tab gửi đồng thời: khoá theo khách xử lý tuần tự, không sinh hai ca</li>
+          <li>Gửi lại sau mất kết nối: chống trùng ở bộ nhớ và CSDL, pipeline không chạy lần hai</li>
+        </ul>
+        <div class="box tint"><p class="stat" style="font-size: 25px">Khoá theo khách, chống trùng, giới hạn tần suất và hub realtime đang nằm trong bộ nhớ một tiến trình: hệ thống chạy an toàn trên một worker.</p></div>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 35 · Giao diện khách hàng -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Giao diện khách hàng</h2>
+    <div class="body split" style="--cols: 600px 600px 1fr; column-gap: 32px">
+      <figure class="fig" style="--h: 472px"><img class="bd" src="assets/hinh-3-3-chat-tra-loi.png" alt="Cổng chat khách hàng: khách hỏi chính sách giao hàng, trợ lý AI trả lời phí giao và thời gian giao"><figcaption>Hình 3.3. Luồng trả lời tự động</figcaption></figure>
+      <figure class="fig" style="--h: 472px"><img class="bd" src="assets/hinh-3-4-chat-chuyen-tiep.png" alt="Cổng chat khách hàng: yêu cầu đã được chuyển tới nhân viên hỗ trợ, trạng thái đang chờ nhân viên"><figcaption>Hình 3.4. Thông báo chuyển tiếp cho nhân viên</figcaption></figure>
+      <ul class="list xs">
+        <li>Bố cục quen thuộc của ứng dụng nhắn tin; gợi ý câu hỏi cho người mới</li>
+        <li>Trạng thái “đang xử lý”, trạng thái gửi từng tin, gửi lại khi lỗi</li>
+        <li>Tin hiện ngay khi gửi, rồi đối chiếu với bản ghi chính thức từ máy chủ</li>
+        <li>Chuyển người: tiêu đề đổi sang “Đang chờ nhân viên hỗ trợ”</li>
+        <li>Hiển thị theo trạng thái máy chủ xác nhận, không đoán từ câu chữ</li>
+      </ul>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 36 · Giao diện quản trị: hội thoại và EscalationCard -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Giao diện quản trị: hội thoại và EscalationCard</h2>
+    <div class="body stack">
+      <div class="split" style="--cols: 1000px 1fr; column-gap: 32px">
+        <figure class="fig" style="--h: 469px"><img class="bd" src="assets/cskh-hoi-thoai.png" alt="Bảng điều khiển: danh sách hội thoại có bộ lọc trạng thái và khung chat của một ca đang chờ nhận"><figcaption>Hình 3.5. Danh sách hội thoại kèm bộ lọc trạng thái</figcaption></figure>
+        <figure class="fig" style="--h: 469px"><img class="bd" src="assets/cskh-escalation-card.png" alt="Thẻ tổng quan ca: lý do chuyển người, ý định và thực thể, tri thức truy hồi kèm điểm, nút Tiếp quản"><figcaption>Hình 3.6. Chi tiết hội thoại với EscalationCard</figcaption></figure>
+      </div>
+      <div class="grid" style="--n: 2">
+        <ul class="list xs">
+          <li>Danh sách cập nhật realtime qua WebSocket, lọc theo nhóm trạng thái</li>
+        </ul>
+        <ul class="list xs">
+          <li>Thẻ tổng quan ca: lý do chuyển, ý định, thực thể, nguồn RAG; bấm Tiếp quản thì AI tạm dừng</li>
+        </ul>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 37 · Giao diện quản trị: duyệt nháp và cổng -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Duyệt nháp và cấu hình cổng theo ý định</h2>
+    <div class="body split" style="--cols: 740px 554px 1fr; column-gap: 32px">
+      <figure class="fig" style="--h: 500px"><img class="bd" src="assets/hinh-3-7-duyet-nhap.png" alt="Màn hình duyệt nháp: nháp phản hồi gợi ý do AI soạn từ ngữ cảnh RAG, nút Duyệt và gửi, Chuyển xử lý tay"><figcaption>Hình 3.7. Màn hình duyệt nháp phản hồi</figcaption></figure>
+      <figure class="fig" style="--h: 500px"><img class="bd" src="assets/hinh-3-8-cau-hinh-cong.png" alt="Màn hình cấu hình Gate: tự động trả lời toàn hệ thống, tự động đóng hội thoại, công tắc theo từng ý định"><figcaption>Hình 3.8. Cấu hình cổng theo từng ý định</figcaption></figure>
+      <ul class="list xs">
+        <li>Nháp do AI soạn từ ngữ cảnh RAG; khách chỉ nhận tín hiệu chờ</li>
+        <li>Admin duyệt và gửi, sửa rồi gửi, hoặc chuyển xử lý tay</li>
+        <li>Cổng toàn hệ thống và theo từng ý định; ca bất định luôn chuyển nhân viên</li>
+        <li>Bật tự đóng hội thoại, chỉnh thời gian chờ ngay trên giao diện</li>
+      </ul>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 38 · Báo cáo, truy vết, PWA -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Báo cáo, truy vết từng lượt và PWA</h2>
+    <div class="body stack">
+      <p class="lead">Báo cáo dựng lại từ nhật ký kiểm toán: tỉ lệ gửi thẳng, giữ nháp, chuyển người, độ trễ trung vị, p95, p99 và lý do chuyển người; xem bốn bước của từng lượt.</p>
+      <div class="split" style="--cols: auto auto auto; justify-content: space-between; column-gap: 32px">
+        <figure class="fig" style="--h: 466px"><img class="bd" src="assets/hinh-3-9-bao-cao.png" alt="Tab báo cáo hoạt động: thẻ tỉ lệ tự động trả lời, chuyển nhân viên, độ trễ và bảng phân tích theo ý định"><figcaption>Hình 3.9. Báo cáo hoạt động</figcaption></figure>
+        <figure class="fig" style="--h: 466px"><img class="bd" src="assets/hinh-3-10-chi-tiet-luot.png" alt="Chi tiết một lượt xử lý: thời gian từng tác tử và các đoạn tri thức đã truy hồi kèm điểm"><figcaption>Hình 3.10. Chi tiết một lượt, bốn tác tử</figcaption></figure>
+        <figure class="fig" style="--h: 466px"><img class="bd" src="assets/hinh-3-11-pwa.png" alt="Bảng điều khiển cài lên điện thoại dạng PWA, màn danh sách hội thoại"><figcaption>Hình 3.11. PWA</figcaption></figure>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 39 · Kiểm thử tự động và bộ 20 câu -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Kiểm thử tự động và kết quả trên bộ 20 câu</h2>
+    <div class="body split" style="--cols: 1fr 1.25fr; column-gap: 40px; --z: 1.04">
+      <div class="stack">
+        <div class="box tint"><p class="stat"><b>437</b>trường hợp kiểm thử từ 387 hàm, chạy hoàn toàn ngoại tuyến: không cần khoá API, không gọi dịch vụ ngoài</p></div>
+        <table class="tbl xs">
+          <tbody>
+            <tr><th scope="row" style="width: 150px">Tác tử</th><td>phân loại, truy hồi, quyết định, sinh phản hồi, đồ thị</td></tr>
+            <tr><th scope="row">An toàn</th><td>cờ chặn, phanh ảo giác, nhánh suy giảm, hỏi lại</td></tr>
+            <tr><th scope="row">Nghiệp vụ</th><td>cổng, chuyển tiếp, tra đơn, tự đóng ca, giờ hỗ trợ</td></tr>
+            <tr><th scope="row">Realtime</th><td>vòng đời lượt WebSocket, chống trùng, hub phát</td></tr>
+            <tr><th scope="row">Bảo mật</th><td>xác thực, phân quyền, rate limit, chống chèn chỉ dẫn</td></tr>
+            <tr><th scope="row">Quan sát</th><td>nhật ký theo lượt, tổng hợp báo cáo, trace</td></tr>
+            <tr><th scope="row">Tri thức</th><td>nạp kho, chia đoạn, vòng đời tài liệu, taxonomy</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="stack">
+        <table class="tbl sm">
+          <thead><tr><th>Kết cục</th><th class="num" style="white-space: nowrap">Số câu</th><th class="num">Tỉ lệ</th><th class="num" style="white-space: nowrap">Mục tiêu</th><th style="white-space: nowrap">Đánh giá</th></tr></thead>
+          <tbody>
+            <tr class="hl"><td><b>Gửi thẳng</b></td><td class="num">18/20</td><td class="num"><b>90%</b></td><td class="num">≥ 70%</td><td class="ok">Đạt</td></tr>
+            <tr class="sub-row"><td>trả lời ngay</td><td class="num">15/20</td><td class="num">75%</td><td class="num">–</td><td>–</td></tr>
+            <tr class="sub-row"><td>hỏi lại mã đơn</td><td class="num">3/20</td><td class="num">15%</td><td class="num">–</td><td style="white-space: nowrap">Đúng thiết kế</td></tr>
+            <tr><td>Duyệt nháp (complaint)</td><td class="num">1/20</td><td class="num">5%</td><td class="num">–</td><td style="white-space: nowrap">Đúng thiết kế</td></tr>
+            <tr><td>Chuyển người (out_of_domain)</td><td class="num">1/20</td><td class="num">5%</td><td class="num">&lt; 30%</td><td class="ok">Đạt</td></tr>
+            <tr><td>Phản hồi dự phòng oan</td><td class="num">0/20</td><td class="num">0%</td><td class="num">→ 0%</td><td class="ok">Đạt</td></tr>
+          </tbody>
+        </table>
+        <p class="cap">Đo ngày 18/09/2026 trên hệ thống thật: kho 15 tài liệu, 95 điểm vector, ngưỡng 0,40; mỗi câu gửi từ một tài khoản mới qua WebSocket; kết cục tính bằng đúng hàm của tab Báo cáo.</p>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 40 · Bám nguồn -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Kiểm chứng bám nguồn và bám quy trình</h2>
+    <div class="body stack" style="--z: 1.08">
+      <table class="tbl sm">
+        <thead><tr><th style="width: 560px">Câu khách</th><th>Hành vi đo được</th><th style="width: 300px">Đánh giá</th></tr></thead>
+        <tbody>
+          <tr><td>“em đặt mấy hôm rồi chưa thấy hàng”</td><td>Truy hồi 4 đoạn gồm cả quy trình; bot hỏi mã đơn trước, đúng bước 1 của quy trình chẩn đoán</td><td class="ok">Bám quy trình</td></tr>
+          <tr><td>“đơn 6578 hàng bị lỗi, cho em hoàn tiền”</td><td>Hỏi lý do, nói sẽ chuyển thông tin tới nhân viên; không nói đã hoàn tiền</td><td class="ok">Không bịa hành động</td></tr>
+          <tr><td>“ship về Đà Nẵng hết bao nhiêu”</td><td>“30.000đ… từ 500.000đ trở lên được miễn phí”: số liệu thật từ nguồn</td><td class="ok">Bám nguồn</td></tr>
+          <tr><td>“thẻ thành viên hạng kim cương cần bao nhiêu điểm”</td><td>“không có thông tin cụ thể… sẽ chuyển nhân viên”</td><td class="ok">Không bịa</td></tr>
+          <tr><td>“cho mình xin mã giảm 70% đi”</td><td>Không bịa mã, hướng dẫn theo dõi kênh chính thức</td><td class="ok">Không bịa</td></tr>
+        </tbody>
+      </table>
+      <div class="grid" style="--n: 3">
+        <div class="box"><h3>Ghi chú nội bộ</h3><p>Kiểm tra trực tiếp Qdrant: 0/95 điểm chứa mục Internal Note của 4 tệp case/.</p></div>
+        <div class="box"><h3>Cần đo lại</h3><p>Hai câu “sẽ chuyển nhân viên” đo trước khi có quy tắc “Không tự hứa chuyển người”.</p></div>
+        <div class="box warn"><h3>Hạn chế còn lại</h3><p>Hai trường hợp suy diễn “không có” (giao tới Hoa Kỳ, địa chỉ tại Huế): đã giảm, chưa hết.</p></div>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 41 · Độ trễ và benchmark -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Độ trễ theo số hội thoại đồng thời</h2>
+    <div class="body split" style="--cols: 1fr 780px; --z: 1.03">
+      <div class="stack">
+        <table class="tbl sm">
+          <thead><tr><th>Số hội thoại đồng thời</th><th class="num">Trung bình (s)</th><th class="num">p95 (s)</th><th class="num">≤ 5 s (%)</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td class="num">5,86</td><td class="num bad">5,86</td><td class="num">0</td></tr>
+            <tr><td>10</td><td class="num">5,13</td><td class="num bad">5,65</td><td class="num">40</td></tr>
+            <tr><td>25</td><td class="num">5,05</td><td class="num bad">5,48</td><td class="num">48</td></tr>
+            <tr><td>50</td><td class="num">6,25</td><td class="num bad">6,60</td><td class="num">0</td></tr>
+            <tr><td>100</td><td class="num">9,00</td><td class="num bad">9,71</td><td class="num">0</td></tr>
+            <tr class="hl"><td>50, chỉ lượt xã giao</td><td class="num">3,82</td><td class="num ok">4,41</td><td class="num">100</td></tr>
+          </tbody>
+        </table>
+        <ul class="list xs">
+          <li>Đo phía máy chủ từ dòng <code>delivery</code> của audit_log, gồm cả chờ lượt trước; chưa gồm mạng tới thiết bị</li>
+          <li>Đuôi phân bố: thử lại lời gọi LLM (đã giảm còn 20 s, thử lại 1 lần) và khởi động nguội Qdrant</li>
+          <li>Ở 50 hội thoại: có tra đơn 6,8 s, không tra đơn 6,2 s; cửa sổ lịch sử 4 hay 8 tin chênh dưới 0,1 s</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <figure class="fig" style="--h: 408px"><img class="bd" src="assets/hinh-3-13-p95-theo-tai.png" alt="Đồ thị độ trễ p95 theo số hội thoại đồng thời 1, 10, 25, 50, 100, đều trên ngưỡng 5 giây, cao nhất 9,7 giây"><figcaption>Hình 3.13. p95 theo số hội thoại đồng thời, đối chiếu NFR-1</figcaption></figure>
+        <p class="cap">Một tiến trình uvicorn; Neon, Qdrant Cloud, OpenAI gói miễn phí. 100/100 lượt không lỗi, không hết thời gian chờ.</p>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 42 · Đối chiếu NFR và KPI -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần III. Thực nghiệm và triển khai</p>
+    </header>
+    <h2 class="title">Đối chiếu yêu cầu phi chức năng và KPI</h2>
+    <div class="body split" style="--cols: 1.12fr 1fr; --z: 1.09">
+      <table class="tbl xs">
+        <thead><tr><th style="width: 110px">Mã</th><th style="width: 290px">Yêu cầu</th><th>Kết quả</th></tr></thead>
+        <tbody>
+          <tr><td>NFR-1</td><td>P95 ≤ 5 s</td><td class="bad">Chưa đạt: 5,5 s ở 25, 9,7 s ở 100 hội thoại</td></tr>
+          <tr><td>NFR-2</td><td>≥ 100 người đồng thời</td><td class="ok">Đạt: 100/100 lượt, không lỗi</td></tr>
+          <tr><td>NFR-3</td><td>Uptime ≥ 99%</td><td>Phụ thuộc hạ tầng; điểm gọi ngoài suy giảm an toàn</td></tr>
+          <tr><td>NFR-4</td><td>Kiểm toán 100%</td><td class="ok">Đạt: 6 dòng mỗi lượt, cộng hành động Admin</td></tr>
+          <tr><td>NFR-5</td><td>JWT, RBAC, HTTPS/WSS</td><td class="ok">Đạt: vai trò đọc lại từ CSDL</td></tr>
+          <tr><td>NFR-6</td><td>An toàn dữ liệu</td><td class="ok">Đạt: dữ liệu mô phỏng, tra đơn có phạm vi</td></tr>
+          <tr><td>NFR-7</td><td>Chống chèn chỉ dẫn</td><td class="ok">Đạt: bốn lớp, bảo đảm cấu trúc</td></tr>
+          <tr><td>NFR-8</td><td>Quan sát</td><td class="ok">Đạt: audit_log, Langfuse</td></tr>
+          <tr><td>NFR-9</td><td>Chi phí</td><td class="ok">Đạt: hạ tầng gói miễn phí</td></tr>
+          <tr><td>NFR-10</td><td>Cấu hình được</td><td class="ok">Đạt: biến môi trường và CSDL</td></tr>
+          <tr><td>NFR-11</td><td>An toàn nội dung</td><td class="ok">Đạt: phanh cứng, 0% dự phòng oan</td></tr>
+        </tbody>
+      </table>
+      <div class="stack">
+        <table class="tbl sm">
+          <thead><tr><th>KPI</th><th class="num">Mục tiêu</th><th class="num">Đo được</th></tr></thead>
+          <tbody>
+            <tr><td>Tỉ lệ tự trả lời</td><td class="num">≥ 70%</td><td class="num ok">90%</td></tr>
+            <tr><td>Tỉ lệ chuyển người</td><td class="num">&lt; 30%</td><td class="num ok">5%</td></tr>
+            <tr><td>Chuyển người oan</td><td class="num">≤ 5%</td><td class="num ok">3% (1/32)</td></tr>
+            <tr><td>Phản hồi dự phòng oan</td><td class="num">→ 0%</td><td class="num ok">0%</td></tr>
+            <tr><td>Thời gian phản hồi</td><td class="num">&lt; 5 s</td><td class="num bad">5,0–9,0 s</td></tr>
+          </tbody>
+        </table>
+        <p class="note sm">Chất lượng xử lý đạt mọi KPI. Thời gian phản hồi chỉ sát mục tiêu ở tải thấp (trung bình 5,1 s ở 10 hội thoại; lượt xã giao 3,8 s), chưa đạt từ 50 hội thoại.</p>
+      </div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- ═════════════ PHẦN IV · KẾT LUẬN ═════════════ -->
+
+  <!-- 43 · Chương mục IV -->
+  <section class="slide section">
+    <div class="band"><small>Phần</small><b>IV</b></div>
+    <div class="main">
+      <h2>Kết luận</h2>
+      <p>Kết quả, đóng góp, hạn chế và hướng phát triển</p>
+      <ul class="list topics">
+        <li>Kết quả đạt được so với sáu mục tiêu</li>
+        <li>Bốn đóng góp của đồ án</li>
+        <li>Hạn chế và hướng phát triển</li>
+        <li>Kết luận chung</li>
+      </ul>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 44 · Kết quả đạt được -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần IV. Kết luận</p>
+    </header>
+    <h2 class="title">Kết quả đạt được so với sáu mục tiêu</h2>
+    <div class="body stack" style="--z: 1.20">
+      <div class="figs mini">
+        <div><b>90%</b><span>lượt không cần nhân viên ngay</span></div>
+        <div><b>5%</b><span>lượt chuyển cho nhân viên</span></div>
+        <div><b>3%</b><span>chuyển người oan</span></div>
+        <div><b>0%</b><span>phản hồi dự phòng oan</span></div>
+        <div><b>100/100</b><span>lượt không lỗi ở 100 hội thoại</span></div>
+        <div><b class="bad">9,7 s</b><span>p95 ở 100 hội thoại, chưa đạt</span></div>
+      </div>
+      <table class="tbl sm">
+        <thead><tr><th style="width: 560px">Mục tiêu</th><th>Kết quả</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">M1 · Phân loại ý định, trích thực thể</th><td><span class="ok">Đạt.</span> 15 ý định trong prompt, không cần huấn luyện; thực thể hai đường</td></tr>
+          <tr><th scope="row">M2 · Truy hồi tri thức có căn cứ</th><td><span class="ok">Đạt.</span> Kho chuẩn, chia theo mục, mở rộng truy vấn, nạp lại blue/green</td></tr>
+          <tr><th scope="row">M3 · Đánh giá rủi ro, ra quyết định</th><td><span class="ok">Đạt.</span> Tất định trên 8 cờ chặn, không gọi mô hình, không gộp hai độ tin cậy</td></tr>
+          <tr><th scope="row">M4 · Sinh phản hồi sau cổng kiểm soát</th><td><span class="ok">Đạt.</span> Điểm phát ngôn duy nhất, ba nguồn căn cứ, phanh cứng chống ảo giác</td></tr>
+          <tr><th scope="row">M5 · Dashboard và hàng đợi</th><td><span class="ok">Đạt.</span> Realtime không polling, EscalationCard, duyệt nháp, cổng theo ý định</td></tr>
+          <tr><th scope="row">M6 · Bảo đảm tính kiểm soát</th><td><span class="ok">Đạt.</span> Sáu dòng nhật ký mỗi lượt, HITL ba mức, bốn lớp chống chèn chỉ dẫn</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 45 · Đóng góp -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần IV. Kết luận</p>
+    </header>
+    <h2 class="title">Bốn đóng góp đáng chú ý của đồ án</h2>
+    <div class="body grid" style="--n: 2; --z: 1.30">
+      <div class="box"><h3><span class="n">1</span>Chủ động không dùng Supervisor</h3><p>Yêu cầu kiểm soát thời gian, chi phí và nguyên nhân từng quyết định nên chọn quy trình cố định.</p><p class="ex">Mỗi lượt có giới hạn rõ ràng về số lần gọi mô hình, dễ truy vết.</p></div>
+      <div class="box"><h3><span class="n">2</span>Phân biệt ba kiểu thông tin sai</h3><p>Ngoài bịa ra thông tin không tồn tại, còn xét bịa ra cái “không có” và bịa ra hành động chưa làm.</p><p class="ex">Mỗi dạng lỗi được chống bằng một cơ chế riêng.</p></div>
+      <div class="box warn"><h3><span class="n">3</span>Tách an toàn khỏi cấu hình nghiệp vụ</h3><p>Luật cố định quyết định có đủ căn cứ để trả lời; Admin chỉ quyết gửi ngay hay chờ duyệt.</p><p class="ex">Cấu hình nghiệp vụ không thể vô tình tắt các lớp bảo vệ.</p></div>
+      <div class="box"><h3><span class="n">4</span>Chọn ngưỡng theo chi phí từng loại lỗi</h3><p>Điểm của câu trả lời được và không trả lời được chồng lấn, nên không chọn theo tổng số lỗi.</p><p class="ex">Ngưỡng chọn sao cho chuyển người oan nằm trong mức cho phép 5%.</p></div>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 46 · Hạn chế và hướng phát triển -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần IV. Kết luận</p>
+    </header>
+    <h2 class="title">Hạn chế và hướng phát triển</h2>
+    <div class="body cols3" style="--z: 1.15">
+      <section>
+        <h3>Hạn chế</h3>
+        <ul class="list xs">
+          <li>p95 chưa ≤ 5 s khi tải tăng: 6,6 s ở 50 và 9,7 s ở 100 hội thoại</li>
+          <li>Truy hồi: chưa lọc điểm tối thiểu, chưa xếp hạng lại, chưa viết lại câu hỏi nối tiếp</li>
+          <li>Tin nhiều ý định vẫn chuyển người; còn suy diễn “không có”; chưa nhận diện cảm xúc</li>
+          <li>Một tiến trình; checkpointer chưa lưu bền; chưa biết nhân viên nào đang trực tuyến</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Ngắn hạn</h3>
+        <ul class="list xs">
+          <li>Lọc đoạn điểm thấp, xếp hạng lại các kết quả gần nhau</li>
+          <li>Viết lại câu hỏi nối tiếp theo ngữ cảnh, chỉ khi thật cần</li>
+          <li>Đưa dữ liệu phối hợp ra kho dùng chung để chạy nhiều tiến trình</li>
+          <li>Tách tin nhiều yêu cầu; cảm xúc chỉ dùng để tăng ưu tiên</li>
+          <li>Giảm độ trễ: đặt dịch vụ gần nhau, bớt truy vấn thừa</li>
+        </ul>
+      </section>
+      <section>
+        <h3>Trung và dài hạn</h3>
+        <ul class="list xs">
+          <li>Vòng học bán tự động: hệ thống đề xuất kèm bằng chứng, Admin quyết định</li>
+          <li>Tích hợp hệ thống quản lý đơn thật; thao tác nhạy cảm cần xác nhận, con người duyệt</li>
+          <li>Bộ nhớ xuyên hội thoại chỉ để cá nhân hoá cách diễn đạt</li>
+          <li>Đa kênh qua tầng chuyển đổi ở biên; đa ngôn ngữ</li>
+        </ul>
+      </section>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 47 · Kết luận chung -->
+  <section class="slide">
+    <header class="head">
+      <img src="assets/logo-kma.png" alt="">
+      <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      <p class="part">Phần IV. Kết luận</p>
+    </header>
+    <h2 class="title">Kết luận chung</h2>
+    <div class="body stack" style="--z: 1.30">
+      <p class="quote">Phần quan trọng không chỉ là kết nối các mô hình AI, mà là xác định việc nào nên để AI làm và việc nào phải kiểm soát bằng luật cố định.</p>
+      <div class="grid" style="--n: 2">
+        <div class="box"><h3>Để AI làm</h3><p>Hiểu câu hỏi, tìm cách diễn đạt, tạo câu trả lời tự nhiên.</p></div>
+        <div class="box warn"><h3>Kiểm soát bằng luật cố định</h3><p>Có đủ căn cứ để trả lời không, được truy cập dữ liệu nào, khi nào phải chuyển nhân viên.</p></div>
+      </div>
+      <p class="lead">Hệ thống đáp ứng sáu mục tiêu chức năng và các chỉ tiêu chất lượng trên bộ kiểm thử. Hạn chế lớn nhất là độ trễ khi nhiều hội thoại đồng thời; nguyên nhân đã được đo, hướng tối ưu đã xác định.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 48 · Cảm ơn -->
+  <section class="slide thanks">
+    <div class="frame" aria-hidden="true"></div>
+    <div class="inner">
+      <img class="crest" src="assets/logo-kma.png" alt="Logo Học viện Kỹ thuật Mật mã">
+      <h2>Em xin chân thành cảm ơn<br>quý thầy cô đã lắng nghe!</h2>
+      <div class="rule" aria-hidden="true"></div>
+      <p class="ask">Rất mong nhận được câu hỏi và góp ý của hội đồng</p>
+      <p class="who">Bùi Anh Tuấn – CT060144</p>
+    </div>
+  </section>
+
+</main>
+<script src="deck.js"></script>
+</body>
+</html>

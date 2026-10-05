@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mẫu D – ThriftYourStyle</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="deck.css">
+<style>
+/* Mẫu D – ThriftYourStyle: dùng đúng token và font của giao diện sản phẩm
+   (apps/dashboard/tailwind.config.ts): nền giấy, mực nâu đen, nhấn olive, đất nung cho ca chờ nhân viên,
+   Playfair Display cho tiêu đề và Be Vietnam Pro cho thân chữ. Slide và phần demo liền một mạch. */
+:root {
+  --canvas: #FBFAF7;
+  --surface: #F4F2EC;
+  --ink: #211F1B;
+  --divider: rgba(33, 31, 27, .16);
+  --accent: #6B7A4F;
+  --accent-100: #EEF0E6;
+  --accent-700: #5A6743;
+  --accent-800: #4A5637;
+  --terra: #B25B3C;
+  --terra-soft: #F6E7DF;
+  --steel-100: #F9F8F4;
+  --steel-200: #F0EDE6;
+  --steel-800: #57534A;
+  --head: "Playfair Display", Georgia, serif;
+  --body: "Be Vietnam Pro", "Segoe UI", Arial, sans-serif;
+}
+
+.slide { background: var(--canvas); color: var(--ink); font: 500 36px/1.4 var(--body); }
+:where(.slide) :where(h1, h2, h3, p, ul, ol, dl, dd, figure) { margin: 0; }
+:where(.slide) :where(h1, h2, h3) { text-wrap: balance; }
+:where(.slide) :where(p, li, dd, span) { text-wrap: pretty; }
+:where(.slide) :where(ul, ol) { padding: 0; list-style: none; }
+
+/* ── Đầu trang như header của các màn trong app ── */
+.top { position: absolute; left: 120px; right: 120px; top: 60px; display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 26px; border-bottom: 2px solid var(--divider); }
+.eyebrow { font: 700 21px/1 var(--body); letter-spacing: .14em; color: var(--accent); }
+.title { margin-top: 16px; font: 700 64px/1.1 var(--head); letter-spacing: -.02em; }
+.mark { display: flex; align-items: center; gap: 12px; font: 500 28px/1 var(--head); }
+.mark img { width: 48px; height: 48px; border-radius: 12px; }
+.body { position: absolute; left: 120px; right: 120px; top: 252px; bottom: 120px; }
+.foot { position: absolute; left: 120px; right: 120px; bottom: 44px; display: flex; justify-content: space-between; align-items: center; font: 600 20px/1 var(--body); color: var(--steel-800); }
+.foot .pg { padding: 9px 16px; border-radius: 999px; background: var(--surface); color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* ── Danh sách ── */
+.dots li { position: relative; padding-left: 44px; font: 500 39px/1.4 var(--body); }
+.dots li + li { margin-top: 28px; }
+.dots li::before { content: ""; position: absolute; left: 0; top: .7em; width: 16px; height: 16px; margin-top: -8px; border-radius: 50%; background: var(--accent); }
+.dots.sm li { padding-left: 34px; font-size: 29px; line-height: 1.38; }
+.dots.sm li + li { margin-top: 18px; }
+.dots.sm li::before { width: 12px; height: 12px; margin-top: -6px; }
+
+/* ── Bìa ── */
+.cover .brandrow { position: absolute; left: 120px; right: 120px; top: 56px; display: flex; justify-content: space-between; align-items: center; }
+.cover .inst { display: flex; align-items: center; gap: 18px; }
+.cover .inst img { height: 76px; width: auto; }
+.cover .inst p { font: 700 23px/1.3 var(--body); }
+.cover .inst span { display: block; font-weight: 500; color: var(--steel-800); }
+.cover .mark { font-size: 34px; }
+.cover .mark img { width: 52px; height: 52px; }
+.cover .eyebrow { position: absolute; left: 120px; top: 196px; }
+.cover h1 { position: absolute; left: 120px; right: 120px; top: 232px; font: 700 72px/1.1 var(--head); letter-spacing: -.025em; }
+.cover .people { position: absolute; left: 120px; top: 430px; display: flex; gap: 72px; }
+.cover .people dt { font: 600 20px/1.2 var(--body); color: var(--steel-800); }
+.cover .people dd { margin-top: 8px; font: 700 28px/1.2 var(--body); }
+.cover .device { position: absolute; left: 200px; right: 200px; top: 552px; height: 600px; padding: 16px 16px 0; border: 2px solid var(--divider); border-bottom: 0; border-radius: 28px 28px 0 0; background: var(--surface); }
+.cover .device img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; border: 2px solid var(--divider); border-bottom: 0; border-radius: 14px 14px 0 0; }
+
+/* ── Mục lục ── */
+.agenda { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.agenda li { min-height: 290px; padding: 34px 40px 38px; border: 2px solid var(--divider); border-radius: 20px; }
+.agenda .n { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 16px; background: var(--accent); color: #fff; font: 700 34px/1 var(--head); }
+.agenda b { display: block; margin-top: 28px; font: 700 44px/1.15 var(--head); letter-spacing: -.01em; }
+.agenda span:not(.n) { display: block; margin-top: 10px; font: 500 28px/1.35 var(--body); color: var(--steel-800); }
+
+/* ── Chương mục ── */
+.sec { background: var(--accent); color: #fff; }
+.sec .sec-n { position: absolute; left: 120px; top: 190px; display: grid; place-items: center; width: 150px; height: 150px; border-radius: 36px; background: #fff; color: var(--accent); font: 700 92px/1 var(--head); }
+.sec h2 { position: absolute; left: 120px; top: 410px; font: 700 116px/1.02 var(--head); letter-spacing: -.025em; }
+.sec .sec-d { position: absolute; left: 120px; top: 560px; font: 500 38px/1.35 var(--body); color: var(--accent-100); }
+.sec .chips { position: absolute; left: 120px; top: 670px; display: flex; gap: 16px; }
+.sec .chips li { padding: 14px 24px; border: 2px solid rgba(255, 255, 255, .4); border-radius: 999px; background: rgba(255, 255, 255, .12); font: 600 28px/1 var(--body); }
+.sec .foot { color: var(--accent-100); }
+.sec .foot .pg { background: rgba(255, 255, 255, .16); color: #fff; }
+
+/* ── Hai cột và hộp giải thích (như thẻ tổng quan ca trong app) ── */
+.two { display: grid; grid-template-columns: 1fr 620px; column-gap: 88px; align-items: start; }
+.why { padding: 36px 40px 40px; border-left: 6px solid var(--accent); border-radius: 12px; background: var(--accent-100); font: 500 38px/1.38 var(--body); }
+.why b { color: var(--accent-800); font-weight: 800; }
+
+/* ── Công nghệ: panel và thẻ kỹ năng ── */
+.stack { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+.stack section { padding: 28px 30px 30px; border: 2px solid var(--divider); border-radius: 20px; }
+.stack h3 { font: 700 32px/1.2 var(--head); }
+.tags { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 12px; }
+.tags li { padding: 10px 16px; border-radius: 10px; background: var(--surface); font: 600 26px/1.15 var(--body); }
+
+/* ── Sơ đồ pipeline như khung giám sát pipeline trong app ── */
+.diagram { position: absolute; left: 120px; right: 120px; top: 252px; height: 612px; border: 2px solid var(--divider); border-radius: 24px; background: var(--steel-100); }
+.pipeline { position: absolute; left: 18px; top: 20px; width: 1640px; height: 570px; overflow: visible; }
+.pipeline .edge { fill: none; stroke: var(--steel-800); stroke-width: 2.5; }
+.pipeline .edge--human { stroke: var(--terra); }
+.pipeline .edge--decision { stroke-dasharray: 10 8; }
+.pipeline #d-ah path { fill: var(--steel-800); }
+.pipeline #d-ah-hr path { fill: var(--terra); }
+.pipeline .node rect { fill: #fff; stroke: var(--divider); stroke-width: 2; rx: 16px; }
+.pipeline .node--human rect { fill: var(--terra-soft); stroke: var(--terra); }
+.pipeline text { text-anchor: middle; }
+.pipeline .node-name { font: 700 32px var(--head); fill: var(--ink); }
+.pipeline .node-desc { font: 500 24px var(--body); fill: var(--steel-800); }
+.pipeline .gate { fill: var(--accent); stroke: #fff; stroke-width: 3; }
+.pipeline .elabel { font: 600 24px var(--body); fill: var(--steel-800); }
+.pipeline .elabel--gate { font: 700 25px var(--body); fill: var(--accent-700); }
+.pipeline .elabel--start { text-anchor: start; }
+.caption { position: absolute; left: 120px; right: 120px; top: 890px; text-align: center; font: 500 28px/1.35 var(--body); color: var(--steel-800); }
+
+/* ── An toàn và cổng auto-reply như công tắc ở màn Cấu hình Gate ── */
+.gates { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+.gates section { padding: 30px 36px 32px; border: 2px solid var(--divider); border-radius: 22px; }
+.g-head { display: flex; justify-content: space-between; align-items: center; padding-bottom: 22px; border-bottom: 2px solid var(--steel-200); }
+.g-head h3 { margin-top: 10px; font: 800 46px/1 var(--body); }
+.toggle { display: flex; align-items: center; gap: 14px; font: 600 22px/1 var(--body); color: var(--steel-800); }
+.toggle::after { content: ""; flex: none; width: 88px; height: 48px; border-radius: 999px; background: radial-gradient(circle at 24px 24px, #fff 17px, transparent 18px) var(--steel-300, #D3DDE9); }
+.toggle.on::after { background: radial-gradient(circle at 64px 24px, #fff 17px, transparent 18px) var(--accent); }
+.gates dl { margin-top: 22px; }
+.gates dt { font: 600 23px/1.2 var(--body); color: var(--steel-800); }
+.gates dd { margin: 6px 0 18px; font: 600 32px/1.3 var(--body); }
+.gates dd:last-child { margin-bottom: 0; }
+.note { margin-top: 30px; padding: 22px 30px; border-left: 6px solid var(--accent); border-radius: 12px; background: var(--accent-100); font: 500 30px/1.38 var(--body); }
+.note b { color: var(--accent-800); font-weight: 800; }
+
+/* ── Số liệu như ô thống kê trên bảng điều hành ── */
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.stats > div { padding: 26px 30px 28px; border: 2px solid var(--divider); border-radius: 20px; }
+.stats .k { font: 700 20px/1.2 var(--body); letter-spacing: .12em; color: var(--steel-800); }
+.stats b { display: block; margin-top: 14px; font: 700 84px/1 var(--head); letter-spacing: -.02em; }
+.stats .s { margin-top: 12px; font: 500 24px/1.35 var(--body); color: var(--steel-800); }
+.stats .hl { border-color: var(--accent); background: var(--accent); color: #fff; }
+.stats .hl .k, .stats .hl .s { color: var(--accent-100); }
+.fine { margin-top: 24px; font: 500 24px/1.35 var(--body); color: var(--steel-800); }
+
+/* ── Bảng như danh sách trong app ── */
+.tbl-wrap { overflow: hidden; border: 2px solid var(--divider); border-radius: 20px; }
+.tbl { width: 100%; border-collapse: collapse; font: 500 31px/1.25 var(--body); }
+.tbl th { padding: 18px 30px; background: var(--steel-100); text-align: left; font: 700 24px/1.2 var(--body); color: var(--steel-800); }
+.tbl td { padding: 18px 30px; border-top: 2px solid var(--steel-200); }
+.tbl th:not(:first-child), .tbl td:not(:first-child) { width: 300px; text-align: right; font-variant-numeric: tabular-nums; }
+.tbl .best { color: var(--accent-700); font-weight: 800; }
+.tag { display: inline-block; margin-right: 12px; padding: 6px 12px; border-radius: 8px; background: var(--surface); color: var(--steel-800); font: 700 20px/1 var(--body); vertical-align: 4px; }
+
+/* ── Ảnh giao diện có chú dẫn ── */
+.shot { display: grid; grid-template-columns: 980px 1fr; column-gap: 64px; align-items: start; }
+.frame { position: relative; overflow: hidden; border: 2px solid var(--divider); border-radius: 20px; }
+.frame img { display: block; width: 976px; height: 659px; object-fit: cover; object-position: top left; }
+.pin { position: absolute; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: #fff; box-shadow: 0 0 0 4px #fff; font: 800 22px/1 var(--body); }
+.keys { counter-reset: k; }
+.keys li { position: relative; padding-left: 66px; counter-increment: k; }
+.keys li + li { margin-top: 32px; }
+.keys li::before { content: counter(k); position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: #fff; font: 800 22px/1 var(--body); }
+.keys b { display: block; font: 700 32px/1.2 var(--head); }
+.keys span { display: block; margin-top: 6px; font: 500 27px/1.38 var(--body); color: var(--steel-800); }
+
+/* ── Kết luận ── */
+.concl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+.concl section { padding: 30px 34px 34px; border: 2px solid var(--divider); border-radius: 20px; }
+.ic { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 14px; background: var(--accent-100); color: var(--accent); }
+.ic svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.concl h3 { margin-top: 20px; font: 700 36px/1.2 var(--head); }
+.concl .dots { margin-top: 18px; }
+
+/* ── Lời cảm ơn ── */
+.thanks .logos { position: absolute; left: 120px; top: 150px; display: flex; gap: 24px; }
+.thanks .logos .kma { display: grid; place-items: center; width: 120px; height: 120px; border-radius: 50%; background: #fff; }
+.thanks .logos .kma img { height: 92px; width: auto; }
+.thanks .logos .tys { width: 120px; height: 120px; border-radius: 28px; box-shadow: 0 0 0 4px #fff; }
+.thanks h2 { position: absolute; left: 120px; top: 360px; font: 700 104px/1.06 var(--head); letter-spacing: -.025em; }
+.thanks .ask { position: absolute; left: 120px; top: 620px; font: 500 38px/1.35 var(--body); color: var(--accent-100); }
+.thanks .who { position: absolute; left: 120px; bottom: 64px; font: 700 26px/1 var(--body); color: var(--accent-100); }
+
+/* Playfair Display mặc định dùng chữ số kiểu cũ (lệch dòng); shorthand font: ở trên reset thuộc tính này nên đặt lại ở cuối. */
+.title, .mark, .cover h1, .agenda .n, .agenda b, .sec .sec-n, .sec h2, .stack h3, .pipeline .node-name, .stats b, .keys b, .concl h3, .thanks h2 { font-variant-numeric: lining-nums; }
+</style>
+</head>
+<body>
+<main class="deck">
+
+  <!-- 1 · Bìa -->
+  <section class="slide cover">
+    <div class="brandrow">
+      <div class="inst">
+        <img src="assets/logo-kma.png" alt="Logo Học viện Kỹ thuật Mật mã">
+        <p>Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      </div>
+      <div class="mark"><img src="assets/thriftyourstyle.png" alt="">ThriftYourStyle</div>
+    </div>
+    <p class="eyebrow">ĐỒ ÁN TỐT NGHIỆP</p>
+    <h1>Xây dựng hệ thống chăm sóc khách hàng<br>tự trị sử dụng Multi-Agent AI</h1>
+    <dl class="people">
+      <div><dt>Sinh viên thực hiện</dt><dd>Bùi Anh Tuấn – CT060144</dd></div>
+      <div><dt>Người hướng dẫn</dt><dd>ThS. Vũ Thị Hòa, ThS. Cao Thanh Vinh</dd></div>
+      <div><dt>Địa điểm</dt><dd>Hà Nội, 2026</dd></div>
+    </dl>
+    <div class="device"><img src="assets/cskh-hoi-thoai.png" alt="Bảng điều hành CSKH của ThriftYourStyle: danh sách hội thoại và khung chat"></div>
+  </section>
+
+  <!-- 2 · Nội dung trình bày -->
+  <section class="slide">
+    <header class="top">
+      <div><p class="eyebrow">MỞ ĐẦU</p><h2 class="title">Nội dung trình bày</h2></div>
+      <div class="mark"><img src="assets/thriftyourstyle.png" alt="">ThriftYourStyle</div>
+    </header>
+    <div class="body">
+      <ol class="agenda">
+        <li><span class="n">1</span><b>Tổng quan đề tài</b><span>Bài toán, phạm vi, cơ sở lý thuyết và công nghệ</span></li>
+        <li><span class="n">2</span><b>Phân tích và thiết kế</b><span>Kiến trúc, pipeline bốn tác tử, cơ chế an toàn, cơ sở dữ liệu</span></li>
+        <li><span class="n">3</span><b>Thực nghiệm và triển khai</b><span>Thách thức kỹ thuật, giao diện, kiểm thử và đo đạc</span></li>
+        <li><span class="n">4</span><b>Kết luận</b><span>Kết quả, hạn chế và hướng phát triển</span></li>
+      </ol>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – CT060144</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 3 · Chương mục -->
+  <section class="slide sec">
+    <div class="sec-n">1</div>
+    <h2>Tổng quan đề tài</h2>
+    <p class="sec-d">Bài toán CSKH cho cửa hàng thời trang trực tuyến và hướng tiếp cận của đồ án</p>
+    <ul class="chips"><li>Bài toán đặt ra</li><li>Công nghệ và hạ tầng sử dụng</li></ul>
+    <footer class="foot"><span>Bùi Anh Tuấn – CT060144</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 4 · Bài toán -->
+  <section class="slide">
+    <header class="top">
+      <div><p class="eyebrow">TỔNG QUAN ĐỀ TÀI</p><h2 class="title">CSKH thủ công: chậm và thiếu nhất quán</h2></div>
+      <div class="mark"><img src="assets/thriftyourstyle.png" alt="">ThriftYourStyle</div>
+    </header>
+    <div class="body two">
+      <ul class="dots">
+        <li>Phần lớn tin nhắn lặp lại quanh giá, size, vận chuyển, đơn hàng, đổi trả; câu trả lời đã có trong chính sách.</li>
+        <li>Tin dồn vào buổi tối, cuối tuần; chất lượng trả lời không đồng đều giữa các nhân viên và khó truy vết.</li>
+        <li>LLM hiểu ngôn ngữ tốt nhưng có thể “ảo giác”: bịa chính sách, mã giảm giá với giọng rất chắc chắn.</li>
+      </ul>
+      <p class="why"><b>Hướng tiếp cận:</b> tự trả lời ca đủ căn cứ theo quy trình cố định; không chắc chắn thì chuyển cho nhân viên.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – CT060144</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 5 · Công nghệ -->
+  <section class="slide">
+    <header class="top">
+      <div><p class="eyebrow">TỔNG QUAN ĐỀ TÀI</p><h2 class="title">Công nghệ và hạ tầng sử dụng</h2></div>
+      <div class="mark"><img src="assets/thriftyourstyle.png" alt="">ThriftYourStyle</div>
+    </header>
+    <div class="body stack">
+      <section><h3>Back-end</h3><ul class="tags"><li>Python 3.12</li><li>FastAPI</li><li>SQLAlchemy 2</li><li>Alembic</li><li>Pydantic v2</li></ul></section>
+      <section><h3>Multi-agent</h3><ul class="tags"><li>LangGraph</li><li>Bốn tác tử, cạnh cố định</li></ul></section>
+      <section><h3>Mô hình ngôn ngữ</h3><ul class="tags"><li>gpt-4o-mini</li><li>text-embedding-3-small</li></ul></section>
+      <section><h3>Dữ liệu</h3><ul class="tags"><li>PostgreSQL (Neon)</li><li>Qdrant Cloud</li></ul></section>
+      <section><h3>Front-end</h3><ul class="tags"><li>Next.js 14</li><li>Tailwind CSS</li><li>TanStack Query</li><li>PWA</li></ul></section>
+      <section><h3>Realtime, quan sát</h3><ul class="tags"><li>WebSocket</li><li>Langfuse</li></ul></section>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – CT060144</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 6 · Pipeline -->
+  <section class="slide">
+    <header class="top">
+      <div><p class="eyebrow">PHÂN TÍCH VÀ THIẾT KẾ</p><h2 class="title">Pipeline bốn tác tử có trình tự cố định</h2></div>
+      <div class="mark"><img src="assets/thriftyourstyle.png" alt="">ThriftYourStyle</div>
+    </header>
+    <div class="diagram">
+      <svg class="pipeline" viewBox="0 50 1640 570" role="img" aria-label="Pipeline gồm intent, knowledge, decision, response chạy theo thứ tự cố định; response rẽ ba kết cục: gửi thẳng khi cổng auto-reply bật, duyệt nháp khi cổng tắt, chuyển người khi có cờ chặn; thiếu mã đơn thì hỏi lại khách">
+        <defs>
+          <marker id="d-ah" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L12,6 L0,12 z"/></marker>
+          <marker id="d-ah-hr" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L12,6 L0,12 z"/></marker>
+        </defs>
+        <path class="edge" d="M175,124 V196" marker-end="url(#d-ah)"/>
+        <path class="edge" d="M315,270 H461" marker-end="url(#d-ah)"/>
+        <path class="edge" d="M745,270 H891" marker-end="url(#d-ah)"/>
+        <path class="edge" d="M1175,270 H1321" marker-end="url(#d-ah)"/>
+        <path class="edge edge--decision" d="M1465,200 V105 H276" marker-end="url(#d-ah)"/>
+        <path class="edge" d="M1465,340 V496" marker-end="url(#d-ah)"/>
+        <path class="edge edge--human edge--decision" d="M1439,440 H1035 V496" marker-end="url(#d-ah-hr)"/>
+        <path class="edge edge--human" d="M1395,340 V392 H605 V496" marker-end="url(#d-ah-hr)"/>
+        <polygon class="gate" points="1465,414 1491,440 1465,466 1439,440"/>
+        <g class="node"><rect x="35" y="200" width="280" height="140"/><text class="node-name" x="175" y="262">intent</text><text class="node-desc" x="175" y="305">Phân loại ý định</text></g>
+        <g class="node"><rect x="465" y="200" width="280" height="140"/><text class="node-name" x="605" y="262">knowledge</text><text class="node-desc" x="605" y="305">RAG, tra cứu đơn</text></g>
+        <g class="node"><rect x="895" y="200" width="280" height="140"/><text class="node-name" x="1035" y="262">decision</text><text class="node-desc" x="1035" y="305">Luật tất định</text></g>
+        <g class="node"><rect x="1325" y="200" width="280" height="140"/><text class="node-name" x="1465" y="262">response</text><text class="node-desc" x="1465" y="305">Phát ngôn duy nhất</text></g>
+        <g class="node node--human"><rect x="455" y="500" width="300" height="110"/><text class="node-name" x="605" y="548">Chuyển người</text><text class="node-desc" x="605" y="586">IN_HUMAN_QUEUE</text></g>
+        <g class="node node--human"><rect x="885" y="500" width="300" height="110"/><text class="node-name" x="1035" y="548">Duyệt nháp</text><text class="node-desc" x="1035" y="586">PENDING_APPROVAL</text></g>
+        <g class="node"><rect x="1315" y="500" width="300" height="110"/><text class="node-name" x="1465" y="548">Gửi thẳng</text><text class="node-desc" x="1465" y="586">REPLIED</text></g>
+        <text class="elabel" x="175" y="114">Tin nhắn khách</text>
+        <text class="elabel" x="870" y="91">thiếu mã đơn: hỏi lại, chờ khách gửi mã</text>
+        <text class="elabel" x="1000" y="380">có cờ chặn</text>
+        <text class="elabel elabel--gate elabel--start" x="1504" y="448">auto-reply</text>
+        <text class="elabel elabel--start" x="1480" y="490">bật</text>
+        <text class="elabel" x="1240" y="474">tắt</text>
+      </svg>
+    </div>
+    <p class="caption">Cổng auto-reply chỉ áp dụng cho ca đã an toàn; mọi ca có cờ chặn luôn chuyển cho nhân viên.</p>
+    <footer class="foot"><span>Bùi Anh Tuấn – CT060144</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 7 · An toàn và cấu hình -->
+  <section class="slide">
+    <header class="top">
+      <div><p class="eyebrow">PHÂN TÍCH VÀ THIẾT KẾ</p><h2 class="title">Hai lớp quyết định: an toàn và cấu hình</h2></div>
+      <div class="mark"><img src="assets/thriftyourstyle.png" alt="">ThriftYourStyle</div>
+    </header>
+    <div class="body">
+      <div class="gates">
+        <section>
+          <div class="g-head"><div><p class="eyebrow">TÁC TỬ 3 · LUẬT TẤT ĐỊNH</p><h3>Cơ chế an toàn</h3></div><span class="toggle on">Luôn bật</span></div>
+          <dl>
+            <dt>Áp dụng khi</dt><dd>Có ít nhất một trong 8 cờ chặn</dd>
+            <dt>Kết quả</dt><dd>Chuyển người, kèm EscalationCard</dd>
+          </dl>
+        </section>
+        <section>
+          <div class="g-head"><div><p class="eyebrow">ADMIN CẤU HÌNH THEO Ý ĐỊNH</p><h3>auto-reply</h3></div><span class="toggle on">Mặc định bật</span></div>
+          <dl>
+            <dt>Áp dụng khi</dt><dd>Ca auto_reply, không có cờ chặn</dd>
+            <dt>Kết quả</dt><dd>Bật: gửi thẳng. Tắt: giữ nháp chờ duyệt; mặc định tắt cho refund, exchange, complaint</dd>
+          </dl>
+        </section>
+      </div>
+      <p class="note"><b>Không ghi đè được:</b> cổng chỉ chọn giữa gửi ngay và chờ duyệt cho ca đã an toàn; ca có cờ chặn luôn chuyển cho nhân viên.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – CT060144</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 8 · Kết quả -->
+  <section class="slide">
+    <header class="top">
+      <div><p class="eyebrow">THỰC NGHIỆM VÀ TRIỂN KHAI</p><h2 class="title">Kết quả kiểm thử và đo</h2></div>
+      <div class="mark"><img src="assets/thriftyourstyle.png" alt="">ThriftYourStyle</div>
+    </header>
+    <div class="body">
+      <div class="stats">
+        <div class="hl"><p class="k">BỘ 20 CÂU THỰC TẾ</p><b>90%</b><p class="s">lượt xử lý không cần nhân viên; mục tiêu ≥ 70%</p></div>
+        <div><p class="k">CHUYỂN NHÂN VIÊN</p><b>5%</b><p class="s">1/20 câu, ngoài phạm vi; mục tiêu &lt; 30%</p></div>
+        <div><p class="k">CHUYỂN NGƯỜI KHÔNG CẦN</p><b>3%</b><p class="s">1/32 câu ở ngưỡng truy hồi 0,40; mục tiêu ≤ 5%</p></div>
+        <div><p class="k">DỰ PHÒNG OAN</p><b>0%</b><p class="s">0/20 câu; không bịa mã giảm giá hay chính sách</p></div>
+        <div><p class="k">KIỂM THỬ TỰ ĐỘNG</p><b>437</b><p class="s">trường hợp từ 387 hàm, chạy ngoại tuyến</p></div>
+        <div><p class="k">100 HỘI THOẠI ĐỒNG THỜI</p><b>100/100</b><p class="s">lượt không lỗi; p95 9,7 s, chưa đạt NFR-1</p></div>
+      </div>
+      <p class="fine">Đo trên hạ tầng thật (Neon, Qdrant Cloud, OpenAI gpt-4o-mini); kho tri thức 15 tài liệu, 95 điểm vector.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – CT060144</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 9 · Bảng số liệu -->
+  <section class="slide">
+    <header class="top">
+      <div><p class="eyebrow">THỰC NGHIỆM VÀ TRIỂN KHAI</p><h2 class="title">Độ trễ theo số hội thoại đồng thời</h2></div>
+      <div class="mark"><img src="assets/thriftyourstyle.png" alt="">ThriftYourStyle</div>
+    </header>
+    <div class="body">
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead><tr><th>Số hội thoại đồng thời</th><th>Trung bình (s)</th><th>p95 (s)</th><th>≤ 5 s (%)</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>5,86</td><td>5,86</td><td>0</td></tr>
+            <tr><td>10</td><td>5,13</td><td>5,65</td><td>40</td></tr>
+            <tr><td>25</td><td>5,05</td><td>5,48</td><td>48</td></tr>
+            <tr><td>50</td><td>6,25</td><td>6,60</td><td>0</td></tr>
+            <tr><td>100</td><td>9,00</td><td>9,71</td><td>0</td></tr>
+            <tr><td><span class="tag">đạt NFR-1</span>50, chỉ lượt xã giao</td><td class="best">3,82</td><td class="best">4,41</td><td class="best">100</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="fine">Một tiến trình uvicorn, hạ tầng gói miễn phí, đo phía máy chủ. NFR-1 yêu cầu p95 ≤ 5 s.</p>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – CT060144</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 10 · Giao diện -->
+  <section class="slide">
+    <header class="top">
+      <div><p class="eyebrow">THỰC NGHIỆM VÀ TRIỂN KHAI</p><h2 class="title">Giao diện Admin: EscalationCard</h2></div>
+      <div class="mark"><img src="assets/thriftyourstyle.png" alt="">ThriftYourStyle</div>
+    </header>
+    <div class="body shot">
+      <div class="frame">
+        <img src="assets/cskh-escalation-card.png" alt="Màn hình chi tiết hội thoại với thẻ tổng quan ca (EscalationCard)">
+        <span class="pin" style="left: 282px; top: 153px">1</span>
+        <span class="pin" style="left: 660px; top: 276px">2</span>
+        <span class="pin" style="left: 130px; top: 552px">3</span>
+      </div>
+      <ol class="keys">
+        <li><b>Lý do chuyển người</b><span>Cờ chặn cụ thể kèm mức ưu tiên, không đoán từ câu chữ của AI</span></li>
+        <li><b>Tri thức truy hồi</b><span>Tối đa 3 nguồn kèm điểm cosine và trích đoạn</span></li>
+        <li><b>Tiếp quản</b><span>AI tạm dừng; Admin chat trực tiếp, mọi hành động ghi audit_log</span></li>
+      </ol>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – CT060144</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 11 · Kết luận -->
+  <section class="slide">
+    <header class="top">
+      <div><p class="eyebrow">KẾT LUẬN</p><h2 class="title">Kết luận</h2></div>
+      <div class="mark"><img src="assets/thriftyourstyle.png" alt="">ThriftYourStyle</div>
+    </header>
+    <div class="body concl">
+      <section>
+        <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+        <h3>Kết quả đạt được</h3>
+        <ul class="dots sm">
+          <li>Pipeline bốn tác tử cố định chạy thật trên Neon, Qdrant Cloud, OpenAI</li>
+          <li>Đạt KPI chất lượng: 90% tự xử lý, 5% chuyển người, 0% dự phòng oan</li>
+          <li>HITL đầy đủ: EscalationCard, duyệt nháp, cổng theo ý định, realtime</li>
+        </ul>
+      </section>
+      <section>
+        <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17.2v.1"/></svg></span>
+        <h3>Hạn chế</h3>
+        <ul class="dots sm">
+          <li>p95 chưa ≤ 5 s khi tải tăng: 6,6 s ở 50 và 9,7 s ở 100 hội thoại</li>
+          <li>Chạy một tiến trình; khoá lượt, hub realtime ở bộ nhớ</li>
+          <li>Tin nhiều ý định vẫn chuyển người; còn suy diễn “không có”</li>
+        </ul>
+      </section>
+      <section>
+        <span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7"/><path d="M9 7h8v8"/></svg></span>
+        <h3>Hướng phát triển</h3>
+        <ul class="dots sm">
+          <li>Lọc đoạn điểm thấp, xếp hạng lại, viết lại câu hỏi nối tiếp</li>
+          <li>Đưa dữ liệu phối hợp ra kho dùng chung để chạy nhiều tiến trình</li>
+          <li>Vòng học bán tự động: đề xuất bổ sung tri thức, Admin duyệt</li>
+        </ul>
+      </section>
+    </div>
+    <footer class="foot"><span>Bùi Anh Tuấn – CT060144</span><span class="pg"><span data-num></span> / <span data-total></span></span></footer>
+  </section>
+
+  <!-- 12 · Cảm ơn -->
+  <section class="slide sec thanks">
+    <div class="logos">
+      <span class="kma"><img src="assets/logo-kma.png" alt="Logo Học viện Kỹ thuật Mật mã"></span>
+      <img class="tys" src="assets/thriftyourstyle.png" alt="Logo ThriftYourStyle">
+    </div>
+    <h2>Em xin cảm ơn thầy cô<br>đã lắng nghe</h2>
+    <p class="ask">Rất mong nhận được câu hỏi và góp ý của hội đồng</p>
+    <p class="who">Bùi Anh Tuấn – CT060144</p>
+  </section>
+
+</main>
+<script src="deck.js"></script>
+</body>
+</html>

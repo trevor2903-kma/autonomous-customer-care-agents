@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chọn mẫu slide</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* Trang chọn mẫu: đặt bốn mẫu cạnh nhau, mỗi ô xem trước là chính trang mẫu thu nhỏ (iframe ?embed). */
+:root {
+  --bg: #ECEEF2;
+  --card: #FFFFFF;
+  --ink: #141A24;
+  --muted: #586172;
+  --line: #D5DAE2;
+  --focus: #1F6FEB;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 16px/1.55 "Be Vietnam Pro", system-ui, "Segoe UI", sans-serif; }
+.wrap { max-width: 1480px; margin: 0 auto; padding: 44px 32px 72px; }
+
+.intro h1 { margin: 0; font-size: 30px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
+.intro p { margin: 10px 0 0; max-width: 72ch; color: var(--muted); }
+.keys { margin: 14px 0 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 14px; color: var(--muted); }
+kbd { display: inline-block; min-width: 26px; margin-right: 6px; padding: 1px 7px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; background: #fff; color: var(--ink); font: 600 13px/1.5 inherit; text-align: center; }
+
+.tpl { margin-top: 28px; padding: 26px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); }
+.tpl-head { display: grid; grid-template-columns: 1fr auto; gap: 16px 32px; align-items: start; }
+.tpl h2 { margin: 0; display: flex; align-items: center; gap: 12px; font-size: 22px; line-height: 1.25; }
+.letter { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; background: var(--ink); color: #fff; font-size: 17px; }
+.desc { margin: 10px 0 0; max-width: 80ch; }
+.facts { margin: 14px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 15px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; }
+.swatches { display: flex; gap: 6px; align-items: center; }
+.swatches span { width: 22px; height: 22px; border-radius: 6px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .16); }
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
+.btn { display: inline-flex; align-items: center; height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.btn:hover { border-color: var(--ink); }
+.btn.primary { border-color: var(--ink); background: var(--ink); color: #fff; }
+.btn:focus-visible, .thumb:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+.thumbs { margin-top: 22px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.thumb { position: relative; display: block; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 10px; box-shadow: 0 0 0 1px var(--line); background: #fff; }
+.thumb.big { grid-column: span 2; grid-row: span 2; aspect-ratio: auto; }
+.thumb:hover { box-shadow: 0 0 0 2px var(--ink); }
+.thumb iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+
+.notes { margin: 28px 0 0; padding: 0 0 0 18px; font-size: 14px; color: var(--muted); }
+.notes li + li { margin-top: 4px; }
+
+@media (max-width: 900px) {
+  .wrap { padding: 28px 16px 48px; }
+  .tpl { padding: 18px; }
+  .tpl-head { grid-template-columns: 1fr; }
+  .actions { justify-content: flex-start; }
+  .thumbs { grid-template-columns: 1fr 1fr; }
+  .thumb.big { grid-column: span 2; grid-row: auto; aspect-ratio: 16 / 9; }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+
+  <header class="intro">
+    <h1>Chọn mẫu slide bảo vệ đồ án</h1>
+    <p>Đồ án “Xây dựng hệ thống chăm sóc khách hàng tự trị sử dụng Multi-Agent AI”. Mẫu A đã chốt, bản bảo vệ 18 slide; B, C, D giữ bản 12 slide để so phong cách. Bấm vào một ảnh để mở mẫu ở đúng slide đó trong tab mới.</p>
+    <ul class="keys">
+      <li><kbd>←</kbd><kbd>→</kbd>chuyển slide</li>
+      <li><kbd>F</kbd>toàn màn hình</li>
+      <li><kbd>G</kbd>xem lưới tất cả slide</li>
+      <li><kbd>Ctrl</kbd><kbd>P</kbd>lưu ra PDF</li>
+    </ul>
+  </header>
+
+  <!-- A -->
+  <section class="tpl" aria-labelledby="tpl-a">
+    <div class="tpl-head">
+      <div>
+        <h2 id="tpl-a"><span class="letter">A</span>Học thuật · đã chốt, 18 slide</h2>
+        <p class="desc">Bám bìa báo cáo in: khung viền kép, logo Học viện, tiêu đề chữ có chân, bảng kẻ ô đủ như bản mẫu của Khoa. Đỏ Học viện chỉ dùng cho dấu cấu trúc.</p>
+        <dl class="facts">
+          <dt>Hợp khi</dt><dd>Hội đồng chuộng lối trình bày truyền thống; an toàn nhất trên mọi máy chiếu.</dd>
+          <dt>Đổi lại</dt><dd>Ít điểm nhấn thị giác, dễ giống slide của các đồ án khác.</dd>
+          <dt>Font</dt><dd>Source Serif 4, Source Sans 3</dd>
+          <dt>Màu</dt><dd class="swatches"><span style="background:#16243B" title="#16243B"></span><span style="background:#A3182C" title="#A3182C"></span><span style="background:#B08A33" title="#B08A33"></span><span style="background:#F3F5F8" title="#F3F5F8"></span></dd>
+        </dl>
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="cskh-a-hoc-thuat.html#1" target="_blank" rel="noopener">Trình chiếu</a>
+        <a class="btn" href="cskh-a-hoc-thuat.html?overview" target="_blank" rel="noopener">Xem lưới 18 slide</a>
+      </div>
+    </div>
+    <div class="thumbs">
+      <a class="thumb big" href="cskh-a-hoc-thuat.html#1" target="_blank" rel="noopener" aria-label="Mẫu A, slide 1: bìa"><iframe src="cskh-a-hoc-thuat.html?embed#1" title="Mẫu A, slide 1" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-a-hoc-thuat.html#2" target="_blank" rel="noopener" aria-label="Mẫu A, slide 2: nội dung"><iframe src="cskh-a-hoc-thuat.html?embed#2" title="Mẫu A, slide 2" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-a-hoc-thuat.html#6" target="_blank" rel="noopener" aria-label="Mẫu A, slide 6: pipeline"><iframe src="cskh-a-hoc-thuat.html?embed#6" title="Mẫu A, slide 6" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-a-hoc-thuat.html#11" target="_blank" rel="noopener" aria-label="Mẫu A, slide 11: quét ngưỡng"><iframe src="cskh-a-hoc-thuat.html?embed#11" title="Mẫu A, slide 11" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-a-hoc-thuat.html#13" target="_blank" rel="noopener" aria-label="Mẫu A, slide 13: ảnh giao diện"><iframe src="cskh-a-hoc-thuat.html?embed#13" title="Mẫu A, slide 13" tabindex="-1"></iframe></a>
+    </div>
+  </section>
+
+  <!-- B -->
+  <section class="tpl" aria-labelledby="tpl-b">
+    <div class="tpl-head">
+      <div>
+        <h2 id="tpl-b"><span class="letter">B</span>Sơ đồ tuyến</h2>
+        <p class="desc">Pipeline vẽ như một tuyến tàu: mỗi tác tử là một ga, nhánh xanh lá là gửi thẳng tới khách, nhánh vàng là đường về nhân viên CSKH. Thanh tuyến ở chân slide cho hội đồng biết bài đang ở phần nào. Mỗi màu tuyến mang đúng một nghĩa.</p>
+        <dl class="facts">
+          <dt>Hợp khi</dt><dd>Muốn hội đồng nhớ ngay kiến trúc pipeline cố định, không supervisor.</dd>
+          <dt>Đổi lại</dt><dd>Phong cách lạ với buổi bảo vệ; phải giữ kỷ luật màu khi thêm slide.</dd>
+          <dt>Font</dt><dd>Barlow</dd>
+          <dt>Màu</dt><dd class="swatches"><span style="background:#0061C9" title="#0061C9"></span><span style="background:#F2A20C" title="#F2A20C"></span><span style="background:#DC2A1E" title="#DC2A1E"></span><span style="background:#00924A" title="#00924A"></span><span style="background:#000000" title="#000000"></span></dd>
+        </dl>
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="cskh-b-so-do-tuyen.html#1" target="_blank" rel="noopener">Trình chiếu</a>
+        <a class="btn" href="cskh-b-so-do-tuyen.html?overview" target="_blank" rel="noopener">Xem lưới 12 slide</a>
+      </div>
+    </div>
+    <div class="thumbs">
+      <a class="thumb big" href="cskh-b-so-do-tuyen.html#1" target="_blank" rel="noopener" aria-label="Mẫu B, slide 1: bìa"><iframe src="cskh-b-so-do-tuyen.html?embed#1" title="Mẫu B, slide 1" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-b-so-do-tuyen.html#3" target="_blank" rel="noopener" aria-label="Mẫu B, slide 3: chương mục"><iframe src="cskh-b-so-do-tuyen.html?embed#3" title="Mẫu B, slide 3" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-b-so-do-tuyen.html#6" target="_blank" rel="noopener" aria-label="Mẫu B, slide 6: pipeline"><iframe src="cskh-b-so-do-tuyen.html?embed#6" title="Mẫu B, slide 6" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-b-so-do-tuyen.html#8" target="_blank" rel="noopener" aria-label="Mẫu B, slide 8: số liệu"><iframe src="cskh-b-so-do-tuyen.html?embed#8" title="Mẫu B, slide 8" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-b-so-do-tuyen.html#10" target="_blank" rel="noopener" aria-label="Mẫu B, slide 10: ảnh giao diện"><iframe src="cskh-b-so-do-tuyen.html?embed#10" title="Mẫu B, slide 10" tabindex="-1"></iframe></a>
+    </div>
+  </section>
+
+  <!-- C -->
+  <section class="tpl" aria-labelledby="tpl-c">
+    <div class="tpl-head">
+      <div>
+        <h2 id="tpl-c"><span class="letter">C</span>Phòng điều hành</h2>
+        <p class="desc">Nền tối navy như màn giám sát pipeline của chính hệ thống. Tên tác tử và trạng thái viết kiểu mã; màu trạng thái có nghĩa: xanh lá xong hoặc gửi thẳng, vàng chờ nhân viên CSKH.</p>
+        <dl class="facts">
+          <dt>Hợp khi</dt><dd>Phòng bảo vệ tối hoặc chiếu bằng màn hình LED; muốn nhấn chất kỹ thuật.</dd>
+          <dt>Đổi lại</dt><dd>Máy chiếu yếu trong phòng sáng dễ làm nền tối bạc màu, chữ mảnh khó đọc.</dd>
+          <dt>Font</dt><dd>IBM Plex Sans, IBM Plex Mono</dd>
+          <dt>Màu</dt><dd class="swatches"><span style="background:#0F1B2D" title="#0F1B2D"></span><span style="background:#6AA8FF" title="#6AA8FF"></span><span style="background:#F3B54A" title="#F3B54A"></span><span style="background:#52D49A" title="#52D49A"></span></dd>
+        </dl>
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="cskh-c-phong-dieu-hanh.html#1" target="_blank" rel="noopener">Trình chiếu</a>
+        <a class="btn" href="cskh-c-phong-dieu-hanh.html?overview" target="_blank" rel="noopener">Xem lưới 12 slide</a>
+      </div>
+    </div>
+    <div class="thumbs">
+      <a class="thumb big" href="cskh-c-phong-dieu-hanh.html#1" target="_blank" rel="noopener" aria-label="Mẫu C, slide 1: bìa"><iframe src="cskh-c-phong-dieu-hanh.html?embed#1" title="Mẫu C, slide 1" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-c-phong-dieu-hanh.html#3" target="_blank" rel="noopener" aria-label="Mẫu C, slide 3: chương mục"><iframe src="cskh-c-phong-dieu-hanh.html?embed#3" title="Mẫu C, slide 3" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-c-phong-dieu-hanh.html#6" target="_blank" rel="noopener" aria-label="Mẫu C, slide 6: pipeline"><iframe src="cskh-c-phong-dieu-hanh.html?embed#6" title="Mẫu C, slide 6" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-c-phong-dieu-hanh.html#8" target="_blank" rel="noopener" aria-label="Mẫu C, slide 8: số liệu"><iframe src="cskh-c-phong-dieu-hanh.html?embed#8" title="Mẫu C, slide 8" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-c-phong-dieu-hanh.html#10" target="_blank" rel="noopener" aria-label="Mẫu C, slide 10: ảnh giao diện"><iframe src="cskh-c-phong-dieu-hanh.html?embed#10" title="Mẫu C, slide 10" tabindex="-1"></iframe></a>
+    </div>
+  </section>
+
+  <!-- D -->
+  <section class="tpl" aria-labelledby="tpl-d">
+    <div class="tpl-head">
+      <div>
+        <h2 id="tpl-d"><span class="letter">D</span>ThriftYourStyle</h2>
+        <p class="desc">Dùng đúng hệ màu và font của giao diện ThriftYourStyle (nền giấy, mực nâu đen, nhấn olive, đất nung cho ca chờ nhân viên; Playfair Display và Be Vietnam Pro), ảnh chụp lấy từ báo cáo. Khi chuyển sang demo, slide và sản phẩm liền một mạch.</p>
+        <dl class="facts">
+          <dt>Hợp khi</dt><dd>Phần demo là trọng tâm của buổi bảo vệ.</dd>
+          <dt>Đổi lại</dt><dd>Dễ bị xem như slide giới thiệu sản phẩm hơn là báo cáo đồ án.</dd>
+          <dt>Font</dt><dd>Playfair Display, Be Vietnam Pro</dd>
+          <dt>Màu</dt><dd class="swatches"><span style="background:#FBFAF7" title="#FBFAF7"></span><span style="background:#F4F2EC" title="#F4F2EC"></span><span style="background:#211F1B" title="#211F1B"></span><span style="background:#6B7A4F" title="#6B7A4F"></span><span style="background:#B25B3C" title="#B25B3C"></span></dd>
+        </dl>
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="cskh-d-thriftyourstyle.html#1" target="_blank" rel="noopener">Trình chiếu</a>
+        <a class="btn" href="cskh-d-thriftyourstyle.html?overview" target="_blank" rel="noopener">Xem lưới 12 slide</a>
+      </div>
+    </div>
+    <div class="thumbs">
+      <a class="thumb big" href="cskh-d-thriftyourstyle.html#1" target="_blank" rel="noopener" aria-label="Mẫu D, slide 1: bìa"><iframe src="cskh-d-thriftyourstyle.html?embed#1" title="Mẫu D, slide 1" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-d-thriftyourstyle.html#3" target="_blank" rel="noopener" aria-label="Mẫu D, slide 3: chương mục"><iframe src="cskh-d-thriftyourstyle.html?embed#3" title="Mẫu D, slide 3" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-d-thriftyourstyle.html#6" target="_blank" rel="noopener" aria-label="Mẫu D, slide 6: pipeline"><iframe src="cskh-d-thriftyourstyle.html?embed#6" title="Mẫu D, slide 6" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-d-thriftyourstyle.html#8" target="_blank" rel="noopener" aria-label="Mẫu D, slide 8: số liệu"><iframe src="cskh-d-thriftyourstyle.html?embed#8" title="Mẫu D, slide 8" tabindex="-1"></iframe></a>
+      <a class="thumb" href="cskh-d-thriftyourstyle.html#10" target="_blank" rel="noopener" aria-label="Mẫu D, slide 10: ảnh giao diện"><iframe src="cskh-d-thriftyourstyle.html?embed#10" title="Mẫu D, slide 10" tabindex="-1"></iframe></a>
+    </div>
+  </section>
+
+  <ul class="notes">
+    <li>Font tải từ Google Fonts nên lần mở đầu cần có mạng. Bản trình chiếu chính thức sẽ nhúng font để chạy được cả khi phòng bảo vệ không có mạng.</li>
+    <li>Ảnh giao diện lấy từ báo cáo: Hình 3.5 (danh sách hội thoại) và Hình 3.6 (chi tiết hội thoại với EscalationCard).</li>
+  </ul>
+
+</main>
+</body>
+</html>
