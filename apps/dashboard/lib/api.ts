@@ -80,6 +80,13 @@ export function setToken(_token: string): void {}
 /** @deprecated Không còn lưu token ở localStorage */
 export function clearToken(): void {}
 
+// Phiên hết hạn THẬT (401 mà refresh cũng hỏng) → báo AuthProvider đưa về /login. Handler trả true = đã nhận xử lý
+// (đang có phiên) → `req` KHÔNG trả 401 cho nơi gọi; false = chưa từng đăng nhập (vd dò /me lúc tải trang) → 401 như cũ.
+let sessionExpiredHandler: (() => boolean) | null = null;
+export function onSessionExpired(handler: (() => boolean) | null): void {
+  sessionExpiredHandler = handler;
+}
+
 // Wrapper fetch: prepend API_BASE + credentials: "include" + no-store + transparent 401 refresh
 async function req(path: string, init: RequestInit = {}): Promise<Response> {
   let res = await fetch(`${getApiBase()}${path}`, {
@@ -105,6 +112,9 @@ async function req(path: string, init: RequestInit = {}): Promise<Response> {
         headers: { ...(init.headers ?? {}) },
       });
     }
+    // Promise treo có chủ đích: nơi gọi không bao giờ nhận 401 để biến thành dòng lỗi / toast — trang bị gỡ khi
+    // điều hướng về /login nên không còn ai chờ.
+    if (res.status === 401 && sessionExpiredHandler?.()) return new Promise<Response>(() => {});
   }
 
   return res;

@@ -4,11 +4,13 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { afterLoginPath } from "@/lib/authRedirect";
 
 type CustomerMode = "login" | "register";
 
+// Trang đang mở trước khi bị đưa về /login (RequireAuth gắn `?next=`) → quay lại đó; không có / khác vai → trang theo vai.
 function routeFor(role: string): string {
-  return role === "admin" ? "/admin" : "/chat";
+  return afterLoginPath(new URLSearchParams(window.location.search).get("next"), role);
 }
 
 export default function LoginPage() {
