@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import type { AdminConversation } from "shared-types";
 import {
@@ -14,6 +14,7 @@ import {
   takeoverConversation,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { isCoarsePointer, isSendKey } from "@/lib/chatInput";
 import { dayLabel, startsNewDay } from "@/lib/dayDivider";
 import {
   type AdminMsg,
@@ -76,6 +77,9 @@ const NOT_ASSIGNED_NOTICE =
 
 // Còn cách đáy tối đa 80px vẫn được xem là đang theo dõi tin mới nhất.
 const NEAR_BOTTOM_PX = 80;
+
+// Ô trả lời: ~5 dòng (14.5px × leading 1.5) + padding dọc → vượt thì ô tự cuộn thay vì nở tiếp.
+const MAX_REPLY_HEIGHT_PX = 126;
 
 // URL socket ca: gắn token WS ngắn hạn lấy MỚI mỗi lần nối (iOS không gửi cookie khác site lúc handshake).
 async function currentAdminWsUrl(conversationId: string): Promise<string | null> {
@@ -181,6 +185,7 @@ export default function AdminConversationPage({
   const stickRef = useRef(true);
   const prevCountRef = useRef(0);
   const [isAwayFromBottom, setIsAwayFromBottom] = useState(false);
+  const replyRef = useRef<HTMLTextAreaElement>(null);
   // Hẹn giờ ack theo client_msg_id; `genRef` = thế hệ socket (+1 mỗi lần mở) — xem app/chat/page.tsx.
   const ackTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const genRef = useRef(0);
@@ -225,6 +230,16 @@ export default function AdminConversationPage({
     const timers = ackTimers.current;
     return () => timers.forEach((t) => clearTimeout(t));
   }, []);
+
+  // Ô trả lời tự nở như ô khách (MessageInput): co về một dòng rồi nở theo nội dung, tới trần thì cuộn trong ô.
+  useLayoutEffect(() => {
+    const el = replyRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const full = el.scrollHeight;
+    el.style.height = `${Math.min(full, MAX_REPLY_HEIGHT_PX)}px`;
+    el.style.overflowY = full > MAX_REPLY_HEIGHT_PX ? "auto" : "hidden";
+  }, [draft]);
 
   function onFrame(f: Frame) {
     switch (f.type) {
@@ -575,17 +590,24 @@ export default function AdminConversationPage({
             {replyError}
           </p>
         )}
-        <div className="flex items-center gap-2.5 rounded-[12px] border border-line bg-cream-soft py-[7px] pl-4 pr-[7px]">
-          <input
+        {/* Nhiều dòng như ô khách (UX-01.1): Enter gửi, Shift+Enter xuống dòng (máy cảm ứng: Enter xuống dòng, gửi
+            bằng nút), KHÔNG gửi khi bộ gõ đang ghép chữ. */}
+        <div className="flex items-end gap-2.5 rounded-[12px] border border-line bg-cream-soft py-[7px] pl-4 pr-[7px]">
+          <textarea
+            ref={replyRef}
+            rows={1}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") sendReply();
+              if (isSendKey(e.nativeEvent, isCoarsePointer())) {
+                e.preventDefault();
+                sendReply();
+              }
             }}
             disabled={!isHandling}
             placeholder={replyPlaceholder}
             aria-label="Nội dung trả lời khách"
-            className="flex-1 border-none bg-transparent text-[14.5px] text-ink outline-none placeholder:text-dim disabled:cursor-not-allowed"
+            className="min-w-0 flex-1 resize-none border-none bg-transparent py-2 text-[14.5px] leading-[1.5] text-ink outline-none placeholder:text-dim disabled:cursor-not-allowed"
           />
           <button
             onClick={sendReply}

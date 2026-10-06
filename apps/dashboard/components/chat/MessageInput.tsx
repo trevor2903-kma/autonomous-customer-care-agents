@@ -2,14 +2,10 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { MAX_MESSAGE_CHARS } from "shared-types";
-import { effectiveLength, isSendKey, showCharCounter } from "@/lib/chatInput";
+import { effectiveLength, isCoarsePointer, isSendKey, showCharCounter } from "@/lib/chatInput";
 
 // ~5 dòng (15px × leading 1.5) + padding dọc → vượt thì ô tự cuộn thay vì nở tiếp.
 const MAX_INPUT_HEIGHT_PX = 128;
-
-// Máy cảm ứng (con trỏ chính "thô"): bàn phím ảo không có Shift+Enter → Enter để xuống dòng (UX-01.1).
-const isCoarsePointer = () =>
-  typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
 
 // Ô nhập màn khách (design): hộp trắng bo 14px + nút "Gửi" olive + dòng ghi chú dưới.
 // Nhiều dòng (UX-01.1): textarea tự nở tới ~5 dòng; Enter gửi, Shift+Enter xuống dòng (máy cảm ứng: Enter xuống

@@ -1,6 +1,11 @@
-// Luật phím + bộ đếm của ô nhập khách (THUẦN — test node --test apps/dashboard/lib/*.test.mts).
+// Luật phím (ô nhập khách + ô trả lời admin) + bộ đếm của ô nhập khách (THUẦN — test node --test
+// apps/dashboard/lib/*.test.mts; riêng isCoarsePointer đọc trình duyệt).
 
 type KeyLike = { key: string; shiftKey: boolean; isComposing?: boolean; keyCode?: number };
+
+/** Máy cảm ứng (con trỏ chính "thô"): bàn phím ảo không có Shift+Enter → Enter để xuống dòng (UX-01.1). */
+export const isCoarsePointer = () =>
+  typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true;
 
 /** Enter gửi, Shift+Enter xuống dòng (UX-01.1); KHÔNG gửi khi bộ gõ (IME) đang ghép chữ — Enter lúc đó là để
  *  chốt chữ. Safari bắn keydown kết thúc ghép với isComposing=false nhưng keyCode 229 → chặn cả hai.
