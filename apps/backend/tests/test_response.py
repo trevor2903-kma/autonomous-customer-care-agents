@@ -290,6 +290,17 @@ async def test_response_node_handoff_after_hours(monkeypatch: pytest.MonkeyPatch
     assert out["uncertainty_flags"] == []
 
 
+@pytest.mark.parametrize(
+    ("within", "notice"), [(True, resp.PENDING_NOTICE), (False, resp.PENDING_NOTICE_AFTER_HOURS)]
+)
+def test_pending_notice_follows_support_hours(
+    monkeypatch: pytest.MonkeyPatch, within: bool, notice: str
+) -> None:
+    # FR-GATE-4: gate giữ nháp → câu báo cố định theo giờ hỗ trợ (ngoài giờ: "sẽ phản hồi sớm nhất khi quay lại").
+    monkeypatch.setattr(resp, "is_within_support_hours", lambda now: within)
+    assert resp.pending_notice() == notice
+
+
 async def test_response_node_clarify_asks_for_order_code(monkeypatch: pytest.MonkeyPatch) -> None:
     # 09b: action=clarify + clarify_field=order_id -> câu hỏi mã đơn + AWAITING_CUSTOMER, KHÔNG gọi LLM.
     async def boom(*a, **k):  # generate_reply KHÔNG được gọi ở nhánh clarify

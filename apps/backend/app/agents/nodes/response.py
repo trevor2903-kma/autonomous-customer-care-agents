@@ -60,6 +60,16 @@ HANDOFF_NOTICE_AFTER_HOURS = (
     "nhân viên sẽ phản hồi sớm nhất khi quay lại ạ."
 )
 
+# FR-GATE-4: gate giữ nháp (PENDING_APPROVAL) → khách nhận câu báo CỐ ĐỊNH thay vì im lặng (KHÔNG phải nháp, KHÔNG
+# LLM). Gate quyết SAU pipeline (ws/chat.py) nên WS lấy câu qua `pending_notice()`; template vẫn ở đây với các câu
+# phát ngôn khác. Không hứa "được duyệt" — admin từ chối thì vẫn tự trả lời, nên câu chỉ nói "sẽ phản hồi".
+PENDING_NOTICE = "Nhân viên đang kiểm tra lại câu trả lời cho yêu cầu của bạn và sẽ phản hồi ngay sau khi kiểm tra xong."
+PENDING_NOTICE_AFTER_HOURS = (
+    "Câu trả lời cho yêu cầu của bạn đang chờ nhân viên kiểm tra lại. "
+    f"Hiện đang ngoài giờ làm việc ({settings.support_hours_start}:00–{settings.support_hours_end}:00), "
+    "nhân viên sẽ phản hồi sớm nhất khi quay lại ạ."
+)
+
 # 09b clarification: câu hỏi CỐ ĐỊNH theo field thiếu (sole-egress, KHÔNG LLM). MVP chỉ order_id.
 CLARIFY_QUESTION: dict[str, str] = {
     "order_id": "Dạ anh/chị cho em xin mã đơn hàng để em kiểm tra giúp ạ.",
@@ -281,6 +291,12 @@ def _handoff_notice() -> str:
     AI không đổi hành vi khác (ca vẫn IN_HUMAN_QUEUE + EscalationCard); chỉ câu thông báo tới khách khác."""
     within = is_within_support_hours(datetime.now(timezone.utc))
     return HANDOFF_NOTICE if within else HANDOFF_NOTICE_AFTER_HOURS
+
+
+def pending_notice() -> str:
+    """Câu báo khách khi gate giữ nháp (FR-GATE-4) — trong giờ / ngoài giờ như `_handoff_notice`."""
+    within = is_within_support_hours(datetime.now(timezone.utc))
+    return PENDING_NOTICE if within else PENDING_NOTICE_AFTER_HOURS
 
 
 async def response_node(state: ConversationState) -> dict[str, Any]:

@@ -126,7 +126,8 @@ _(Chắt từ quan sát của Andrej Karpathy về lỗi LLM hay mắc khi code.
 - **Agent 4** Response Generator — grounded từ facts.md + `rag_contexts` + `order_context`; phanh anti-hallucination:
   không nguồn / LLM lỗi → KHÔNG bịa, `hallucination_risk` → **chuyển người** (HANDOFF_NOTICE + `IN_HUMAN_QUEUE` +
   EscalationCard, FR-PIPE-5). "Không tìm thấy đơn" = template cố định → `AWAITING_CUSTOMER` (intent resume được) để
-  khách gửi lại mã trơ. **Sole-egress:** phát câu trả lời, `HANDOFF_NOTICE` (+ biến thể ngoài giờ), câu hỏi clarify.
+  khách gửi lại mã trơ. **Sole-egress:** phát câu trả lời, `HANDOFF_NOTICE` (+ biến thể ngoài giờ), câu hỏi clarify,
+  `PENDING_NOTICE` (+ biến thể ngoài giờ) khi gate giữ nháp — WS lấy qua `pending_notice()` (FR-GATE-4).
   Dòng blockquote (`>`) trong facts.md = ghi chú biên tập, KHÔNG vào prompt.
 - **Persistence + bộ nhớ đa lượt:** lưu conversation + message (Postgres, ca theo `customer_id` từ JWT);
   `history` (history_window) từ DB vào prompt Agent 1 + Agent 4 — **bộ nhớ từ DB**, `thread_id` sinh MỖI lượt

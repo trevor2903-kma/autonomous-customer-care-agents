@@ -152,7 +152,7 @@ function ChatInner() {
     const text = asString(f.content) ?? "";
     const messageId = asString(f.message_id);
     // Header / "đang trả lời…" / lượt đang chạy: MỘT reducer thuần cho mọi frame (UX-02.3, IDEM-XC.1) — `typing`,
-    // `pending`, `status` chỉ đổi trạng thái đó, không có bong bóng.
+    // `status` chỉ đổi trạng thái đó, không có bong bóng.
     setTurn((s) => custTurnAfter(s, f));
     switch (f.type) {
       case "system":
@@ -182,6 +182,10 @@ function ChatInner() {
       case "handoff":
         // Agent 3 đã chuyển người THẬT (ca vào hàng đợi, AI dừng cho hội thoại này).
         push({ from: "system", text, messageId });
+        break;
+      case "pending":
+        // Gate giữ nháp chờ duyệt (FR-GATE-4): câu báo cố định của AI — KHÔNG phải nháp (nháp tới sau khi duyệt).
+        if (text) push({ from: "ai", text, messageId });
         break;
       case "status":
         // status null = server không đọc lại được trạng thái → nạp lại mạch để lấy status thật (reducer giữ nguyên).

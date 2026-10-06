@@ -18,8 +18,8 @@ CAS (GRAPH-02.2): status chỉ được ghi nếu VẪN là status đọc ở đ
 chạy → lượt bị BỎ (không lưu gì của lượt), khách nhận frame `status` (status hiện tại) THAY cho câu trả lời.
 
 Tín hiệu ra socket khách: `ack` → `typing` → `reply` (trả lời tự động) | `handoff` (ca vào hàng đợi người) |
-`pending` (gate giữ nháp chờ duyệt) | `status` (lượt bị bỏ vì status đổi). `handoff` là TYPE riêng để FE bám
-TRẠNG THÁI THẬT thay vì dò chữ trong câu trả lời.
+`pending` (gate giữ nháp chờ duyệt — kèm câu báo CỐ ĐỊNH, KHÔNG phải nháp) | `status` (lượt bị bỏ vì status
+đổi). `handoff` là TYPE riêng để FE bám TRẠNG THÁI THẬT thay vì dò chữ trong câu trả lời.
 
 Ca sinh LƯỜI: lúc `accept()` chỉ TÌM ca đang mở; chưa có thì để trống và chỉ mở ca ở tin nhắn ĐẦU TIÊN —
 mở /chat rồi thoát KHÔNG để lại ca rỗng trong hàng đợi admin.
@@ -45,7 +45,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy.exc import IntegrityError
 
 from ...agents.graph import run_pipeline
-from ...agents.nodes.response import FALLBACK_REPLY
+from ...agents.nodes.response import FALLBACK_REPLY, pending_notice
 from ...core import tracing
 from ...core.config import settings
 from ...core.database import AsyncSessionLocal
@@ -287,7 +287,7 @@ class TurnPlan:
     frame: str  # "reply" | "handoff" | "pending"
     status_to: str
     allowed_from: frozenset[str]  # CAS: status đọc ở đầu lượt
-    ai_message: str | None  # tin gửi khách + lưu (sender=ai); None cho "pending" — nháp giữ trong card, KHÔNG gửi
+    ai_message: str | None  # tin gửi khách + lưu (sender=ai); "pending" = câu báo cố định — nháp giữ trong card
     outcome: str
     current_intent: str | None = None
     card: dict[str, Any] | None = None
@@ -309,7 +309,8 @@ def plan_delivery(
 
     - Pipeline NÉM LỖI (`final` None) → PRD §15: IN_HUMAN_QUEUE gắn nhãn [error] + EscalationCard (priority high);
       khách nhận `handoff` với `_ERROR_REPLY`.
-    - Gate giữ nháp → PENDING_APPROVAL + card mang nháp (`suggested_reply`); khách chỉ nhận `pending`.
+    - Gate giữ nháp → PENDING_APPROVAL + card mang nháp (`suggested_reply`); khách nhận `pending` kèm câu báo CỐ ĐỊNH
+      (`pending_notice()` theo giờ hỗ trợ — FR-GATE-4), KHÔNG phải nháp.
     - IN_HUMAN_QUEUE (Agent 3 chuyển người, hoặc Agent 4 phải fallback) → EscalationCard + `handoff`.
     - Còn lại (REPLIED / AWAITING_CUSTOMER) → `reply`; AWAITING_CUSTOMER ghi KÈM intent gốc → lượt sau khách gõ mã đơn
       trơ vẫn resume đúng intent (09b).
@@ -335,7 +336,7 @@ def plan_delivery(
             "pending",
             ConversationStatus.PENDING_APPROVAL,
             allowed,
-            None,
+            pending_notice(),
             TurnOutcome.HELD_FOR_APPROVAL,
             card=escalation_service.build_escalation_card(final, customer_text, suggested_reply=reply),
             priority=final.get("priority"),
@@ -666,8 +667,6 @@ async def _turn(
     elif persist_failed:
         log.error("persist turn failed twice (conv=%s) → %s thay bằng câu không hứa hẹn", st.conv_id, plan.frame)
         await _send(websocket, {"type": "reply", "content": FALLBACK_REPLY, "message_id": None})
-    elif plan.frame == "pending":
-        await _send(websocket, {"type": "pending"})  # gỡ typing ở FE (KHÔNG gửi nội dung — sole-egress)
     else:
         await _send(
             websocket,

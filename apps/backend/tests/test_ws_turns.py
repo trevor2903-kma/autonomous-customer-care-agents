@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from app.agents.nodes import response as resp
 from app.agents.nodes.response import FALLBACK_REPLY
 from app.api.ws import chat
 from app.api.ws.hub import INBOX_KEY, ConnectionHub
@@ -236,6 +237,7 @@ async def test_gate_hold_persists_pending_card_without_sending_the_draft(
         return True
 
     monkeypatch.setattr(chat, "gate_holds", hold)
+    monkeypatch.setattr(resp, "is_within_support_hours", lambda now: True)  # câu báo trong giờ, tất định
     customer = uuid.uuid4()
     cid = env.store.add_conv(customer_id=customer, status=S.REPLIED)
     env.pipe.final = _final(S.REPLIED, reply="Nháp hoàn tiền", intent="refund")
@@ -243,10 +245,13 @@ async def test_gate_hold_persists_pending_card_without_sending_the_draft(
     ws.push(_msg("hoàn tiền đơn 123456 giúp em", "p-1"))
     await until(lambda: bool(ws.frames("pending")))
 
-    assert ws.frames("pending") == [{"type": "pending"}]  # KHÔNG nội dung (sole-egress)
+    ai = env.store.msgs(cid, "ai")
+    # FR-GATE-4: khách nhận câu báo CỐ ĐỊNH (đã lưu TRƯỚC khi báo) — nháp chưa duyệt KHÔNG thành tin nhắn.
+    assert [m.content for m in ai] == [resp.PENDING_NOTICE]
+    assert ws.frames("pending") == [{"type": "pending", "content": resp.PENDING_NOTICE, "message_id": str(ai[0].id)}]
     assert ws.snaps["pending"]["statuses"] == [S.PENDING_APPROVAL]
     assert ws.snaps["pending"]["cards"][0]["suggested_reply"] == "Nháp hoàn tiền"
-    assert env.store.msgs(cid, "ai") == []  # nháp chưa duyệt KHÔNG thành tin nhắn
+    assert ws.snaps["pending"]["ai"] == [ai[0].id]
     await _settle((ws, task))
     assert env.audits[0]["outcome"] == TurnOutcome.HELD_FOR_APPROVAL
 

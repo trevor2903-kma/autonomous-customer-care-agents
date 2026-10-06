@@ -319,6 +319,10 @@ Gate cho phép Admin chọn **mức độ tự động** mà hệ thống đư�
   rủi ro mỗi tin nhắn thấp) **nhưng** mặc định **TẮT cho nhóm nhạy cảm** (`refund`, `complaint`, `exchange`)
   → các ca này dù tự tin vẫn qua **Duyệt nháp**. `auto-resolve` mặc định **TẮT** (để Admin xác nhận đóng giai
   đoạn đầu).
+- **FR-GATE-4 (báo khách khi Duyệt nháp):** ca vào `PENDING_APPROVAL` → Response Generator gửi khách **một tin
+  thông báo CỐ ĐỊNH** (KHÔNG gọi LLM, KHÔNG phải nội dung nháp) rằng nhân viên đang kiểm tra câu trả lời; ngoài
+  giờ hỗ trợ dùng biến thể "nhân viên sẽ phản hồi sớm nhất khi quay lại" (như FR-ASYNC-4). Nháp vẫn chỉ tới khách
+  sau khi Admin duyệt.
 
 ---
 
