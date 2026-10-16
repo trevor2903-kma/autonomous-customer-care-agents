@@ -1,0 +1,2011 @@
+<!doctype html>
+<html lang="vi">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bảo vệ đồ án – Hệ thống CSKH tự trị Multi-Agent AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;500;600&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap"
+    rel="stylesheet">
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="mau/deck.css">
+  <style>
+    /* Bản trình chiếu chính, KHÔNG kèm slide dự phòng: tách từ bao-cao.html (bản đầy đủ có slide dự phòng).
+   Sửa nội dung thì sửa ở bao-cao.html trước rồi tách lại, để hai bản không lệch nhau.
+   9 slide chính (≈ 7 phút) đi theo một mạch
+   Bài toán → Lý do chọn đề tài → Giải pháp → Hướng phát triển → Kết luận (slide 2 là mục lục của mạch này),
+   sau đó là slide cảm ơn (dùng sau phần demo).
+   Giao diện dựa trên Mẫu A – Học thuật (mau/cskh-a-hoc-thuat.html): khung viền kép, tiêu đề chữ có chân,
+   đỏ Học viện cho dấu cấu trúc, vàng chỉ dùng cho đường kẻ. Thuật ngữ kỹ thuật chỉ là phần bổ sung,
+   đặt sau cách diễn đạt nghiệp vụ. */
+    :root {
+      --ink: #16243B;
+      --muted: #5A6477;
+      --crimson: #A3182C;
+      --gold: #B08A33;
+      --rule: #C9D0DA;
+      --grid: #97A3B4;
+      --tint: #F3F5F8;
+      --pink: #FBF2F3;
+      --green: #1E6B3C;
+      --paper: #FFFFFF;
+      /* Phông dự phòng khi máy chiếu không có mạng: Cambria, Times New Roman có đủ dấu tiếng Việt (Georgia thì không) */
+      --serif: "Source Serif 4", "Noto Serif", Cambria, "Times New Roman", serif;
+      --sans: "Source Sans 3", "Segoe UI", Arial, sans-serif;
+      --mono: "Source Code Pro", Consolas, monospace;
+    }
+
+    .slide {
+      background: var(--paper);
+      color: var(--ink);
+      font: 400 36px/1.4 var(--sans);
+    }
+
+    :where(.slide) :where(h1, h2, h3, h4, p, ul, ol, dl, figure, pre) {
+      margin: 0;
+    }
+
+    :where(.slide) :where(h1, h2, h3) {
+      text-wrap: balance;
+    }
+
+    :where(.slide) :where(p, li, dd, span, small) {
+      text-wrap: pretty;
+    }
+
+    .slide code {
+      font: 500 .82em/1.2 var(--mono);
+      padding: 1px 6px 2px;
+      border: 1px solid var(--rule);
+      border-radius: 4px;
+      background: var(--tint);
+      white-space: nowrap;
+    }
+
+    /* Bộ biểu tượng nét mảnh dùng chung */
+    .sprite {
+      position: absolute;
+      width: 0;
+      height: 0;
+      overflow: hidden;
+    }
+
+    .ic {
+      display: block;
+      flex: none;
+      width: 1em;
+      height: 1em;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* ── Đầu trang, tiêu đề, chân trang ── */
+    .head {
+      position: absolute;
+      left: 96px;
+      right: 96px;
+      top: 40px;
+      height: 88px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .head img {
+      height: 76px;
+      width: auto;
+    }
+
+    .head .inst {
+      font: 600 22px/1.3 var(--sans);
+    }
+
+    .head .inst span {
+      display: block;
+      font-weight: 400;
+      color: var(--muted);
+    }
+
+    .head .part {
+      margin-left: auto;
+      font: italic 400 25px/1.2 var(--serif);
+      color: var(--muted);
+      text-decoration: none;
+    }
+
+    .head::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: -14px;
+      height: 8px;
+      border-top: 3px solid var(--ink);
+      border-bottom: 1.5px solid var(--gold);
+    }
+
+    /* Mạch trình bày ở đầu mỗi slide chính: bước đã qua màu mực, bước đang nói màu đỏ */
+    .track {
+      margin: 0 0 0 auto;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      font: 400 21px/1.2 var(--sans);
+      color: var(--muted);
+    }
+
+    .track li {
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
+    }
+
+    .track li+li::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      margin: 0 16px 0 10px;
+      border-top: 2px solid var(--grid);
+      border-right: 2px solid var(--grid);
+      transform: rotate(45deg);
+    }
+
+    .track .done {
+      color: var(--ink);
+    }
+
+    .track .on {
+      color: var(--crimson);
+      font-weight: 700;
+      text-decoration: underline 3px;
+      text-underline-offset: 9px;
+    }
+
+    .title {
+      position: absolute;
+      left: 96px;
+      right: 96px;
+      top: 180px;
+      font: 600 64px/1.12 var(--serif);
+      letter-spacing: -.005em;
+    }
+
+    .body {
+      position: absolute;
+      left: 96px;
+      right: 96px;
+      top: 300px;
+      bottom: 124px;
+    }
+
+    .body.col {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .foot {
+      position: absolute;
+      left: 96px;
+      right: 96px;
+      bottom: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding-top: 14px;
+      border-top: 1px solid var(--rule);
+      font: 400 21px/1 var(--sans);
+      color: var(--muted);
+    }
+
+    .foot .ref {
+      font: italic 400 21px/1 var(--serif);
+    }
+
+    .foot .pg {
+      font: 600 24px/1 var(--serif);
+      color: var(--ink);
+      font-variant-numeric: lining-nums;
+    }
+
+    /* ── Thành phần dùng chung (từ mẫu A) ── */
+    .list {
+      padding: 0;
+      list-style: none;
+    }
+
+    .list li {
+      position: relative;
+      padding-left: 46px;
+    }
+
+    .list li+li {
+      margin-top: 28px;
+    }
+
+    .list li::before {
+      content: "";
+      position: absolute;
+      left: 6px;
+      top: .7em;
+      width: 14px;
+      height: 14px;
+      background: var(--crimson);
+      transform: translateY(-50%) rotate(45deg);
+    }
+
+    .list.xs li {
+      padding-left: 32px;
+      font-size: calc(26px * var(--z, 1));
+      line-height: 1.38;
+    }
+
+    .list.xs li+li {
+      margin-top: 10px;
+    }
+
+    .list.xs li::before {
+      left: 4px;
+      width: 10px;
+      height: 10px;
+    }
+
+    .stack>*+* {
+      margin-top: 22px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: var(--cols, 1fr 1fr);
+      column-gap: 56px;
+      align-items: start;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(var(--n, 2), minmax(0, 1fr));
+      gap: 22px;
+      align-content: start;
+    }
+
+    .lead {
+      font: italic 400 calc(30px * var(--z, 1))/1.4 var(--serif);
+      color: var(--muted);
+    }
+
+    .sub {
+      font: 600 calc(34px * var(--z, 1))/1.2 var(--serif);
+    }
+
+    .sub small {
+      margin-left: 12px;
+      font: italic 400 calc(25px * var(--z, 1))/1 var(--serif);
+      color: var(--muted);
+    }
+
+    .cap {
+      font: italic 400 calc(23px * var(--z, 1))/1.35 var(--serif);
+      color: var(--muted);
+    }
+
+    .note {
+      padding: 4px 0 4px 28px;
+      border-left: 6px solid var(--crimson);
+      font-size: calc(30px * var(--z, 1));
+      line-height: 1.38;
+    }
+
+    .box {
+      padding: 22px 26px 24px;
+      border: 1.5px solid var(--grid);
+      background: var(--paper);
+    }
+
+    .box.tint {
+      background: var(--tint);
+    }
+
+    .box.warn {
+      border-color: var(--crimson);
+      background: var(--pink);
+    }
+
+    .box h3 {
+      font: 600 calc(30px * var(--z, 1))/1.22 var(--serif);
+    }
+
+    .box h3 .n {
+      margin-right: 10px;
+      color: var(--crimson);
+    }
+
+    .box h3 small {
+      margin-left: 8px;
+      font: italic 400 calc(22px * var(--z, 1))/1 var(--serif);
+      color: var(--muted);
+    }
+
+    .box h3 .ic {
+      display: inline-block;
+      width: 1.15em;
+      height: 1.15em;
+      margin-right: 12px;
+      vertical-align: -.22em;
+      color: var(--crimson);
+    }
+
+    .box p {
+      margin-top: 10px;
+      font-size: calc(26px * var(--z, 1));
+      line-height: 1.4;
+    }
+
+    .box p.ex {
+      color: var(--muted);
+    }
+
+    .box .list {
+      margin-top: 12px;
+    }
+
+    .callout {
+      background: var(--tint);
+      border-left: 6px solid var(--crimson);
+      padding: 34px 40px 38px;
+    }
+
+    .callout.hot {
+      background: var(--pink);
+    }
+
+    .callout .lbl {
+      font: 600 24px/1.2 var(--sans);
+      color: var(--crimson);
+      letter-spacing: .02em;
+    }
+
+    .callout .txt {
+      margin-top: 16px;
+      font: italic 400 38px/1.36 var(--serif);
+    }
+
+    .tbl {
+      width: 100%;
+      border-collapse: collapse;
+      font: 400 32px/1.3 var(--sans);
+    }
+
+    .tbl th,
+    .tbl td {
+      border: 1.5px solid var(--grid);
+      padding: 18px 28px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .tbl thead th {
+      background: var(--ink);
+      color: #fff;
+      font: 600 28px/1.25 var(--sans);
+    }
+
+    .tbl tbody th {
+      background: var(--tint);
+      font-weight: 600;
+    }
+
+    .tbl .num {
+      text-align: center;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+
+    .tbl.sm {
+      font-size: calc(24px * var(--z, 1));
+      line-height: 1.32;
+    }
+
+    .tbl.sm th,
+    .tbl.sm td {
+      padding: calc(9px * var(--z, 1)) calc(15px * var(--z, 1));
+    }
+
+    .tbl.sm thead th {
+      font-size: calc(22px * var(--z, 1));
+    }
+
+    .tbl tr.hl>*,
+    .tbl td.hl {
+      background: var(--pink);
+    }
+
+    .tbl .ok {
+      color: var(--green);
+      font-weight: 600;
+    }
+
+    .tbl .bad {
+      color: var(--crimson);
+      font-weight: 600;
+    }
+
+    .tbl .grp th {
+      background: var(--tint);
+      color: var(--ink);
+      font: italic 600 calc(22px * var(--z, 1))/1.3 var(--serif);
+    }
+
+    .figs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1.5px solid var(--grid);
+      border-left: 1.5px solid var(--grid);
+    }
+
+    .figs>div {
+      padding: 16px 20px 18px;
+      border-right: 1.5px solid var(--grid);
+      border-bottom: 1.5px solid var(--grid);
+    }
+
+    .figs b {
+      display: block;
+      font: 600 calc(50px * var(--z, 1))/1 var(--serif);
+      font-variant-numeric: lining-nums;
+      white-space: nowrap;
+    }
+
+    .figs b.bad {
+      color: var(--crimson);
+    }
+
+    .figs span {
+      display: block;
+      margin-top: 10px;
+      font: 600 calc(22px * var(--z, 1))/1.3 var(--sans);
+    }
+
+    .fig {
+      text-align: center;
+    }
+
+    .fig img {
+      display: block;
+      margin: 0 auto;
+      max-width: 100%;
+      height: var(--h, 520px);
+      width: auto;
+      object-fit: contain;
+    }
+
+    .fig img.bd {
+      border: 1.5px solid var(--grid);
+    }
+
+    .fig figcaption {
+      margin-top: 10px;
+      font: italic 400 calc(23px * var(--z, 1))/1.3 var(--serif);
+      color: var(--muted);
+    }
+
+    .fig.shot3 {
+      width: min-content;
+    }
+
+    .fig.shot3 img {
+      max-width: none;
+    }
+
+    .fig figcaption .d {
+      display: block;
+      margin-top: 6px;
+      font: 400 23px/1.35 var(--sans);
+      font-style: normal;
+      color: var(--ink);
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr));
+      column-gap: 46px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .flow>li {
+      position: relative;
+      padding: 16px 20px 18px;
+      border: 1.5px solid var(--grid);
+      background: var(--paper);
+      font-size: calc(24px * var(--z, 1));
+      line-height: 1.36;
+    }
+
+    .flow>li b {
+      display: block;
+      margin-bottom: 6px;
+      font: 600 calc(27px * var(--z, 1))/1.2 var(--serif);
+    }
+
+    .flow>li b .n {
+      margin-right: 8px;
+      color: var(--crimson);
+    }
+
+    .flow>li+li::before {
+      content: "";
+      position: absolute;
+      left: -32px;
+      top: 50%;
+      width: 16px;
+      height: 16px;
+      border-top: 3px solid var(--crimson);
+      border-right: 3px solid var(--crimson);
+      transform: translateY(-50%) rotate(45deg);
+    }
+
+    .chain {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      row-gap: 10px;
+    }
+
+    .chain span {
+      padding: 6px 12px;
+      border: 1.5px solid var(--grid);
+      background: var(--paper);
+      font-size: calc(23px * var(--z, 1));
+      line-height: 1.25;
+    }
+
+    .chain i {
+      padding: 0 9px;
+      font-style: normal;
+      font-size: calc(24px * var(--z, 1));
+      color: var(--crimson);
+    }
+
+    /* ── Bìa và lời cảm ơn ── */
+    .cover .frame,
+    .thanks .frame {
+      position: absolute;
+      inset: 32px;
+      border: 4px solid var(--ink);
+    }
+
+    .cover .frame::after,
+    .thanks .frame::after {
+      content: "";
+      position: absolute;
+      inset: 8px;
+      border: 1.5px solid var(--gold);
+    }
+
+    .cover .inner,
+    .thanks .inner {
+      position: absolute;
+      inset: 64px 140px 60px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .cover .org {
+      font: 600 24px/1.4 var(--sans);
+      letter-spacing: .06em;
+    }
+
+    .cover .org b {
+      display: block;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: .05em;
+    }
+
+    .cover .mid {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding-bottom: 12px;
+    }
+
+    .cover .crest {
+      height: 210px;
+      width: auto;
+    }
+
+    .cover .kind {
+      margin-top: 24px;
+      font: 700 40px/1.2 var(--serif);
+      letter-spacing: .08em;
+      color: var(--crimson);
+    }
+
+    .cover h1 {
+      margin-top: 14px;
+      font: 600 62px/1.16 var(--serif);
+      letter-spacing: -.005em;
+    }
+
+    .cover .people {
+      margin-top: 36px;
+      display: grid;
+      grid-template-columns: auto auto;
+      column-gap: 26px;
+      row-gap: 6px;
+      font: 400 29px/1.45 var(--sans);
+      text-align: left;
+    }
+
+    .cover .people dt {
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .cover .people dd {
+      margin: 0;
+      font-weight: 600;
+    }
+
+    .cover .place {
+      font: italic 400 27px/1 var(--serif);
+      color: var(--muted);
+    }
+
+    .thanks .inner {
+      justify-content: center;
+    }
+
+    .thanks .crest {
+      height: 150px;
+      width: auto;
+    }
+
+    .thanks h2 {
+      margin-top: 44px;
+      font: 600 70px/1.18 var(--serif);
+      letter-spacing: -.005em;
+    }
+
+    .thanks .rule {
+      width: 160px;
+      margin: 40px auto;
+      border-top: 1.5px solid var(--gold);
+    }
+
+    .thanks .ask {
+      font-size: 34px;
+      color: var(--muted);
+    }
+
+    .thanks .who {
+      margin-top: 20px;
+      font: 600 28px/1.3 var(--sans);
+    }
+
+    /* ══ Slide 2 · Nội dung trình bày (theo Mẫu A; năm mục khớp thanh mạch trình bày ở đầu mỗi slide) ══ */
+    .toc {
+      max-width: 1400px;
+      padding: 0;
+      list-style: none;
+      border-top: 1px solid var(--rule);
+    }
+
+    .toc li {
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      align-items: baseline;
+      padding: 15px 0 17px;
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .toc .n {
+      font: 600 52px/1 var(--serif);
+      color: var(--crimson);
+    }
+
+    .toc b {
+      display: block;
+      font: 600 40px/1.2 var(--serif);
+    }
+
+    .toc div span {
+      display: block;
+      margin-top: 6px;
+      font-size: 28px;
+      color: var(--muted);
+    }
+
+    /* ══ Slide 3 · Bài toán ══ */
+    .issues {
+      margin-top: 18px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .issues li {
+      display: grid;
+      grid-template-columns: 64px 1fr;
+      column-gap: 28px;
+      align-items: start;
+      padding: 24px 0 26px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .issues li:last-child {
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .issues .ic {
+      width: 60px;
+      height: 60px;
+      margin-top: 4px;
+      color: var(--ink);
+    }
+
+    .issues b {
+      display: block;
+      font: 600 34px/1.2 var(--serif);
+    }
+
+    .issues p {
+      margin-top: 6px;
+      font-size: 28px;
+      line-height: 1.4;
+    }
+
+    .box p.em {
+      font-weight: 600;
+    }
+
+    /* ══ Slide 4–5 · Giải pháp hiện có, hướng của đề tài ══ */
+    .posmap {
+      display: block;
+      width: 100%;
+      height: auto;
+      overflow: visible;
+    }
+
+    .posmap .gl {
+      fill: none;
+      stroke: var(--rule);
+      stroke-width: 1.5;
+    }
+
+    .posmap .ax {
+      fill: none;
+      stroke: var(--grid);
+      stroke-width: 2.5;
+    }
+
+    .posmap .zone {
+      fill: var(--pink);
+      stroke: var(--crimson);
+      stroke-width: 2;
+      stroke-dasharray: 10 7;
+    }
+
+    .posmap .pt {
+      fill: var(--muted);
+      stroke: #fff;
+      stroke-width: 3;
+    }
+
+    .posmap .pt.me {
+      fill: var(--crimson);
+      stroke-width: 4;
+    }
+
+    .posmap text {
+      font: 400 25px var(--sans);
+      fill: var(--ink);
+    }
+
+    .posmap .pl {
+      paint-order: stroke;
+      stroke: #fff;
+      stroke-width: 7px;
+      stroke-linejoin: round;
+    }
+
+    .posmap .tick {
+      font-size: 23px;
+      fill: var(--muted);
+    }
+
+    .posmap .axt {
+      font: italic 400 25px var(--serif);
+      fill: var(--muted);
+    }
+
+    .posmap .zone-lb {
+      font: 600 22px var(--sans);
+      fill: var(--crimson);
+    }
+
+    .posmap .me-lb {
+      font: 700 27px var(--sans);
+      fill: var(--crimson);
+    }
+
+    .posmap .arrow {
+      fill: none;
+      stroke: var(--crimson);
+      stroke-width: 3;
+    }
+
+    .posmap #pm-ah path {
+      fill: var(--crimson);
+    }
+
+    .posmap-cap {
+      margin-top: 10px;
+      font-size: 25px;
+      line-height: 1.38;
+    }
+
+    .posmap-cap b {
+      color: var(--crimson);
+    }
+
+    .ways {
+      padding: 0;
+      list-style: none;
+    }
+
+    .ways li {
+      padding: 16px 22px 18px;
+      border-top: 1px solid var(--rule);
+    }
+
+    .ways li:last-child {
+      border-bottom: 1px solid var(--rule);
+    }
+
+    .ways li.key {
+      border: 1.5px solid var(--crimson);
+      background: var(--pink);
+    }
+
+    .ways b {
+      display: block;
+      font: 600 30px/1.2 var(--serif);
+    }
+
+    .ways p {
+      margin-top: 6px;
+      font-size: 26px;
+      line-height: 1.38;
+    }
+
+    .ways b small {
+      margin-left: 12px;
+      font: italic 400 24px/1 var(--serif);
+      color: var(--muted);
+    }
+
+    /* Điểm mạnh (dấu tích xanh) và điểm yếu (dấu cảnh báo đỏ) của từng nhóm giải pháp */
+    .pc {
+      margin-top: 14px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .pc li {
+      display: grid;
+      grid-template-columns: 34px 1fr;
+      column-gap: 14px;
+      font-size: 26px;
+      line-height: 1.38;
+    }
+
+    .pc li+li {
+      margin-top: 8px;
+    }
+
+    .pc .ic {
+      width: 32px;
+      height: 32px;
+      margin-top: 2px;
+      color: var(--green);
+    }
+
+    .pc .con .ic {
+      color: var(--crimson);
+    }
+
+    .goals {
+      display: grid;
+      grid-template-columns: 250px repeat(3, minmax(0, 1fr));
+      border: 1.5px solid var(--grid);
+    }
+
+    .goals>* {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      padding: 16px 24px 18px;
+    }
+
+    .goals>*+* {
+      border-left: 1px solid var(--rule);
+    }
+
+    .goals .lbl {
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 4px;
+      background: var(--ink);
+      color: #fff;
+      font: 600 28px/1.2 var(--serif);
+    }
+
+    .goals .lbl small {
+      font: italic 400 20px/1.3 var(--serif);
+      color: #C7D1E0;
+    }
+
+    .goals b {
+      flex: none;
+      font: 600 46px/1 var(--serif);
+      color: var(--crimson);
+      white-space: nowrap;
+    }
+
+    .goals span {
+      font-size: 23px;
+      line-height: 1.3;
+    }
+
+    /* ══ Slide 6 · Giải pháp ══ */
+    .wires {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    .wires path {
+      fill: none;
+      stroke: var(--ink);
+      stroke-width: 3;
+    }
+
+    .wires .dash {
+      stroke-dasharray: 9 7;
+    }
+
+    .wires #w-ah path {
+      fill: var(--ink);
+      stroke: none;
+    }
+
+    .pipe-in {
+      position: absolute;
+      left: 47px;
+      top: 0;
+      width: 290px;
+      height: 46px;
+      display: grid;
+      place-items: center;
+      border: 2px solid var(--ink);
+      border-radius: 23px;
+      font: 600 24px/1 var(--sans);
+    }
+
+    .pipe-steps {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 78px;
+      height: 292px;
+      display: grid;
+      grid-template-columns: repeat(4, 384px);
+      column-gap: 64px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .pipe-steps li {
+      padding: 20px 24px;
+      border: 2px solid var(--ink);
+      background: var(--paper);
+    }
+
+    .pipe-steps li.key {
+      border: 3px solid var(--crimson);
+      background: var(--pink);
+    }
+
+    .pipe-steps .hd {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font: 600 36px/1.1 var(--serif);
+    }
+
+    .pipe-steps .n {
+      display: grid;
+      place-items: center;
+      flex: none;
+      width: 44px;
+      height: 44px;
+      background: var(--ink);
+      color: #fff;
+      font: 600 26px/1 var(--sans);
+    }
+
+    .pipe-steps .key .n {
+      background: var(--crimson);
+    }
+
+    .pipe-steps .tech {
+      margin: 4px 0 0 58px;
+      font: italic 400 24px/1.2 var(--serif);
+      color: var(--muted);
+    }
+
+    .pipe-steps .d {
+      margin-top: 16px;
+      font-size: 27px;
+      line-height: 1.36;
+    }
+
+    .pipe-out {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 420px;
+      height: 150px;
+      display: grid;
+      grid-template-columns: repeat(4, 384px);
+      column-gap: 64px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .pipe-out li {
+      display: grid;
+      grid-template-columns: 40px 1fr;
+      column-gap: 14px;
+      align-content: start;
+      padding: 16px 18px;
+      border: 1.5px solid var(--grid);
+      background: var(--tint);
+    }
+
+    .pipe-out li.wait {
+      border-style: dashed;
+      border-color: var(--ink);
+      background: var(--paper);
+    }
+
+    .pipe-out .ic {
+      grid-row: span 3;
+      width: 40px;
+      height: 40px;
+      color: var(--ink);
+    }
+
+    .pipe-out b {
+      font: 600 27px/1.2 var(--serif);
+    }
+
+    .pipe-out p {
+      margin-top: 4px;
+      font-size: 23px;
+      line-height: 1.3;
+    }
+
+    .pipe-out code {
+      justify-self: start;
+      margin-top: 8px;
+      font-size: 17px;
+      color: var(--muted);
+    }
+
+    .pipe-cap {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 588px;
+    }
+
+    /* ══ Slide 7 · Khi nào AI được phép trả lời ══ */
+    .owner {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      column-gap: 72px;
+      font: 600 23px/1.2 var(--sans);
+    }
+
+    .owner span {
+      position: relative;
+      padding-bottom: 12px;
+      text-align: center;
+      border-bottom: 3px solid currentColor;
+    }
+
+    .owner span::before,
+    .owner span::after {
+      content: "";
+      position: absolute;
+      bottom: -3px;
+      width: 3px;
+      height: 16px;
+      background: currentColor;
+    }
+
+    .owner span::before {
+      left: 0;
+    }
+
+    .owner span::after {
+      right: 0;
+    }
+
+    .owner .r {
+      grid-column: 1 / 3;
+      color: var(--crimson);
+    }
+
+    .owner .c {
+      color: var(--ink);
+    }
+
+    .q3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      column-gap: 72px;
+    }
+
+    .qc {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      border: 1.5px solid var(--grid);
+    }
+
+    .qc .top {
+      display: grid;
+      grid-template-columns: 56px 1fr;
+      column-gap: 18px;
+      padding: 20px 24px 18px;
+    }
+
+    .qc .top .ic {
+      width: 52px;
+      height: 52px;
+      margin-top: 4px;
+      color: var(--ink);
+    }
+
+    .qc .k {
+      font: 600 21px/1.2 var(--sans);
+      color: var(--muted);
+      letter-spacing: .04em;
+    }
+
+    .qc h3 {
+      margin-top: 4px;
+      font: 600 31px/1.22 var(--serif);
+    }
+
+    .qc .bot {
+      flex: 1;
+      padding: 16px 24px 20px;
+      border-top: 1.5px solid var(--grid);
+      background: var(--tint);
+    }
+
+    .qc .lb {
+      font: 600 21px/1.2 var(--sans);
+      color: var(--muted);
+      letter-spacing: .04em;
+    }
+
+    .qc .res {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+      font: 700 27px/1.2 var(--sans);
+      color: var(--crimson);
+    }
+
+    .qc .res .ic {
+      width: 34px;
+      height: 34px;
+    }
+
+    .qc .why {
+      margin-top: 8px;
+      font-size: 24px;
+      line-height: 1.36;
+    }
+
+    .qc .opts {
+      display: flex;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .qc .opts span {
+      padding: 6px 14px;
+      border: 1.5px solid var(--ink);
+      background: var(--paper);
+      font: 600 23px/1.2 var(--sans);
+      white-space: nowrap;
+    }
+
+    .qc+.qc::before {
+      content: "";
+      position: absolute;
+      left: -62px;
+      top: 74px;
+      width: 42px;
+      border-top: 3px solid var(--ink);
+    }
+
+    .qc+.qc::after {
+      content: "";
+      position: absolute;
+      left: -32px;
+      top: 68px;
+      width: 12px;
+      height: 12px;
+      border-top: 3px solid var(--ink);
+      border-right: 3px solid var(--ink);
+      transform: rotate(45deg);
+    }
+
+    .qc .yes {
+      position: absolute;
+      left: -58px;
+      top: 34px;
+      font: 600 22px/1 var(--sans);
+    }
+
+    .must {
+      padding: 22px 32px 24px;
+      border-left: 6px solid var(--crimson);
+      background: var(--pink);
+    }
+
+    .must .lbl {
+      font: 600 23px/1.2 var(--sans);
+      color: var(--crimson);
+      letter-spacing: .02em;
+    }
+
+    .must .txt {
+      margin-top: 10px;
+      font: italic 400 31px/1.36 var(--serif);
+    }
+
+    .must .ex {
+      margin-top: 10px;
+      font-size: 24px;
+      line-height: 1.35;
+    }
+
+    /* ══ Slide 8 · Hạn chế → hướng khắc phục ══ */
+    .fix {
+      display: grid;
+      grid-template-columns: 46px minmax(0, 1fr) 54px minmax(0, .8fr) 54px minmax(0, 1.5fr);
+      row-gap: 14px;
+      align-items: stretch;
+    }
+
+    .fix .hd {
+      align-self: end;
+      padding-bottom: 2px;
+      font: 600 22px/1.2 var(--sans);
+      color: var(--muted);
+      letter-spacing: .04em;
+    }
+
+    .fix .n {
+      display: grid;
+      place-items: center;
+      font: 600 36px/1 var(--serif);
+      color: var(--crimson);
+    }
+
+    .fix .c {
+      display: flex;
+      align-items: center;
+      padding: 14px 20px 16px;
+      border: 1.5px solid var(--grid);
+      font-size: 26px;
+      line-height: 1.36;
+    }
+
+    .fix .c.lim {
+      background: var(--tint);
+      font-weight: 600;
+    }
+
+    .fix .c.go {
+      border-color: var(--crimson);
+      background: var(--pink);
+    }
+
+    .fix .ar {
+      position: relative;
+    }
+
+    .fix .ar::before {
+      content: "";
+      position: absolute;
+      left: 10px;
+      right: 14px;
+      top: 50%;
+      border-top: 3px solid var(--crimson);
+    }
+
+    .fix .ar::after {
+      content: "";
+      position: absolute;
+      right: 13px;
+      top: 50%;
+      width: 12px;
+      height: 12px;
+      border-top: 3px solid var(--crimson);
+      border-right: 3px solid var(--crimson);
+      transform: translateY(-50%) rotate(45deg);
+    }
+
+    /* ══ Slide 9 · Kết luận ══ */
+    /* Câu kết luận: khối mực đậm, viền vàng lồng bên trong (gợi khung viền kép của slide bìa) */
+    .verdict {
+      padding: 44px 72px 48px;
+      background: var(--ink);
+      color: #fff;
+      box-shadow: inset 0 0 0 12px var(--ink), inset 0 0 0 13.5px var(--gold);
+      text-align: center;
+      font: 600 62px/1.22 var(--serif);
+    }
+
+    .duo {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      column-gap: 40px;
+    }
+
+    .duo .box {
+      padding: 22px 30px 24px;
+    }
+
+    .duo .box:first-child h3 .ic {
+      color: var(--ink);
+    }
+
+  </style>
+</head>
+
+<body>
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="ic-repeat" viewBox="0 0 48 48">
+      <path d="M6 24a18 18 0 0 1 30.7-12.7L42 16" />
+      <path d="M42 6v10H32" />
+      <path d="M42 24a18 18 0 0 1-30.7 12.7L6 32" />
+      <path d="M16 32H6v10" />
+    </symbol>
+    <symbol id="ic-clock" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="19" />
+      <path d="M24 13v11l7 5" />
+    </symbol>
+    <symbol id="ic-split" viewBox="0 0 48 48">
+      <path d="M24 44V27L10 11" />
+      <path d="M24 27l14-16" />
+      <path d="M10 20V11h9" />
+      <path d="M38 20V11h-9" />
+    </symbol>
+    <symbol id="ic-bubble-q" viewBox="0 0 48 48">
+      <path d="M8 6h32a4 4 0 0 1 4 4v21a4 4 0 0 1-4 4H22l-9 8v-8H8a4 4 0 0 1-4-4V10a4 4 0 0 1 4-4z" />
+      <path d="M19.5 16a4.5 4.5 0 1 1 6 4.3c-1 .4-1.5 1.2-1.5 2.2v1" />
+      <path d="M24 28.5v.5" />
+    </symbol>
+    <symbol id="ic-doc-search" viewBox="0 0 48 48">
+      <path d="M26 4H12a4 4 0 0 0-4 4v32a4 4 0 0 0 4 4h11" />
+      <path d="M26 4l12 12v5" />
+      <path d="M26 4v12h12" />
+      <circle cx="33" cy="33" r="7" />
+      <path d="M38 38l6 6" />
+    </symbol>
+    <symbol id="ic-toggle" viewBox="0 0 48 48">
+      <rect x="3" y="14" width="42" height="20" rx="10" />
+      <circle cx="34" cy="24" r="5.5" />
+    </symbol>
+    <symbol id="ic-person" viewBox="0 0 48 48">
+      <circle cx="24" cy="15" r="8" />
+      <path d="M8 42c0-9 7.2-15 16-15s16 6 16 15" />
+    </symbol>
+    <symbol id="ic-check" viewBox="0 0 48 48">
+      <circle cx="24" cy="24" r="19" />
+      <path d="M15.5 24.5l6 6L33 18" />
+    </symbol>
+    <symbol id="ic-send" viewBox="0 0 48 48">
+      <path d="M44 4L21 27" />
+      <path d="M44 4L30 44l-9-17-17-9z" />
+    </symbol>
+    <symbol id="ic-review" viewBox="0 0 48 48">
+      <path d="M28 4H12a4 4 0 0 0-4 4v32a4 4 0 0 0 4 4h24a4 4 0 0 0 4-4V16z" />
+      <path d="M28 4v12h12" />
+      <path d="M16 30l5 5 10-11" />
+    </symbol>
+    <symbol id="ic-warn" viewBox="0 0 48 48">
+      <path d="M24 5L3 42h42z" />
+      <path d="M24 18v11" />
+      <path d="M24 35v.5" />
+    </symbol>
+    <symbol id="ic-spark" viewBox="0 0 48 48">
+      <path d="M24 4c1.6 10 6 14.4 16 16-10 1.6-14.4 6-16 16-1.6-10-6-14.4-16-16 10-1.6 14.4-6 16-16z" />
+      <path d="M39 33v8M35 37h8" />
+    </symbol>
+    <symbol id="ic-shield" viewBox="0 0 48 48">
+      <path d="M24 4l17 6v12c0 10.5-7.2 18-17 22C14.2 40 7 32.5 7 22V10z" />
+      <path d="M16.5 23.5l5.5 5.5 10-10.5" />
+    </symbol>
+  </svg>
+
+  <main class="deck">
+
+    <!-- ═════════════ PHẦN CHÍNH · 9 SLIDE ═════════════ -->
+
+    <!-- 1 · Bìa — 0:15 -->
+    <section class="slide cover">
+      <div class="frame" aria-hidden="true"></div>
+      <div class="inner">
+        <p class="org">BAN CƠ YẾU CHÍNH PHỦ<b>HỌC VIỆN KỸ THUẬT MẬT MÃ</b>KHOA CÔNG NGHỆ THÔNG TIN</p>
+        <div class="mid">
+          <img class="crest" src="mau/assets/logo-kma.png" alt="Logo Học viện Kỹ thuật Mật mã">
+          <p class="kind">ĐỒ ÁN TỐT NGHIỆP</p>
+          <h1>Xây dựng hệ thống chăm sóc khách hàng<br>tự trị sử dụng Multi-Agent AI</h1>
+          <dl class="people">
+            <dt>Sinh viên thực hiện:</dt>
+            <dd>Bùi Anh Tuấn – CT060144</dd>
+            <dt>Giảng viên hướng dẫn:</dt>
+            <dd>ThS. Vũ Thị Hòa<br>ThS. Cao Thanh Vinh</dd>
+          </dl>
+        </div>
+        <p class="place">Hà Nội, 2026</p>
+      </div>
+    </section>
+
+    <!-- 2 · Nội dung trình bày — 0:15 -->
+    <section class="slide">
+      <header class="head">
+        <img src="mau/assets/logo-kma.png" alt="">
+        <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+      </header>
+      <h2 class="title">Nội dung trình bày</h2>
+      <div class="body">
+        <ol class="toc">
+          <li><span class="n">I</span>
+            <div><b>Bài toán</b><span>Ba vấn đề khi trả lời khách hàng thủ công và rủi ro khi để AI trả lời trực
+                tiếp</span></div>
+          </li>
+          <li><span class="n">II</span>
+            <div><b>Lý do chọn đề tài</b><span>Hạn chế của các giải pháp hiện có, hướng tiếp cận và mục tiêu của đề
+                tài</span></div>
+          </li>
+          <li><span class="n">III</span>
+            <div><b>Giải pháp</b><span>Quy trình bốn bước cố định và điều kiện để AI được phép trả lời</span></div>
+          </li>
+          <li><span class="n">IV</span>
+            <div><b>Hướng phát triển</b><span>Hạn chế hiện tại, mỗi hạn chế đi kèm một hướng khắc phục</span></div>
+          </li>
+          <li><span class="n">V</span>
+            <div><b>Kết luận</b><span>Thông điệp chính của đề tài, sau đó là phần demo ba tình huống trên hệ
+                thống</span></div>
+          </li>
+        </ol>
+      </div>
+      <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">2 / 9</span></footer>
+    </section>
+
+    <!-- 3 · Bài toán — 1:15 -->
+    <section class="slide">
+      <header class="head">
+        <img src="mau/assets/logo-kma.png" alt="">
+        <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+        <ol class="track" aria-label="Mạch trình bày">
+          <li class="on" aria-current="step">Bài toán</li>
+          <li>Lý do chọn đề tài</li>
+          <li>Giải pháp</li>
+          <li>Hướng phát triển</li>
+          <li>Kết luận</li>
+        </ol>
+      </header>
+      <h2 class="title">Bài toán: tự động hóa nhưng không để AI trả lời sai</h2>
+      <div class="body split" style="--cols: 1fr 780px; column-gap: 72px">
+        <div>
+          <p class="sub">Ba vấn đề khi trả lời khách hàng thủ công</p>
+          <ul class="issues">
+            <li><svg class="ic">
+                <use href="#ic-repeat" />
+              </svg>
+              <div><b>Câu hỏi lặp lại</b>
+                <p>Phí vận chuyển, kích cỡ, trạng thái đơn, đổi trả: phần lớn đã có câu trả lời sẵn trong tài liệu.</p>
+              </div>
+            </li>
+            <li><svg class="ic">
+                <use href="#ic-clock" />
+              </svg>
+              <div><b>Phản hồi chậm</b>
+                <p>Tin nhắn tăng mạnh vào buổi tối, cuối tuần, ngoài giờ làm việc của nhân viên.</p>
+              </div>
+            </li>
+            <li><svg class="ic">
+                <use href="#ic-split" />
+              </svg>
+              <div><b>Thiếu nhất quán</b>
+                <p>Mỗi nhân viên diễn đạt một cách, khó kiểm tra lại khi xảy ra khiếu nại.</p>
+              </div>
+            </li>
+          </ul>
+        </div>
+        <div class="stack" style="--z: 1.1">
+          <div class="box">
+            <h3><svg class="ic">
+                <use href="#ic-warn" />
+              </svg>Rủi ro khi để AI trả lời trực tiếp</h3>
+            <p>Mô hình AI diễn đạt trôi chảy nhưng có thể tự tạo ra chính sách, mã giảm giá hoặc cam kết không tồn tại,
+              với giọng điệu rất chắc chắn.</p>
+            <p class="em">Một câu trả lời sai chính sách gây thiệt hại lớn hơn việc chuyển câu hỏi đó cho nhân viên.</p>
+          </div>
+          <aside class="callout hot" style="margin-top: 30px">
+            <p class="lbl">Câu hỏi trung tâm của đề tài</p>
+            <p class="txt">Làm thế nào để tự động xử lý được nhiều trường hợp, nhưng vẫn biết khi nào AI không được phép
+              tự trả lời?</p>
+          </aside>
+        </div>
+      </div>
+      <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">3 / 9</span></footer>
+    </section>
+
+    <!-- 4 · Giải pháp hiện có và khoảng trống — 0:45 -->
+    <section class="slide">
+      <header class="head">
+        <img src="mau/assets/logo-kma.png" alt="">
+        <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+        <ol class="track" aria-label="Mạch trình bày">
+          <li class="done">Bài toán</li>
+          <li class="on" aria-current="step">Lý do chọn đề tài</li>
+          <li>Giải pháp</li>
+          <li>Hướng phát triển</li>
+          <li>Kết luận</li>
+        </ol>
+      </header>
+      <h2 class="title">Giải pháp hiện có: mỗi hướng chỉ mạnh ở một mặt</h2>
+      <div class="body col" style="justify-content: space-between">
+        <div class="split" style="--cols: 840px 1fr; column-gap: 60px">
+          <figure>
+            <svg class="posmap" viewBox="0 0 860 430" role="img"
+              aria-label="Bản đồ định vị theo Bảng 1.1: chatbot kịch bản và chatbot NLU kiểm soát được luồng xử lý nhưng hiểu câu hỏi tự do kém; AI trả lời trực tiếp và nhiều tác tử tự điều phối hiểu tốt nhưng khó kiểm soát; góc hiểu tốt và kiểm soát cao còn trống">
+              <rect class="zone" x="680" y="16" width="168" height="124" />
+              <path class="gl" d="M290,16 V350 M530,16 V350 M770,16 V350 M180,70 H850 M180,200 H850 M180,320 H850" />
+              <path class="ax" d="M180,16 V350 H850" />
+              <text class="tick" x="290" y="384" text-anchor="middle">Không</text>
+              <text class="tick" x="530" y="384" text-anchor="middle">Trung bình</text>
+              <text class="tick" x="770" y="384" text-anchor="middle">Tốt</text>
+              <text class="tick" x="164" y="78" text-anchor="end">Cao</text>
+              <text class="tick" x="164" y="208" text-anchor="end">Trung bình</text>
+              <text class="tick" x="164" y="328" text-anchor="end">Thấp</text>
+              <text class="axt" x="515" y="424" text-anchor="middle">Mức hiểu câu hỏi diễn đạt tự do</text>
+              <text class="axt" transform="translate(34 183) rotate(-90)" text-anchor="middle">Mức kiểm soát luồng xử
+                lý</text>
+              <circle class="pt" cx="290" cy="70" r="12" /><text class="pl" x="290" y="110" text-anchor="middle">Chatbot
+                kịch bản</text>
+              <circle class="pt" cx="530" cy="70" r="12" /><text class="pl" x="530" y="110" text-anchor="middle">Chatbot
+                NLU</text>
+              <circle class="pt" cx="770" cy="200" r="12" /><text class="pl" x="748" y="208" text-anchor="end">AI trả
+                lời trực tiếp</text>
+              <circle class="pt" cx="770" cy="320" r="12" /><text class="pl" x="748" y="328" text-anchor="end">Nhiều tác
+                tử tự điều phối</text>
+              <text class="zone-lb" x="764" y="86" text-anchor="middle">Khoảng trống</text>
+            </svg>
+            <figcaption class="posmap-cap">Mỗi chấm là một nhóm giải pháp, đặt theo hai tiêu chí: mức hiểu câu hỏi của
+              khách và mức kiểm soát luồng xử lý.</figcaption>
+          </figure>
+          <div class="stack">
+            <div class="box">
+              <h3>Giải pháp truyền thống</h3>
+              <p class="ex">Chatbot kịch bản, chatbot nhận diện ý định (NLU)</p>
+              <ul class="pc">
+                <li><svg class="ic">
+                    <use href="#ic-check" />
+                  </svg>Dễ dự đoán, kiểm soát được luồng xử lý</li>
+                <li class="con"><svg class="ic">
+                    <use href="#ic-warn" />
+                  </svg>Khó hiểu cách diễn đạt tự do của khách</li>
+              </ul>
+            </div>
+            <div class="box">
+              <h3>AI tự quyết nhiều</h3>
+              <p class="ex">AI trả lời trực tiếp bằng mô hình ngôn ngữ lớn (LLM), hoặc nhiều tác tử tự điều phối</p>
+              <ul class="pc">
+                <li><svg class="ic">
+                    <use href="#ic-check" />
+                  </svg>Hiểu tốt hơn các câu hỏi diễn đạt tự do</li>
+                <li class="con"><svg class="ic">
+                    <use href="#ic-warn" />
+                  </svg>Luồng xử lý và lỗi khó kiểm soát: khó biết trước AI sẽ xử lý một câu hỏi theo cách nào</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <p class="note"><b>Khoảng trống:</b> chưa có hướng nào vừa hiểu tốt câu hỏi diễn đạt tự do, vừa kiểm soát được
+          luồng xử lý.</p>
+      </div>
+      <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">4 / 9</span></footer>
+    </section>
+
+    <!-- 5 · Hướng của đề tài và mục tiêu — 0:45 -->
+    <section class="slide">
+      <header class="head">
+        <img src="mau/assets/logo-kma.png" alt="">
+        <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+        <ol class="track" aria-label="Mạch trình bày">
+          <li class="done">Bài toán</li>
+          <li class="on" aria-current="step">Lý do chọn đề tài</li>
+          <li>Giải pháp</li>
+          <li>Hướng phát triển</li>
+          <li>Kết luận</li>
+        </ol>
+      </header>
+      <h2 class="title">Hướng của đề tài: Multi-Agent có kiểm soát</h2>
+      <div class="body col" style="justify-content: space-between">
+        <div class="split" style="--cols: 840px 1fr; column-gap: 60px">
+          <figure>
+            <svg class="posmap" viewBox="0 0 860 430" role="img"
+              aria-label="Bản đồ định vị theo Bảng 1.1: chatbot kịch bản và chatbot NLU kiểm soát được luồng xử lý nhưng hiểu câu hỏi tự do kém; AI trả lời trực tiếp và nhiều tác tử tự điều phối hiểu tốt nhưng khó kiểm soát; đề tài nằm ở góc hiểu tốt và kiểm soát cao">
+              <defs>
+                <marker id="pm-ah" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="15" markerHeight="15"
+                  markerUnits="userSpaceOnUse" orient="auto">
+                  <path d="M0,0 L12,6 L0,12 z" />
+                </marker>
+              </defs>
+              <rect class="zone" x="680" y="16" width="168" height="124" />
+              <path class="gl" d="M290,16 V350 M530,16 V350 M770,16 V350 M180,70 H850 M180,200 H850 M180,320 H850" />
+              <path class="ax" d="M180,16 V350 H850" />
+              <text class="tick" x="290" y="384" text-anchor="middle">Không</text>
+              <text class="tick" x="530" y="384" text-anchor="middle">Trung bình</text>
+              <text class="tick" x="770" y="384" text-anchor="middle">Tốt</text>
+              <text class="tick" x="164" y="78" text-anchor="end">Cao</text>
+              <text class="tick" x="164" y="208" text-anchor="end">Trung bình</text>
+              <text class="tick" x="164" y="328" text-anchor="end">Thấp</text>
+              <text class="axt" x="515" y="424" text-anchor="middle">Mức hiểu câu hỏi diễn đạt tự do</text>
+              <text class="axt" transform="translate(34 183) rotate(-90)" text-anchor="middle">Mức kiểm soát luồng xử
+                lý</text>
+              <circle class="pt" cx="290" cy="70" r="12" /><text class="pl" x="290" y="110" text-anchor="middle">Chatbot
+                kịch bản</text>
+              <circle class="pt" cx="530" cy="70" r="12" /><text class="pl" x="530" y="110" text-anchor="middle">Chatbot
+                NLU</text>
+              <circle class="pt" cx="770" cy="200" r="12" /><text class="pl" x="748" y="208" text-anchor="end">AI trả
+                lời trực tiếp</text>
+              <circle class="pt" cx="770" cy="320" r="12" /><text class="pl" x="748" y="328" text-anchor="end">Nhiều tác
+                tử tự điều phối</text>
+              <path class="arrow" d="M818,306 V152" marker-end="url(#pm-ah)" />
+              <text class="zone-lb" x="764" y="42" text-anchor="middle">Khoảng trống</text>
+              <circle class="pt me" cx="770" cy="76" r="16" /><text class="me-lb" x="764" y="124"
+                text-anchor="middle">Đề tài</text>
+            </svg>
+            <figcaption class="posmap-cap"><b>Đề tài</b> nhắm vào góc còn trống: hiểu tốt câu hỏi diễn đạt tự do và kiểm
+              soát cao luồng xử lý.</figcaption>
+          </figure>
+          <div class="stack">
+            <p class="sub">Kết hợp điểm mạnh của cả hai hướng</p>
+            <ul class="ways">
+              <li><b>Multi-Agent<small>điểm mạnh của AI</small></b>
+                <p>Nhiều tác tử AI, mỗi tác tử làm một phần việc AI làm tốt: hiểu câu hỏi, tìm thông tin, diễn đạt câu
+                  trả lời.</p>
+              </li>
+              <li class="key"><b>Có kiểm soát<small>điểm mạnh của giải pháp truyền thống</small></b>
+                <p>Các tác tử chạy theo quy trình cố định, dễ dự đoán; các quyết định có rủi ro được giữ bằng luật cố
+                  định và con người.</p>
+              </li>
+            </ul>
+            <p class="note" style="--z: .87"><b>“Tự trị”</b> trong đề tài: hệ thống tự xử lý các trường hợp thông
+              thường; quyền tự quyết bị giới hạn ở các quyết định nhạy cảm.</p>
+          </div>
+        </div>
+        <div class="goals">
+          <p class="lbl">Mục tiêu đặt ra<small>đối chiếu ở phần kết luận</small></p>
+          <p><b>≥ 70%</b><span>số lượt được hệ thống tự xử lý</span></p>
+          <p><b>≤ 5%</b><span>số lượt chuyển cho nhân viên không cần thiết</span></p>
+          <p><b>5 giây</b><span>95% số lượt phải hoàn thành trong thời gian này</span></p>
+        </div>
+      </div>
+      <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">5 / 9</span></footer>
+    </section>
+
+    <!-- 6 · Giải pháp: bốn bước cố định — 1:30 -->
+    <section class="slide">
+      <header class="head">
+        <img src="mau/assets/logo-kma.png" alt="">
+        <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+        <ol class="track" aria-label="Mạch trình bày">
+          <li class="done">Bài toán</li>
+          <li class="done">Lý do chọn đề tài</li>
+          <li class="on" aria-current="step">Giải pháp</li>
+          <li>Hướng phát triển</li>
+          <li>Kết luận</li>
+        </ol>
+      </header>
+      <h2 class="title">Giải pháp: mỗi tin nhắn đi qua bốn bước cố định</h2>
+      <div class="body">
+        <svg class="wires" viewBox="0 0 1728 656" aria-hidden="true">
+          <defs>
+            <marker id="w-ah" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="15" markerHeight="15"
+              markerUnits="userSpaceOnUse" orient="auto">
+              <path d="M0,0 L12,6 L0,12 z" />
+            </marker>
+          </defs>
+          <path d="M192,46 V75" marker-end="url(#w-ah)" />
+          <path d="M386,224 H445" marker-end="url(#w-ah)" />
+          <path d="M834,224 H893" marker-end="url(#w-ah)" />
+          <path d="M1282,224 H1341" marker-end="url(#w-ah)" />
+          <path d="M1536,370 V395 M640,395 H1536" />
+          <path d="M640,395 V417" marker-end="url(#w-ah)" />
+          <path d="M1088,395 V417" marker-end="url(#w-ah)" />
+          <path d="M1536,395 V417" marker-end="url(#w-ah)" />
+          <path class="dash" d="M640,395 H192 V417" marker-end="url(#w-ah)" />
+        </svg>
+        <p class="pipe-in">Tin nhắn của khách</p>
+        <ol class="pipe-steps">
+          <li>
+            <p class="hd"><span class="n">1</span>Hiểu câu hỏi</p>
+            <p class="tech">Intent</p>
+            <p class="d">Khách đang hỏi gì? Có mã đơn hay thông tin quan trọng nào không?</p>
+          </li>
+          <li>
+            <p class="hd"><span class="n">2</span>Tìm căn cứ</p>
+            <p class="tech">Knowledge</p>
+            <p class="d">Tìm chính sách, tài liệu phù hợp hoặc tra cứu đơn hàng của chính khách đó.</p>
+          </li>
+          <li class="key">
+            <p class="hd"><span class="n">3</span>Quyết định</p>
+            <p class="tech">Decision</p>
+            <p class="d">Đã đủ điều kiện để hệ thống tự xử lý chưa? Dùng luật cố định, không để AI tự quyết.</p>
+          </li>
+          <li>
+            <p class="hd"><span class="n">4</span>Tạo phản hồi</p>
+            <p class="tech">Response</p>
+            <p class="d">Bước duy nhất được gửi nội dung cho khách; chỉ tạo câu trả lời khi bước 3 cho phép.</p>
+          </li>
+        </ol>
+        <ul class="pipe-out">
+          <li class="wait"><svg class="ic">
+              <use href="#ic-bubble-q" />
+            </svg><b>Hỏi lại mã đơn</b>
+            <p>Hỏi về đơn nhưng thiếu mã</p><code>AWAITING_CUSTOMER</code>
+          </li>
+          <li><svg class="ic">
+              <use href="#ic-send" />
+            </svg><b>Gửi ngay</b>
+            <p>Trả lời thẳng cho khách</p><code>REPLIED</code>
+          </li>
+          <li><svg class="ic">
+              <use href="#ic-review" />
+            </svg><b>Chờ nhân viên duyệt</b>
+            <p>Nháp được duyệt hoặc sửa</p><code>PENDING_APPROVAL</code>
+          </li>
+          <li><svg class="ic">
+              <use href="#ic-person" />
+            </svg><b>Chuyển cho nhân viên</b>
+            <p>Kèm phiếu tóm tắt ca</p><code>IN_HUMAN_QUEUE</code>
+          </li>
+        </ul>
+        <p class="cap pipe-cap" style="--z: 1.04">Mỗi bước do một tác tử (agent) chuyên trách đảm nhận và luôn chạy theo
+          thứ tự cố định; không tác tử nào được tự chọn bước tiếp theo. Bước 1, 2, 4 có dùng mô hình AI; bước 3 chỉ dùng
+          luật cố định.</p>
+      </div>
+      <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">6 / 9</span></footer>
+    </section>
+
+    <!-- 7 · Khi nào AI được phép trả lời — 1:15 -->
+    <section class="slide">
+      <header class="head">
+        <img src="mau/assets/logo-kma.png" alt="">
+        <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+        <ol class="track" aria-label="Mạch trình bày">
+          <li class="done">Bài toán</li>
+          <li class="done">Lý do chọn đề tài</li>
+          <li class="on" aria-current="step">Giải pháp</li>
+          <li>Hướng phát triển</li>
+          <li>Kết luận</li>
+        </ol>
+      </header>
+      <h2 class="title">Khi nào AI được phép trả lời?</h2>
+      <div class="body col" style="gap: 18px">
+        <div class="owner"><span class="r">Luật cố định quyết định · không ai cấu hình được</span><span class="c">Quản
+            trị viên cấu hình</span></div>
+        <div class="q3">
+          <div class="qc">
+            <div class="top"><svg class="ic">
+                <use href="#ic-bubble-q" />
+              </svg>
+              <div>
+                <p class="k">CÂU HỎI 1</p>
+                <h3>Hệ thống có hiểu được yêu cầu không?</h3>
+              </div>
+            </div>
+            <div class="bot">
+              <p class="lb">NẾU KHÔNG</p>
+              <p class="res"><svg class="ic">
+                  <use href="#ic-person" />
+                </svg>Chuyển cho nhân viên</p>
+              <p class="why">Câu hỏi ngoài phạm vi cửa hàng, hoặc khách yêu cầu gặp người thật.</p>
+            </div>
+          </div>
+          <div class="qc">
+            <span class="yes">Có</span>
+            <div class="top"><svg class="ic">
+                <use href="#ic-doc-search" />
+              </svg>
+              <div>
+                <p class="k">CÂU HỎI 2</p>
+                <h3>Có đủ dữ liệu làm căn cứ không?</h3>
+              </div>
+            </div>
+            <div class="bot">
+              <p class="lb">NẾU KHÔNG</p>
+              <p class="res"><svg class="ic">
+                  <use href="#ic-person" />
+                </svg>Chuyển cho nhân viên</p>
+              <p class="why">Không tìm thấy nguồn phù hợp, hoặc dịch vụ gặp lỗi: hệ thống không đoán.</p>
+            </div>
+          </div>
+          <div class="qc">
+            <span class="yes">Có</span>
+            <div class="top"><svg class="ic">
+                <use href="#ic-toggle" />
+              </svg>
+              <div>
+                <p class="k">CÂU HỎI 3</p>
+                <h3>Đã an toàn: gửi ngay hay chờ duyệt?</h3>
+              </div>
+            </div>
+            <div class="bot">
+              <p class="lb">THEO CẤU HÌNH</p>
+              <p class="opts"><span>Gửi ngay</span><span>Chờ nhân viên duyệt</span></p>
+              <p class="why">Chọn theo từng loại yêu cầu; mặc định hoàn tiền, đổi hàng, khiếu nại phải chờ duyệt.</p>
+            </div>
+          </div>
+        </div>
+        <div class="must">
+          <p class="lbl">Nguyên tắc bắt buộc</p>
+          <p class="txt">Không đủ căn cứ thì không đoán. Cấu hình chỉ chọn giữa gửi ngay và chờ duyệt, không thể biến
+            một trường hợp rủi ro thành trường hợp được tự động trả lời.</p>
+          <p class="ex">Ví dụ: khách đề nghị cấp “mã giảm giá 70%”, tài liệu không có mã này → hệ thống không tự tạo mã.
+          </p>
+        </div>
+      </div>
+      <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">7 / 9</span></footer>
+    </section>
+
+    <!-- 8 · Hạn chế và hướng khắc phục — 0:55 -->
+    <section class="slide">
+      <header class="head">
+        <img src="mau/assets/logo-kma.png" alt="">
+        <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+        <ol class="track" aria-label="Mạch trình bày">
+          <li class="done">Bài toán</li>
+          <li class="done">Lý do chọn đề tài</li>
+          <li class="done">Giải pháp</li>
+          <li class="on" aria-current="step">Hướng phát triển</li>
+          <li>Kết luận</li>
+        </ol>
+      </header>
+      <h2 class="title">Hạn chế hiện tại và hướng khắc phục</h2>
+      <div class="body col" style="gap: 20px">
+        <div class="fix">
+          <span></span>
+          <p class="hd">HẠN CHẾ HIỆN TẠI</p><span></span>
+          <p class="hd">ẢNH HƯỞNG</p><span></span>
+          <p class="hd">HƯỚNG KHẮC PHỤC</p>
+          <span class="n">1</span>
+          <p class="c lim">Phản hồi chậm khi nhiều hội thoại cùng lúc</p><span class="ar"></span>
+          <p class="c">Khách phải chờ lâu hơn mục tiêu</p><span class="ar"></span>
+          <p class="c go">Đặt máy chủ cùng khu vực với cơ sở dữ liệu và kho tri thức; bớt các truy vấn cơ sở dữ liệu
+            không cần thiết.</p>
+          <span class="n">2</span>
+          <p class="c lim">Một số câu hỏi tìm nguồn chưa tốt</p><span class="ar"></span>
+          <p class="c">Có thể chuyển cho nhân viên không cần thiết</p><span class="ar"></span>
+          <p class="c go">Lọc kết quả có mức phù hợp thấp, xếp hạng lại kết quả gần nhau, viết lại câu hỏi nối tiếp theo
+            ngữ cảnh.</p>
+          <span class="n">3</span>
+          <p class="c lim">Mới chạy an toàn trên một tiến trình máy chủ</p><span class="ar"></span>
+          <p class="c">Khó mở rộng khi số khách tăng</p><span class="ar"></span>
+          <p class="c go">Chuyển dữ liệu phối hợp sang kho dùng chung để chạy nhiều tiến trình.</p>
+          <span class="n">4</span>
+          <p class="c lim">Chưa thao tác trên đơn hàng thật</p><span class="ar"></span>
+          <p class="c">Giá trị nghiệp vụ còn giới hạn</p><span class="ar"></span>
+          <p class="c go">Tích hợp hệ thống đơn hàng thật; thao tác nhạy cảm như hủy đơn, hoàn tiền vẫn do nhân viên
+            duyệt.</p>
+        </div>
+        <p class="note" style="--z: .97">Nguyên tắc phát triển giữ nguyên: tăng mức tự động hóa nhưng không đánh đổi khả
+          năng kiểm soát.</p>
+        <p class="cap" style="--z: 1.04">Hướng dài hạn: vòng học bán tự động (hệ thống đề xuất bổ sung tri thức, quản
+          trị viên quyết định), mở rộng đa kênh và đa ngôn ngữ.</p>
+      </div>
+      <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">8 / 9</span></footer>
+    </section>
+
+    <!-- 9 · Kết luận — 0:20 -->
+    <section class="slide">
+      <header class="head">
+        <img src="mau/assets/logo-kma.png" alt="">
+        <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
+        <ol class="track" aria-label="Mạch trình bày">
+          <li class="done">Bài toán</li>
+          <li class="done">Lý do chọn đề tài</li>
+          <li class="done">Giải pháp</li>
+          <li class="done">Hướng phát triển</li>
+          <li class="on" aria-current="step">Kết luận</li>
+        </ol>
+      </header>
+      <h2 class="title">Kết luận</h2>
+      <div class="body col" style="justify-content: space-between; --z: 1.22">
+        <p class="verdict">Tự động hóa phần phù hợp,<br>giữ con người ở các quyết định có rủi ro.</p>
+        <div class="duo">
+          <div class="box tint">
+            <h3><svg class="ic">
+                <use href="#ic-spark" />
+              </svg>AI đảm nhận việc ngôn ngữ</h3>
+            <ul class="list xs">
+              <li>Hiểu câu hỏi của khách</li>
+              <li>Tìm thông tin liên quan</li>
+              <li>Diễn đạt câu trả lời</li>
+            </ul>
+          </div>
+          <div class="box warn">
+            <h3><svg class="ic">
+                <use href="#ic-shield" />
+              </svg>Luật cố định và con người kiểm soát</h3>
+            <ul class="list xs">
+              <li>Có đủ căn cứ để trả lời hay không</li>
+              <li>Khi nào phải chuyển cho nhân viên</li>
+              <li>Có được thực hiện thao tác nhạy cảm hay không</li>
+            </ul>
+          </div>
+        </div>
+        <p class="note"><b>Kết quả:</b> đạt các mục tiêu chất lượng chính; thời gian phản hồi khi nhiều hội thoại cùng
+          lúc cần tiếp tục tối ưu.</p>
+      </div>
+      <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">9 / 9</span></footer>
+    </section>
+
+    <!-- 10 · Cảm ơn: chiếu sau phần demo -->
+    <section class="slide thanks">
+      <div class="frame" aria-hidden="true"></div>
+      <div class="inner">
+        <img class="crest" src="mau/assets/logo-kma.png" alt="Logo Học viện Kỹ thuật Mật mã">
+        <h2>Em xin chân thành cảm ơn<br>các thầy cô đã lắng nghe</h2>
+        <div class="rule" aria-hidden="true"></div>
+        <p class="ask">Em mong nhận được câu hỏi và góp ý của Hội đồng</p>
+        <p class="who">Bùi Anh Tuấn – CT060144</p>
+      </div>
+    </section>
+
+  </main>
+  <script src="mau/deck.js"></script>
+</body>
+
+</html>
