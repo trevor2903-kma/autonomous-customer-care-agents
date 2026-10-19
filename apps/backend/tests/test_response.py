@@ -181,6 +181,23 @@ def test_system_prompt_carries_facts_and_action_grounding() -> None:
     assert "GIỚI HẠN HÀNH ĐỘNG" in prompt and "hoàn tiền" in prompt
 
 
+@pytest.mark.parametrize("intent", ["exchange", "refund"])
+def test_system_prompt_checks_item_belongs_to_order(intent: str) -> None:
+    # Khách xin đổi "áo phông" cho đơn chỉ có áo khoác + áo len: Agent 4 THẤY lệch nhưng vẫn bám quy trình hỏi
+    # size/màu và hứa "sẽ hỗ trợ đổi". Quy tắc đối chiếu phải đứng TRÊN "BÁM QUY TRÌNH" và dừng quy trình.
+    prompt = resp._system_prompt(intent)
+    assert "ĐỐI CHIẾU SẢN PHẨM (ưu tiên HƠN 'BÁM QUY TRÌNH')" in prompt
+    assert "DỪNG quy trình" in prompt
+    assert "đối chiếu sản phẩm" in resp._order_block({"Mã đơn": "716450", "Sản phẩm": "Áo khoác dù nam size L x1"})
+
+
+@pytest.mark.parametrize("intent", ["complaint", "order_status", None])
+def test_item_check_rule_off_outside_exchange_refund(intent: str | None) -> None:
+    # complaint: ca giao nhầm có món nhận được vốn KHÔNG nằm trong đơn — bật quy tắc thì gpt-4o-mini chặn oan
+    # ("áo phông không có trong đơn") dù prompt có ngoại lệ + ví dụ (đo live).
+    assert "ĐỐI CHIẾU SẢN PHẨM" not in resp._system_prompt(intent)
+
+
 def test_system_prompt_forbids_absence_assertion() -> None:
     """Grounding HAI CHIỀU: cấm bịa *có*, VÀ cấm suy diễn *không có* từ chỗ nguồn im lặng.
 

@@ -139,7 +139,23 @@ def load_facts() -> str:
     return _facts_cache
 
 
-def _system_prompt() -> str:
+# Đối chiếu sản phẩm với đơn — CHỈ cho intent khách đổi/trả món ĐÃ MUA. KHÔNG bật cho `complaint`: ca giao nhầm có
+# món nhận được vốn không nằm trong đơn, và đo live (gpt-4o-mini) dù có ngoại lệ + ví dụ trong prompt LLM vẫn đem món
+# đó ra so → đáp "áo phông không có trong đơn" cho khách đang báo giao nhầm. Bật/tắt theo intent là TẤT ĐỊNH.
+_ITEM_CHECK_INTENTS: frozenset[str] = frozenset({"exchange", "refund"})
+_ITEM_CHECK_RULE = (
+    "ĐỐI CHIẾU SẢN PHẨM (ưu tiên HƠN 'BÁM QUY TRÌNH'): khách muốn đổi/trả một sản phẩm và có khối 'ĐƠN HÀNG "
+    "CỦA KHÁCH' → so TÊN món khách đang có muốn đổi/trả (vd 'áo len cổ lọ') với dòng 'Sản phẩm' của khối — CHỈ "
+    "so tên/loại hàng, BỎ QUA size/màu. Size/màu khách muốn đổi SANG không cần có trong đơn: vd 'đổi áo len cổ "
+    "lọ sang size L' khi đơn có 'Áo len cổ lọ size M' là KHỚP → làm tiếp quy trình. Tên món đó KHÔNG có trong "
+    "đơn → DỪNG quy trình: KHÔNG hỏi size/màu, KHÔNG nhắc điều kiện đổi/trả, KHÔNG nói sẽ hỗ trợ đổi/trả; chỉ nêu "
+    "đơn gồm những sản phẩm nào rồi hỏi khách món đó nằm ở đơn khác (xin mã đơn đó) hay khách muốn đổi/trả một "
+    "sản phẩm trong đơn này. Khách nói chung chung ('cái áo') mà đơn có nhiều món khớp → hỏi rõ món nào, KHÔNG "
+    "tự chọn.\n"
+)
+
+
+def _system_prompt(intent: str | None = None) -> str:
     facts = load_facts()
     facts_block = f"\n\nSỰ THẬT CỬA HÀNG (luôn đúng, được phép dùng để trả lời):\n{facts}" if facts else ""
     return (
@@ -170,6 +186,7 @@ def _system_prompt() -> str:
         "khối là CHƯA TỚI mốc đó (đơn chưa gửi thì chưa có ngày gửi), đừng diễn thành 'không có'. Khi KHÔNG "
         "có khối đó nghĩa là bạn CHƯA tra được đơn nào: TUYỆT ĐỐI không mô tả trạng thái của bất kỳ đơn nào — "
         "nếu khách hỏi về đơn mà chưa cho mã, hãy HỎI mã đơn.\n"
+        f"{_ITEM_CHECK_RULE if intent in _ITEM_CHECK_INTENTS else ''}"
         "LỊCH SỬ KHÔNG PHẢI DỮ LIỆU ĐƠN: dù các lượt TRƯỚC có nói về đơn nào, trạng thái đơn chỉ được lấy từ "
         "khối ĐƠN HÀNG CỦA KHÁCH của LƯỢT NÀY. Lượt này không có khối đó thì KHÔNG được nhắc lại trạng thái/"
         "ngày/mã vận đơn đã nói ở lượt trước (dữ liệu có thể đã đổi) — hãy hỏi lại mã đơn.\n"
@@ -203,7 +220,10 @@ def _order_block(order_context: dict[str, str] | None) -> str:
     if not order_context:
         return ""
     lines = "\n".join(f"{k}: {v}" for k, v in order_context.items())
-    return f"\n\nĐƠN HÀNG CỦA KHÁCH (dữ liệu hệ thống, chính xác — dùng để báo trạng thái):\n{lines}"
+    return (
+        "\n\nĐƠN HÀNG CỦA KHÁCH (dữ liệu hệ thống, chính xác — dùng để báo trạng thái và đối chiếu sản phẩm):"
+        f"\n{lines}"
+    )
 
 
 def _context_block(rag_contexts: list[dict[str, Any]]) -> str:
@@ -270,7 +290,7 @@ async def generate_reply(
             resp = await get_openai().chat.completions.create(
                 model=settings.llm_model,
                 messages=[
-                    {"role": "system", "content": _system_prompt()},
+                    {"role": "system", "content": _system_prompt(intent)},
                     {"role": "user", "content": user_msg},
                 ],
                 temperature=0,
