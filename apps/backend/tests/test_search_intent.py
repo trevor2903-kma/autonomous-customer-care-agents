@@ -84,3 +84,38 @@ async def test_no_intent_behaves_like_before(monkeypatch: pytest.MonkeyPatch) ->
     hits = await rag_service.search("phí ship", top_k=4)
     assert calls == [None]
     assert hits[0]["source"] == "z.md"
+
+
+def _capture_filter(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Thay client Qdrant bằng bản giả ghi lại `query_filter` mà `_query` gửi đi."""
+    seen: dict[str, Any] = {}
+
+    class _Res:
+        points: list[_Point] = []
+
+    class _FakeQdrant:
+        async def query_points(self, **kwargs: Any) -> _Res:
+            seen.update(kwargs)
+            return _Res()
+
+    monkeypatch.setattr(rag_service, "get_qdrant", lambda: _FakeQdrant())
+    return seen
+
+
+async def test_intent_filter_includes_untagged_chunks(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Upload ad-hoc mang intent=None: lượt lọc phải gồm cả nó, không thì FAQ canonical cùng intent đủ top_k
+    # sẽ che mất (upload "Ưu đãi Thu – Đông" không bao giờ tới Agent 4).
+    seen = _capture_filter(monkeypatch)
+    await rag_service._query([0.1, 0.2], 4, "promotion")
+
+    flt = seen["query_filter"]
+    assert not flt.must  # OR, không phải AND
+    conds = flt.should
+    assert any(getattr(c, "key", None) == "intent" and c.match.value == "promotion" for c in conds)
+    assert any(getattr(getattr(c, "is_empty", None), "key", None) == "intent" for c in conds)
+
+
+async def test_no_intent_sends_no_filter(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen = _capture_filter(monkeypatch)
+    await rag_service._query([0.1, 0.2], 4, None)
+    assert seen["query_filter"] is None

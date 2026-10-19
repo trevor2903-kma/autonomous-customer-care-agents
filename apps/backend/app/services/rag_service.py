@@ -39,7 +39,9 @@ from qdrant_client.models import (
     FieldCondition,
     Filter,
     FilterSelector,
+    IsEmptyCondition,
     MatchValue,
+    PayloadField,
     PayloadSchemaType,
     PointStruct,
     VectorParams,
@@ -468,7 +470,7 @@ async def ingest_document(
     text: str, source: str, *, version: str, type: str = "upload", title: str | None = None
 ) -> int:
     """Upload AD-HOC: chuẩn hoá → bỏ section nội bộ → sanitize → chunk tổng quát → embed → upsert. Payload
-    cùng schema KB nhưng `intent=None` (không có frontmatter) → Agent 2 chỉ thấy nó ở lượt không-filter.
+    cùng schema KB nhưng `intent=None` (không có frontmatter) → lượt lọc theo intent vẫn gồm nó (`_query`).
     Trả số chunk.
 
     Sanitize (Lớp D, slice 13): file ad-hoc KHÔNG do team viết nên là bề mặt injection GIÁN TIẾP —
@@ -589,8 +591,16 @@ def _hit(point) -> dict:
 
 
 async def _query(vector: list[float], top_k: int, intent: str | None) -> list:
+    # Lọc intent = chunk CÙNG intent HOẶC chunk KHÔNG gắn intent (upload ad-hoc, reference đa-intent). Chỉ lọc
+    # `intent == X` thì doc không nhãn chỉ còn ở lượt fallback — mà KB canonical cùng intent đủ top_k là fallback
+    # không chạy: upload "Ưu đãi Thu – Đông" bị FAQ khuyến mãi chung che hoàn toàn (đo live: 0.59 vs 0.646).
     flt = (
-        Filter(must=[FieldCondition(key="intent", match=MatchValue(value=intent))])
+        Filter(
+            should=[
+                _match("intent", intent),
+                IsEmptyCondition(is_empty=PayloadField(key="intent")),
+            ]
+        )
         if intent
         else None
     )
@@ -607,7 +617,8 @@ async def _query(vector: list[float], top_k: int, intent: str | None) -> list:
 async def search(query: str, top_k: int = 4, intent: str | None = None) -> list[dict]:
     """Truy hồi top-k chunk gần nhất (cosine), ưu tiên chunk CÙNG INTENT (plan §2.5).
 
-    Có `intent` (≠ `other`) → lượt lọc theo `payload.intent` trước. Nếu lọc **không đủ top_k** hoặc
+    Có `intent` (≠ `other`) → lượt lọc theo `payload.intent` trước (gồm cả chunk KHÔNG gắn intent — xem
+    `_query`). Nếu lọc **không đủ top_k** hoặc
     **hit tốt nhất vẫn dưới `retrieval_threshold`** → chạy thêm lượt KHÔNG lọc rồi gộp-khử-trùng theo
     điểm. Không hard-fail khi lọc rỗng: nhãn intent sai/thiếu không được làm mất tri thức đúng.
     Ngưỡng dùng ở đây là `retrieval_threshold` sẵn có — KHÔNG thêm ngưỡng số thứ hai (bất biến §1).

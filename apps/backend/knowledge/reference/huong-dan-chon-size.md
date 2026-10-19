@@ -9,8 +9,6 @@ questions:
 ---
 # Hướng dẫn chọn size
 
-> ⚠️ Bảng dưới là MẪU — thay bằng bảng size thật của shop. Số đo có thể chênh nhẹ theo từng dòng sản phẩm.
-
 ## Bảng size áo (số đo cơ thể, cm)
 | Size | Vòng ngực | Chiều cao |
 |------|-----------|-----------|
