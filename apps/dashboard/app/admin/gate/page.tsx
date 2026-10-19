@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/components/ui/Toast";
 import {
   type GateConfig,
   type GateConfigUpdate,
@@ -10,6 +12,7 @@ import {
 
 // Module Cấu hình Gate (slice 11 P5) — 2 toggle hệ thống + bảng per-intent (Gửi thẳng/Duyệt nháp)
 // + slider "Ngưỡng confidence chuyển người" READ-ONLY. Gate = van cho auto_reply; escalation an toàn KHÔNG bị gate.
+// Thay đổi giữ ở bản nháp cục bộ, chỉ PUT phần khác biệt khi bấm "Lưu cấu hình" (một lần lưu = một dòng audit).
 
 function Switch({
   checked,
@@ -66,16 +69,35 @@ function applyPatch(cfg: GateConfig, patch: GateConfigUpdate): GateConfig {
   return next;
 }
 
+function diffConfig(base: GateConfig, next: GateConfig): GateConfigUpdate {
+  const patch: GateConfigUpdate = {};
+  if (next.auto_reply_enabled !== base.auto_reply_enabled) patch.auto_reply_enabled = next.auto_reply_enabled;
+  if (next.auto_resolve_enabled !== base.auto_resolve_enabled)
+    patch.auto_resolve_enabled = next.auto_resolve_enabled;
+  if (next.auto_resolve_minutes !== base.auto_resolve_minutes)
+    patch.auto_resolve_minutes = next.auto_resolve_minutes;
+  if (next.auto_resolve_grace_minutes !== base.auto_resolve_grace_minutes)
+    patch.auto_resolve_grace_minutes = next.auto_resolve_grace_minutes;
+  const baseRules = new Map(base.rules.map((r) => [r.intent, r.send_directly]));
+  const rules = next.rules
+    .filter((r) => baseRules.get(r.intent) !== r.send_directly)
+    .map((r) => ({ intent: r.intent, send_directly: r.send_directly }));
+  if (rules.length) patch.rules = rules;
+  return patch;
+}
+
 function ToggleRow({
   label,
   desc,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string;
   desc: string;
   checked: boolean;
   onChange: (v: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-4 rounded-[12px] border border-line bg-white px-[18px] py-4 shadow-soft">
@@ -83,36 +105,62 @@ function ToggleRow({
         <div className="text-[14.5px] font-semibold text-ink">{label}</div>
         <div className="mt-0.5 text-[12.5px] leading-[1.5] text-faint">{desc}</div>
       </div>
-      <Switch checked={checked} onChange={onChange} variant="system" />
+      <Switch checked={checked} onChange={onChange} variant="system" disabled={disabled} />
     </div>
   );
 }
 
 export default function GatePage() {
   const qc = useQueryClient();
+  const toast = useToast();
   const { data: cfg, isLoading, isError, error } = useQuery<GateConfig, Error>({
     queryKey: ["gate-config"],
     queryFn: getGateConfig,
   });
+  // null = chưa sửa gì → hiển thị đúng bản server.
+  const [draft, setDraft] = useState<GateConfig | null>(null);
+  const view = draft ?? cfg;
+  const patch = cfg && draft ? diffConfig(cfg, draft) : {};
+  const dirty = Object.keys(patch).length > 0;
 
-  const mutation = useMutation<GateConfig, Error, GateConfigUpdate, { prev?: GateConfig }>({
+  const mutation = useMutation<GateConfig, Error, GateConfigUpdate>({
     mutationFn: updateGateConfig,
-    onMutate: async (patch) => {
-      await qc.cancelQueries({ queryKey: ["gate-config"] });
-      const prev = qc.getQueryData<GateConfig>(["gate-config"]);
-      if (prev) qc.setQueryData(["gate-config"], applyPatch(prev, patch));
-      return { prev };
+    onSuccess: (data) => {
+      qc.setQueryData(["gate-config"], data);
+      setDraft(null);
+      toast.success("Đã lưu cấu hình Gate", "Áp dụng cho các tin nhắn tiếp theo.");
     },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(["gate-config"], ctx.prev);
-    },
-    onSuccess: (data) => qc.setQueryData(["gate-config"], data),
+    onError: (e) => toast.error("Lưu cấu hình thất bại", e.message),
   });
+  const saving = mutation.isPending;
+
+  const edit = (p: GateConfigUpdate) => {
+    if (view) setDraft(applyPatch(view, p));
+  };
+
+  const save = () => {
+    const grace = patch.auto_resolve_grace_minutes;
+    if (grace !== undefined && !(Number.isInteger(grace) && grace >= 1)) {
+      toast.error("Lưu cấu hình thất bại", "Phút chờ sau khi nhắc phải là số nguyên ≥ 1.");
+      return;
+    }
+    mutation.mutate(patch);
+  };
 
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-8 mob:px-4">
       <header className="mb-6">
-        <h1 className="font-serif text-[27px] text-ink">Cấu hình Gate</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="font-serif text-[27px] text-ink">Cấu hình Gate</h1>
+          <button
+            type="button"
+            onClick={save}
+            disabled={!dirty || saving}
+            className="flex-none rounded-[8px] bg-olive px-3.5 py-2 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? "Đang lưu…" : "Lưu cấu hình"}
+          </button>
+        </div>
         <p className="mt-1.5 max-w-2xl text-[13.5px] leading-[1.6] text-faint">
           Gate chỉ điều chỉnh mức độ tự động cho ca AI tự tin. Ca có cờ bất định luôn được chuyển nhân
           viên — an toàn không bị gate ghi đè.
@@ -122,21 +170,23 @@ export default function GatePage() {
       {isLoading && <p className="text-sm text-dim">Đang tải cấu hình…</p>}
       {isError && <p className="text-sm text-terracotta">Lỗi: {error.message}</p>}
 
-      {cfg && (
+      {view && (
         <div className="flex flex-col gap-6">
           {/* Toggle hệ thống */}
           <div className="flex flex-col gap-3">
             <ToggleRow
               label="Tự động trả lời (toàn hệ thống)"
               desc="Bật: ca AI tự tin gửi trả lời theo luật per-intent bên dưới. Tắt: mọi trả lời tự động giữ lại chờ duyệt nháp."
-              checked={cfg.auto_reply_enabled}
-              onChange={(v) => mutation.mutate({ auto_reply_enabled: v })}
+              checked={view.auto_reply_enabled}
+              onChange={(v) => edit({ auto_reply_enabled: v })}
+              disabled={saving}
             />
             <ToggleRow
               label="Tự động đóng hội thoại"
-              desc={`Tự đóng ca không hoạt động sau ${cfg.auto_resolve_minutes} phút.`}
-              checked={cfg.auto_resolve_enabled}
-              onChange={(v) => mutation.mutate({ auto_resolve_enabled: v })}
+              desc={`Tự đóng ca không hoạt động sau ${view.auto_resolve_minutes} phút.`}
+              checked={view.auto_resolve_enabled}
+              onChange={(v) => edit({ auto_resolve_enabled: v })}
+              disabled={saving}
             />
             <div className="flex items-center justify-between gap-4 rounded-[12px] border border-line bg-white px-[18px] py-4 shadow-soft">
               <div className="min-w-0">
@@ -151,11 +201,10 @@ export default function GatePage() {
                 id="auto_resolve_grace_minutes"
                 type="number"
                 min={1}
-                value={cfg.auto_resolve_grace_minutes}
-                onChange={(e) =>
-                  mutation.mutate({ auto_resolve_grace_minutes: Number(e.target.value) })
-                }
-                className="w-20 flex-none rounded-[8px] border border-line bg-white px-2 py-1 text-[13px] text-ink"
+                value={view.auto_resolve_grace_minutes}
+                onChange={(e) => edit({ auto_resolve_grace_minutes: Number(e.target.value) })}
+                disabled={saving}
+                className="w-20 flex-none rounded-[8px] border border-line bg-white px-2 py-1 text-[13px] text-ink disabled:opacity-60"
               />
             </div>
           </div>
@@ -166,7 +215,7 @@ export default function GatePage() {
               <h2 className="text-[14px] font-semibold text-ink">Tự động trả lời theo nhóm ý định</h2>
             </div>
             <div className="divide-y divide-line-soft">
-              {cfg.rules.map((r) => (
+              {view.rules.map((r) => (
                 <div key={r.intent} className="flex items-center justify-between gap-3 px-[18px] py-3">
                   <div className="flex min-w-0 flex-col gap-1">
                     <div className="flex flex-wrap items-center gap-2">
@@ -189,8 +238,9 @@ export default function GatePage() {
                     </span>
                     <Switch
                       checked={r.send_directly}
-                      onChange={(v) => mutation.mutate({ rules: [{ intent: r.intent, send_directly: v }] })}
+                      onChange={(v) => edit({ rules: [{ intent: r.intent, send_directly: v }] })}
                       variant="intent"
+                      disabled={saving}
                     />
                   </div>
                 </div>

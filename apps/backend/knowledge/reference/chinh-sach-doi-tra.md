@@ -9,8 +9,6 @@ questions:
 ---
 # Chính sách đổi – trả – hoàn tiền
 
-> ⚠️ Các mốc dưới đây là MẪU — shop điều chỉnh theo thực tế.
-
 ## Thời hạn
 - **Đơn online**: đổi **hoặc** trả trong **30 ngày** kể từ khi nhận hàng.
 - **Mua tại cửa hàng**: chỉ áp dụng **đổi** (không trả), trong 30 ngày kể từ ngày mua.

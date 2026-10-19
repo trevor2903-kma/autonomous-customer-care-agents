@@ -9,8 +9,6 @@ questions:
 ---
 # Chính sách vận chuyển
 
-> ⚠️ Các mức dưới đây là MẪU — shop điều chỉnh theo thực tế.
-
 ## Phí & miễn phí
 - Phí giao tiêu chuẩn: **30.000đ/đơn**.
 - **Miễn phí** cho đơn từ **500.000đ** (tính trước phí ship, sau khi áp mã giảm giá).
