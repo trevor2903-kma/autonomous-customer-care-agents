@@ -20,6 +20,8 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -91,8 +93,28 @@ GREETING_REPLY = (
     "Dạ em chào anh/chị ạ! Em là trợ lý của shop. "
     "Anh/chị cần em hỗ trợ gì về sản phẩm, size, đơn hàng hay chính sách đổi/trả ạ?"
 )
+THANKS_REPLY = (
+    "Dạ em cảm ơn anh/chị đã tin tưởng shop ạ! Chúc anh/chị một ngày vui vẻ, cần gì cứ nhắn em nhé."
+)
+GOODBYE_REPLY = "Dạ em chào anh/chị, hẹn gặp lại ạ! Chúc anh/chị một ngày vui vẻ."
+
+# `greeting` gộp chào / cảm ơn / tạm biệt (taxonomy) → chọn câu mẫu bằng LUẬT từ khoá trên lời khách, KHÔNG LLM.
+# Thiếu bước này thì khách cảm ơn cũng nhận câu tự giới thiệu "Em là trợ lý của shop…".
+_THANKS_RE = re.compile(r"c[ảáa]m\s*[ơo]n|thank|\btks\b|\bthx\b", re.IGNORECASE)
+_GOODBYE_RE = re.compile(r"t[ạa]m\s*bi[ệe]t|bye|\bbai\s*bai\b|h[ẹe]n\s*g[ặa]p\s*l[ạa]i", re.IGNORECASE)
+
+
+def _greeting_reply(text: str) -> str:
+    """Cảm ơn ưu tiên (câu cảm ơn đã kèm lời chúc nên phủ cả "cảm ơn, tạm biệt"), rồi tạm biệt, còn lại là chào."""
+    if _THANKS_RE.search(text):
+        return THANKS_REPLY
+    if _GOODBYE_RE.search(text):
+        return GOODBYE_REPLY
+    return GREETING_REPLY
+
+
 # Intent trả câu mẫu, KHÔNG qua LLM — khớp `knowledge.NO_RETRIEVAL_INTENTS` (Agent 2 đã bỏ retrieval).
-CANNED_INTENTS: dict[str, str] = {"greeting": GREETING_REPLY}
+CANNED_INTENTS: dict[str, Callable[[str], str]] = {"greeting": _greeting_reply}
 
 def _resolve_facts_path() -> Path:
     curr = Path(__file__).resolve().parent
@@ -260,7 +282,7 @@ async def generate_reply(
     # chào lại nhận câu "xin chuyển nhân viên hỗ trợ". Đi cặp với `knowledge.NO_RETRIEVAL_INTENTS` (P4).
     canned = CANNED_INTENTS.get(intent or "")
     if canned:
-        return {"reply": canned, "uncertainty_flags": []}
+        return {"reply": canned(query), "uncertainty_flags": []}
 
     # Đơn tra không ra: câu cố định (grounded trên KẾT QUẢ lookup), KHÔNG để LLM tự diễn đạt — nó dễ nói
     # trại thành "đơn này không tồn tại" (suy diễn vượt dữ liệu) hoặc lộ rằng đơn có thật của người khác.

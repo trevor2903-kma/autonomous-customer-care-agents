@@ -142,6 +142,35 @@ async def test_greeting_returns_canned_reply_before_fallback_brake(monkeypatch: 
     assert r["uncertainty_flags"] == []  # KHÔNG hallucination_risk
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Mình cảm ơn", "THANKS_REPLY"),
+        ("cám ơn shop nhiều nha", "THANKS_REPLY"),
+        ("cam on shop", "THANKS_REPLY"),
+        ("Thanks shop", "THANKS_REPLY"),
+        ("ok tks", "THANKS_REPLY"),
+        ("Cảm ơn shop, tạm biệt nhé", "THANKS_REPLY"),  # cảm ơn ưu tiên — câu cảm ơn đã kèm lời chúc
+        ("Tạm biệt shop", "GOODBYE_REPLY"),
+        ("bye bye", "GOODBYE_REPLY"),
+        ("hẹn gặp lại", "GOODBYE_REPLY"),
+        ("Xin chào shop", "GREETING_REPLY"),
+        ("Alo shop ơi", "GREETING_REPLY"),
+    ],
+)
+async def test_greeting_picks_canned_reply_by_keyword(
+    monkeypatch: pytest.MonkeyPatch, text: str, expected: str
+) -> None:
+    # `greeting` gộp chào / cảm ơn / tạm biệt: khách cảm ơn từng nhận câu tự giới thiệu. Chọn bằng LUẬT, KHÔNG LLM.
+    def _no_llm() -> object:
+        raise AssertionError("KHÔNG được gọi LLM cho lượt xã giao")
+
+    monkeypatch.setattr(resp, "get_openai", _no_llm)
+    r = await resp.generate_reply(text, "greeting", {}, [])
+    assert r["reply"] == getattr(resp, expected)
+    assert r["uncertainty_flags"] == []
+
+
 async def test_order_not_found_returns_privacy_safe_canned_reply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
