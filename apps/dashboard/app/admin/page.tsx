@@ -6,7 +6,7 @@ export default function AdminIndexPage() {
       <div className="max-w-sm text-center">
         <p className="font-serif text-[22px] text-ink">Chọn một hội thoại</p>
         <p className="mt-2 text-sm leading-relaxed text-faint">
-          Chọn ca ở danh sách bên trái để xem toàn bộ lịch sử, EscalationCard và tiếp quản khi cần.
+          Chọn ca ở danh sách bên trái để xem toàn bộ lịch sử, Thẻ tổng quan ca và tiếp quản khi cần.
         </p>
       </div>
     </div>

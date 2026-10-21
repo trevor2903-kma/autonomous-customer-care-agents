@@ -128,7 +128,7 @@ export default function GatePage() {
     onSuccess: (data) => {
       qc.setQueryData(["gate-config"], data);
       setDraft(null);
-      toast.success("Đã lưu cấu hình Gate", "Áp dụng cho các tin nhắn tiếp theo.");
+      toast.success("Đã lưu cấu hình", "Áp dụng cho các tin nhắn tiếp theo.");
     },
     onError: (e) => toast.error("Lưu cấu hình thất bại", e.message),
   });
@@ -226,7 +226,6 @@ export default function GatePage() {
                         </span>
                       )}
                     </div>
-                    <span className="text-[11.5px] text-dim">{r.intent}</span>
                   </div>
                   <div className="flex flex-none items-center gap-2.5">
                     <span

@@ -12,6 +12,7 @@ import {
   OUTCOME_LABEL,
   OUTCOME_TONE,
   PRIORITY_LABEL,
+  formatEntity,
   formatEscalationReason,
   formatIntent,
   fmtClock,
@@ -52,7 +53,7 @@ function stepSummary(step: TurnStep, d: TurnDetail): { line: string; sub: string
       const ents = Object.keys((detail.entities as Record<string, unknown>) ?? {});
       return {
         line: `Ý định: ${formatIntent(detail.intent as string)}`,
-        sub: ents.length ? `Thực thể: ${ents.join(", ")}` : "Không có thực thể",
+        sub: ents.length ? `Thực thể: ${ents.map(formatEntity).join(", ")}` : "Không có thực thể",
       };
     }
     case "knowledge": {
@@ -146,9 +147,11 @@ function auditResult(step: TurnStep): string {
         ? "bỏ qua"
         : `${num(d.contexts) ?? 0} đoạn${step.confidence !== null ? ` · ${step.confidence.toFixed(2)}` : ""}`;
     case "decision":
-      return String(step.action ?? "—");
+      return ACTION_LABEL[String(step.action)] ?? String(step.action ?? "—");
     case "response":
       return `${num(d.reply_len) ?? 0} ký tự`;
+    case "delivery":
+      return OUTCOME_LABEL[String(step.action)] ?? String(step.action ?? "—");
     default:
       return String(step.action ?? "—");
   }

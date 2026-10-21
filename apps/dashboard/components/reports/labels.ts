@@ -20,6 +20,7 @@ export const OUTCOME_TONE: Record<string, { text: string; bg: string; border: st
 export const ACTION_LABEL: Record<string, string> = {
   auto_reply: "Tự động trả lời",
   human_handoff: "Chuyển nhân viên",
+  clarify: "Hỏi lại khách",
 };
 
 // Bước trong nhật ký kiểm toán → tên tác tử hiển thị.
@@ -48,6 +49,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   retrieve: "Tìm kiếm vector trên kho tri thức",
   auto_reply: "Đối chiếu cờ bất định → tự động trả lời",
   human_handoff: "Đối chiếu cờ bất định → chuyển nhân viên",
+  clarify: "Thiếu thông tin bắt buộc → hỏi lại khách",
   response: "Soạn phản hồi bám tri thức",
   sent: "Gửi thẳng phản hồi cho khách",
   held_for_approval: "Giữ nháp chờ nhân viên duyệt",
@@ -96,6 +98,22 @@ export function formatIntent(intent?: string | null): string {
   return INTENT_LABEL[intent] ?? intent;
 }
 
+// Khóa thực thể Agent 1 bóc tách (taxonomy.py + _entities.py).
+export const ENTITY_LABEL: Record<string, string> = {
+  order_id: "Mã đơn hàng",
+  product_name: "Sản phẩm",
+  color: "Màu sắc",
+  size: "Kích cỡ",
+  height: "Chiều cao",
+  weight: "Cân nặng",
+  destination: "Nơi giao",
+  promo_code: "Mã khuyến mãi",
+};
+
+export function formatEntity(key: string): string {
+  return ENTITY_LABEL[key] ?? key;
+}
+
 export const KB_TYPE_LABEL: Record<string, string> = {
   faq: "Hỏi đáp",
   case: "Quy trình xử lý",
@@ -116,8 +134,9 @@ export const PRIORITY_LABEL: Record<string, string> = {
   low: "thấp",
 };
 
+// Chỉ đọc dạng `blocking_flags=[...]` của Agent 3/4 — KHÔNG bắt nhầm nhãn `[error]` của lý do pipeline lỗi.
 export function parseBlockingFlags(reason?: string | null): string[] {
-  const m = reason?.match(/\[(.*)\]/);
+  const m = reason?.match(/blocking_flags=\[(.*)\]/);
   if (!m) return [];
   return m[1]
     .split(",")
@@ -127,6 +146,9 @@ export function parseBlockingFlags(reason?: string | null): string[] {
 
 export function formatEscalationReason(reason?: string | null): string {
   if (!reason) return "—";
+  if (FLAG_LABEL[reason]) return FLAG_LABEL[reason]; // lý do một mã, vd `clarify_unresolved`
+  // ERROR_ESCALATION_REASON (api/ws/chat.py): pipeline ném lỗi → chuyển người tự động.
+  if (reason.startsWith("[error]")) return "Lỗi kỹ thuật khi xử lý — tự động chuyển nhân viên";
   const flags = parseBlockingFlags(reason);
   if (flags.length > 0) {
     const translated = flags.map((f) => FLAG_LABEL[f] ?? f).join(", ");

@@ -145,7 +145,7 @@ function EscalationReasons({ s }: { s: ReportSummary }) {
         ))}
       </div>
       <p className="mt-2.5 text-[11.5px] leading-[1.5] text-dim">
-        Cờ chặn do Agent 3 ghi nhận — escalation an toàn luôn bật, gate không ghi đè được.
+        Cờ chặn do Agent 3 ghi nhận.
       </p>
     </div>
   );
@@ -347,7 +347,7 @@ export default function ReportsPage() {
                       </span>
                       <span className="w-[120px] flex-none truncate text-right">
                         {t.intent ? (
-                          <span className="text-[12px] text-faint" title={t.intent}>
+                          <span className="text-[12px] text-faint" title={formatIntent(t.intent)}>
                             {formatIntent(t.intent)}
                           </span>
                         ) : (

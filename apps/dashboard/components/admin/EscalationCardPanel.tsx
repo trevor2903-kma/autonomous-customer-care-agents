@@ -1,5 +1,11 @@
 import type { EscalationCard } from "shared-types";
-import { FLAG_LABEL, formatEscalationReason, formatIntent, parseBlockingFlags } from "@/components/reports/labels";
+import {
+  FLAG_LABEL,
+  formatEntity,
+  formatEscalationReason,
+  formatIntent,
+  parseBlockingFlags,
+} from "@/components/reports/labels";
 
 // EscalationCard (design, PRD §11): vì sao ca này cần người — ưu tiên, lý do + cờ, tóm tắt,
 // intent & thực thể, tri thức RAG đã truy hồi. Đây là ngữ cảnh để admin nắm ca trong vài giây.
@@ -75,7 +81,7 @@ export function EscalationCardPanel({
             )}
             {Object.entries(card.entities ?? {}).map(([k, v]) => (
               <div key={k} className="flex items-center justify-between gap-3 text-[13px]">
-                <span className="text-faint">{k}</span>
+                <span className="text-faint">{formatEntity(k)}</span>
                 <span className="font-semibold text-ink">{String(v)}</span>
               </div>
             ))}
