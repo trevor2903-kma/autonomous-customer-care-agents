@@ -128,12 +128,6 @@ export const SEVERITY_LABEL: Record<string, string> = {
   low: "thấp",
 };
 
-export const PRIORITY_LABEL: Record<string, string> = {
-  high: "cao",
-  medium: "trung bình",
-  low: "thấp",
-};
-
 // Chỉ đọc dạng `blocking_flags=[...]` của Agent 3/4 — KHÔNG bắt nhầm nhãn `[error]` của lý do pipeline lỗi.
 export function parseBlockingFlags(reason?: string | null): string[] {
   const m = reason?.match(/blocking_flags=\[(.*)\]/);

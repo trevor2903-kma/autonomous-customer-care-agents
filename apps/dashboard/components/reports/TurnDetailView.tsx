@@ -11,8 +11,6 @@ import {
   NODE_SHORT,
   OUTCOME_LABEL,
   OUTCOME_TONE,
-  PRIORITY_LABEL,
-  formatEntity,
   formatEscalationReason,
   formatIntent,
   fmtClock,
@@ -28,34 +26,12 @@ function num(v: unknown): number | null {
   return typeof v === "number" ? v : null;
 }
 
-// Số đo dưới cấp node (PERF-01.2) — `detail.timings` do chính node ghi (vd bước knowledge: embed/Qdrant/tra đơn).
-// Đọc chung mọi khoá có giá trị số; khoá chưa có nhãn hiện bằng tên gốc (bỏ đuôi `_ms`).
-const TIMING_LABEL: Record<string, string> = {
-  embed_ms: "embedding",
-  qdrant_ms: "Qdrant",
-  order_ms: "tra đơn",
-};
-
-function timingLine(detail: Record<string, unknown>): string | null {
-  const t = detail.timings;
-  if (!t || typeof t !== "object") return null;
-  const parts = Object.entries(t as Record<string, unknown>)
-    .filter((e): e is [string, number] => typeof e[1] === "number")
-    .map(([k, v]) => `${TIMING_LABEL[k] ?? k.replace(/_ms$/, "")} ${fmtMs(Math.round(v))}`);
-  return parts.length ? parts.join(" · ") : null;
-}
-
 /** Tóm tắt một bước cho thẻ tác tử — đọc từ `detail` mà chính node đó đã ghi. */
-function stepSummary(step: TurnStep, d: TurnDetail): { line: string; sub: string } {
+function stepSummary(step: TurnStep): { line: string; sub?: string } {
   const detail = step.detail ?? {};
   switch (step.node) {
-    case "intent": {
-      const ents = Object.keys((detail.entities as Record<string, unknown>) ?? {});
-      return {
-        line: `Ý định: ${formatIntent(detail.intent as string)}`,
-        sub: ents.length ? `Thực thể: ${ents.map(formatEntity).join(", ")}` : "Không có thực thể",
-      };
-    }
+    case "intent":
+      return { line: `Ý định: ${formatIntent(detail.intent as string)}` };
     case "knowledge": {
       const n = num(detail.contexts) ?? 0;
       if (detail.skipped === true) return { line: "Bỏ qua truy hồi (lượt xã giao)", sub: "Không cần tri thức" };
@@ -65,33 +41,21 @@ function stepSummary(step: TurnStep, d: TurnDetail): { line: string; sub: string
         sub: conf !== null ? `Điểm cao nhất ${conf.toFixed(2)}` : "—",
       };
     }
-    case "decision": {
-      const blocking = (detail.blocking_flags as string[]) ?? [];
-      const prio = PRIORITY_LABEL[String(detail.priority)] ?? String(detail.priority ?? "—");
-      return {
-        line: ACTION_LABEL[String(step.action)] ?? String(step.action ?? "—"),
-        sub: blocking.length
-          ? `Cờ chặn: ${blocking.map((f) => FLAG_LABEL[f] ?? f).join(", ")}`
-          : `Ưu tiên: ${prio}`,
-      };
-    }
-    case "response": {
-      const len = num(detail.reply_len) ?? 0;
+    case "decision":
+      return { line: ACTION_LABEL[String(step.action)] ?? String(step.action ?? "—") };
+    case "response":
       return {
         line: step.flags.includes("hallucination_risk")
           ? "Không đủ căn cứ → câu trả lời dự phòng"
-          : `Soạn phản hồi ${len} ký tự`,
-        sub: OUTCOME_LABEL[d.outcome] ?? d.outcome,
+          : `Soạn phản hồi ${num(detail.reply_len) ?? 0} ký tự`,
       };
-    }
     default:
-      return { line: String(step.action ?? "—"), sub: "" };
+      return { line: String(step.action ?? "—") };
   }
 }
 
-function AgentCard({ step, detail, index }: { step: TurnStep; detail: TurnDetail; index: number }) {
-  const { line, sub } = stepSummary(step, detail);
-  const timing = timingLine(step.detail ?? {});
+function AgentCard({ step, index }: { step: TurnStep; index: number }) {
+  const { line, sub } = stepSummary(step);
   const bad = step.flags.length > 0 || step.node === "decision" && step.action === "human_handoff";
   return (
     <div className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-[12px] border border-line bg-white p-[15px] shadow-soft">
@@ -101,8 +65,7 @@ function AgentCard({ step, detail, index }: { step: TurnStep; detail: TurnDetail
       </div>
       <div className="text-[13.5px] font-semibold text-ink">{NODE_SHORT[step.node] ?? step.node}</div>
       <div className={`text-[12.5px] leading-[1.5] ${bad ? "text-terracotta" : "text-muted"}`}>{line}</div>
-      <div className="text-[11.5px] text-faint">{sub}</div>
-      {timing && <div className="text-[11px] text-dim">{timing}</div>}
+      {sub && <div className="text-[11.5px] text-faint">{sub}</div>}
     </div>
   );
 }
@@ -210,7 +173,7 @@ export function TurnDetailView({
       {/* Hàng thẻ 4 tác tử */}
       <div className="mt-3 flex flex-wrap gap-3 mob:flex-col">
         {pipelineSteps.map((s, i) => (
-          <AgentCard key={s.node} step={s} detail={data} index={i} />
+          <AgentCard key={s.node} step={s} index={i} />
         ))}
       </div>
 
