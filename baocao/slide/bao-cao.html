@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="mau/deck.css">
   <style>
     /* Bản bảo vệ theo bố cục mới: 9 slide chính (≈ 7 phút) đi theo một mạch
-   Bài toán → Lý do chọn đề tài → Giải pháp → Hướng phát triển → Kết luận (slide 2 là mục lục của mạch này),
+   Vấn đề → Lý do chọn đề tài → Giải pháp → Hướng phát triển → Kết luận (slide 2 là mục lục của mạch này),
    sau đó là slide cảm ơn (dùng sau phần demo) và các slide dự phòng cho phần hỏi đáp.
    Giao diện dựa trên Mẫu A – Học thuật (mau/cskh-a-hoc-thuat.html): khung viền kép, tiêu đề chữ có chân,
    đỏ Học viện cho dấu cấu trúc, vàng chỉ dùng cho đường kẻ. Thuật ngữ kỹ thuật chỉ là phần bổ sung,
@@ -726,7 +726,7 @@
       color: var(--muted);
     }
 
-    /* ══ Slide 3 · Bài toán ══ */
+    /* ══ Slide 3 · Vấn đề cần giải quyết ══ */
     .issues {
       margin-top: 18px;
       padding: 0;
@@ -941,6 +941,13 @@
       border-left: 1px solid var(--rule);
     }
 
+    .goals>p:not(.lbl) {
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 6px;
+    }
+
     .goals .lbl {
       flex-direction: column;
       align-items: flex-start;
@@ -958,7 +965,7 @@
 
     .goals b {
       flex: none;
-      font: 600 46px/1 var(--serif);
+      font: 600 34px/1.1 var(--serif);
       color: var(--crimson);
       white-space: nowrap;
     }
@@ -1125,7 +1132,7 @@
       top: 588px;
     }
 
-    /* ══ Slide 7 · Khi nào AI được phép trả lời ══ */
+    /* ══ Slide 7 · Điều kiện để AI được phép trả lời ══ */
     .owner {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1807,69 +1814,71 @@
         <img src="mau/assets/logo-kma.png" alt="">
         <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
       </header>
-      <h2 class="title">Nội dung trình bày</h2>
+      <h2 class="title">Mạch trình bày</h2>
       <div class="body">
         <ol class="toc">
           <li><span class="n">I</span>
-            <div><b>Bài toán</b><span>Ba vấn đề khi trả lời khách hàng thủ công và rủi ro khi để AI trả lời trực
-                tiếp</span></div>
+            <div><b>Vấn đề cần giải quyết</b><span>Khách cần phản hồi nhanh, nhưng mọi câu trả lời vẫn phải đúng chính
+                sách</span></div>
           </li>
           <li><span class="n">II</span>
-            <div><b>Lý do chọn đề tài</b><span>Hạn chế của các giải pháp hiện có, hướng tiếp cận và mục tiêu của đề
-                tài</span></div>
+            <div><b>Lý do chọn đề tài</b><span>Khoảng trống giữa khả năng hiểu ngôn ngữ và khả năng kiểm soát cách xử
+                lý</span></div>
           </li>
           <li><span class="n">III</span>
-            <div><b>Giải pháp</b><span>Quy trình bốn bước cố định và điều kiện để AI được phép trả lời</span></div>
+            <div><b>Giải pháp đề xuất</b><span>Quy trình Multi-Agent cố định và các điều kiện bắt buộc trước khi trả
+                lời</span></div>
           </li>
           <li><span class="n">IV</span>
-            <div><b>Hướng phát triển</b><span>Hạn chế hiện tại, mỗi hạn chế đi kèm một hướng khắc phục</span></div>
+            <div><b>Hạn chế và hướng phát triển</b><span>Những điểm chưa đạt và cách cải thiện trước khi mở rộng hệ
+                thống</span></div>
           </li>
           <li><span class="n">V</span>
-            <div><b>Kết luận</b><span>Thông điệp chính của đề tài, sau đó là phần demo ba tình huống trên hệ
-                thống</span></div>
+            <div><b>Kết luận</b><span>Kết quả, đóng góp chính và phần demo ba tình huống trên hệ thống</span></div>
           </li>
         </ol>
       </div>
       <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">2 / 9</span></footer>
     </section>
 
-    <!-- 3 · Bài toán — 1:15 -->
+    <!-- 3 · Vấn đề cần giải quyết — 1:15 -->
     <section class="slide">
       <header class="head">
         <img src="mau/assets/logo-kma.png" alt="">
         <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
         <ol class="track" aria-label="Mạch trình bày">
-          <li class="on" aria-current="step">Bài toán</li>
+          <li class="on" aria-current="step">Vấn đề</li>
           <li>Lý do chọn đề tài</li>
           <li>Giải pháp</li>
           <li>Hướng phát triển</li>
           <li>Kết luận</li>
         </ol>
       </header>
-      <h2 class="title">Bài toán: tự động hóa nhưng không để AI trả lời sai</h2>
+      <h2 class="title">Phản hồi khách hàng phải nhanh mà vẫn đúng chính sách</h2>
       <div class="body split" style="--cols: 1fr 780px; column-gap: 72px">
         <div>
-          <p class="sub">Ba vấn đề khi trả lời khách hàng thủ công</p>
+          <p class="sub">Vì sao cách làm thủ công không còn phù hợp?</p>
           <ul class="issues">
             <li><svg class="ic">
                 <use href="#ic-repeat" />
               </svg>
-              <div><b>Câu hỏi lặp lại</b>
-                <p>Phí vận chuyển, kích cỡ, trạng thái đơn, đổi trả: phần lớn đã có câu trả lời sẵn trong tài liệu.</p>
+              <div><b>Tốn nguồn lực cho câu hỏi lặp lại</b>
+                <p>Phí vận chuyển, kích cỡ, trạng thái đơn và đổi trả đều đã có câu trả lời, nhưng nhân viên vẫn phải
+                  tra cứu và trả lời lại.</p>
               </div>
             </li>
             <li><svg class="ic">
                 <use href="#ic-clock" />
               </svg>
-              <div><b>Phản hồi chậm</b>
-                <p>Tin nhắn tăng mạnh vào buổi tối, cuối tuần, ngoài giờ làm việc của nhân viên.</p>
+              <div><b>Khách phải chờ ngoài giờ</b>
+                <p>Tin nhắn thường tăng mạnh vào buổi tối và cuối tuần, khi nhân viên không trực.</p>
               </div>
             </li>
             <li><svg class="ic">
                 <use href="#ic-split" />
               </svg>
-              <div><b>Thiếu nhất quán</b>
-                <p>Mỗi nhân viên diễn đạt một cách, khó kiểm tra lại khi xảy ra khiếu nại.</p>
+              <div><b>Câu trả lời thiếu nhất quán</b>
+                <p>Cùng một chính sách có thể được diễn đạt khác nhau, gây khó kiểm tra khi có khiếu nại.</p>
               </div>
             </li>
           </ul>
@@ -1878,15 +1887,16 @@
           <div class="box">
             <h3><svg class="ic">
                 <use href="#ic-warn" />
-              </svg>Rủi ro khi để AI trả lời trực tiếp</h3>
-            <p>Mô hình AI diễn đạt trôi chảy nhưng có thể tự tạo ra chính sách, mã giảm giá hoặc cam kết không tồn tại,
-              với giọng điệu rất chắc chắn.</p>
-            <p class="em">Một câu trả lời sai chính sách gây thiệt hại lớn hơn việc chuyển câu hỏi đó cho nhân viên.</p>
+              </svg>AI trả lời trực tiếp chưa đủ an toàn</h3>
+            <p>Mô hình có thể diễn đạt trôi chảy nhưng vẫn tạo ra chính sách, mã giảm giá hoặc cam kết không tồn tại.
+            </p>
+            <p class="em">Trong chăm sóc khách hàng, trả lời sai có thể gây mất tiền và mất niềm tin; chuyển đúng trường
+              hợp cho nhân viên an toàn hơn.</p>
           </div>
           <aside class="callout hot" style="margin-top: 30px">
-            <p class="lbl">Câu hỏi trung tâm của đề tài</p>
-            <p class="txt">Làm thế nào để tự động xử lý được nhiều trường hợp, nhưng vẫn biết khi nào AI không được phép
-              tự trả lời?</p>
+            <p class="lbl">Bài toán nghiên cứu</p>
+            <p class="txt">Làm thế nào để tự động xử lý các yêu cầu thông thường, đồng thời chặn AI khi thiếu căn cứ
+              hoặc có rủi ro?</p>
           </aside>
         </div>
       </div>
@@ -1899,14 +1909,14 @@
         <img src="mau/assets/logo-kma.png" alt="">
         <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
         <ol class="track" aria-label="Mạch trình bày">
-          <li class="done">Bài toán</li>
+          <li class="done">Vấn đề</li>
           <li class="on" aria-current="step">Lý do chọn đề tài</li>
           <li>Giải pháp</li>
           <li>Hướng phát triển</li>
           <li>Kết luận</li>
         </ol>
       </header>
-      <h2 class="title">Giải pháp hiện có: mỗi hướng chỉ mạnh ở một mặt</h2>
+      <h2 class="title">Giải pháp hiện có: hiểu tốt thì khó kiểm soát</h2>
       <div class="body col" style="justify-content: space-between">
         <div class="split" style="--cols: 840px 1fr; column-gap: 60px">
           <figure>
@@ -1934,8 +1944,8 @@
                 tử tự điều phối</text>
               <text class="zone-lb" x="764" y="86" text-anchor="middle">Khoảng trống</text>
             </svg>
-            <figcaption class="posmap-cap">Mỗi chấm là một nhóm giải pháp, đặt theo hai tiêu chí: mức hiểu câu hỏi của
-              khách và mức kiểm soát luồng xử lý.</figcaption>
+            <figcaption class="posmap-cap">Bốn nhóm giải pháp được so sánh theo khả năng hiểu cách khách diễn đạt và
+              khả năng kiểm soát quá trình xử lý.</figcaption>
           </figure>
           <div class="stack">
             <div class="box">
@@ -1951,7 +1961,7 @@
               </ul>
             </div>
             <div class="box">
-              <h3>AI tự quyết nhiều</h3>
+              <h3>AI tự xử lý trực tiếp</h3>
               <p class="ex">AI trả lời trực tiếp bằng mô hình ngôn ngữ lớn (LLM), hoặc nhiều tác tử tự điều phối</p>
               <ul class="pc">
                 <li><svg class="ic">
@@ -1959,31 +1969,31 @@
                   </svg>Hiểu tốt hơn các câu hỏi diễn đạt tự do</li>
                 <li class="con"><svg class="ic">
                     <use href="#ic-warn" />
-                  </svg>Luồng xử lý và lỗi khó kiểm soát: khó biết trước AI sẽ xử lý một câu hỏi theo cách nào</li>
+                  </svg>Khó dự đoán quá trình xử lý và khó truy vết khi xảy ra lỗi</li>
               </ul>
             </div>
           </div>
         </div>
-        <p class="note"><b>Khoảng trống:</b> chưa có hướng nào vừa hiểu tốt câu hỏi diễn đạt tự do, vừa kiểm soát được
-          luồng xử lý.</p>
+        <p class="note"><b>Khoảng trống cần giải quyết:</b> hệ thống phải vừa hiểu được cách khách diễn đạt tự nhiên,
+          vừa giữ quy trình và các quyết định rủi ro trong tầm kiểm soát.</p>
       </div>
       <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">4 / 9</span></footer>
     </section>
 
-    <!-- 5 · Hướng của đề tài và mục tiêu — 0:45 -->
+    <!-- 5 · Hướng tiếp cận và mục tiêu — 0:45 -->
     <section class="slide">
       <header class="head">
         <img src="mau/assets/logo-kma.png" alt="">
         <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
         <ol class="track" aria-label="Mạch trình bày">
-          <li class="done">Bài toán</li>
+          <li class="done">Vấn đề</li>
           <li class="on" aria-current="step">Lý do chọn đề tài</li>
           <li>Giải pháp</li>
           <li>Hướng phát triển</li>
           <li>Kết luận</li>
         </ol>
       </header>
-      <h2 class="title">Hướng của đề tài: Multi-Agent có kiểm soát</h2>
+      <h2 class="title">Đề tài lấp khoảng trống: hiểu tốt nhưng vẫn kiểm soát được</h2>
       <div class="body col" style="justify-content: space-between">
         <div class="split" style="--cols: 840px 1fr; column-gap: 60px">
           <figure>
@@ -2020,30 +2030,30 @@
               <circle class="pt me" cx="770" cy="76" r="16" /><text class="me-lb" x="764" y="124"
                 text-anchor="middle">Đề tài</text>
             </svg>
-            <figcaption class="posmap-cap"><b>Đề tài</b> nhắm vào góc còn trống: hiểu tốt câu hỏi diễn đạt tự do và kiểm
-              soát cao luồng xử lý.</figcaption>
+            <figcaption class="posmap-cap"><b>Đề tài</b> tập trung vào vùng còn trống: hiểu tốt cách khách diễn đạt và
+              vẫn kiểm soát được toàn bộ quá trình xử lý.</figcaption>
           </figure>
           <div class="stack">
-            <p class="sub">Kết hợp điểm mạnh của cả hai hướng</p>
+            <p class="sub">Tách năng lực của AI khỏi quyền ra quyết định</p>
             <ul class="ways">
               <li><b>Multi-Agent<small>điểm mạnh của AI</small></b>
-                <p>Nhiều tác tử AI, mỗi tác tử làm một phần việc AI làm tốt: hiểu câu hỏi, tìm thông tin, diễn đạt câu
-                  trả lời.</p>
+                <p>Các tác tử AI chuyên trách phần việc mô hình làm tốt: hiểu yêu cầu, tìm căn cứ và diễn đạt phản hồi.
+                </p>
               </li>
               <li class="key"><b>Có kiểm soát<small>điểm mạnh của giải pháp truyền thống</small></b>
-                <p>Các tác tử chạy theo quy trình cố định, dễ dự đoán; các quyết định có rủi ro được giữ bằng luật cố
-                  định và con người.</p>
+                <p>Quy trình cố định quyết định thứ tự xử lý; luật nghiệp vụ và con người giữ quyền quyết định ở các
+                  trường hợp rủi ro.</p>
               </li>
             </ul>
-            <p class="note" style="--z: .87"><b>“Tự trị”</b> trong đề tài: hệ thống tự xử lý các trường hợp thông
-              thường; quyền tự quyết bị giới hạn ở các quyết định nhạy cảm.</p>
+            <p class="note" style="--z: .87"><b>“Tự trị”</b> trong đề tài nghĩa là hệ thống tự hoàn tất yêu cầu thông
+              thường; yêu cầu thiếu căn cứ hoặc nhạy cảm phải chuyển sang con người.</p>
           </div>
         </div>
         <div class="goals">
-          <p class="lbl">Mục tiêu đặt ra<small>đối chiếu ở phần kết luận</small></p>
-          <p><b>≥ 70%</b><span>số lượt được hệ thống tự xử lý</span></p>
-          <p><b>≤ 5%</b><span>số lượt chuyển cho nhân viên không cần thiết</span></p>
-          <p><b>5 giây</b><span>95% số lượt phải hoàn thành trong thời gian này</span></p>
+          <p class="lbl">Mục tiêu của hệ thống<small>ba yêu cầu cốt lõi</small></p>
+          <p><b>Tự xử lý</b><span>Tự hoàn tất các yêu cầu thông thường</span></p>
+          <p><b>Chuyển đúng</b><span>Đưa trường hợp thiếu căn cứ hoặc có rủi ro cho nhân viên</span></p>
+          <p><b>Phản hồi nhanh</b><span>Duy trì tốc độ phản hồi khi nhiều hội thoại diễn ra đồng thời</span></p>
         </div>
       </div>
       <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">5 / 9</span></footer>
@@ -2055,14 +2065,14 @@
         <img src="mau/assets/logo-kma.png" alt="">
         <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
         <ol class="track" aria-label="Mạch trình bày">
-          <li class="done">Bài toán</li>
+          <li class="done">Vấn đề</li>
           <li class="done">Lý do chọn đề tài</li>
           <li class="on" aria-current="step">Giải pháp</li>
           <li>Hướng phát triển</li>
           <li>Kết luận</li>
         </ol>
       </header>
-      <h2 class="title">Giải pháp: mỗi tin nhắn đi qua bốn bước cố định</h2>
+      <h2 class="title">Mỗi tin nhắn đi qua một quy trình cố định gồm bốn bước</h2>
       <div class="body">
         <svg class="wires" viewBox="0 0 1728 656" aria-hidden="true">
           <defs>
@@ -2084,72 +2094,71 @@
         <p class="pipe-in">Tin nhắn của khách</p>
         <ol class="pipe-steps">
           <li>
-            <p class="hd"><span class="n">1</span>Hiểu câu hỏi</p>
+            <p class="hd"><span class="n">1</span>Hiểu yêu cầu</p>
             <p class="tech">Intent</p>
-            <p class="d">Khách đang hỏi gì? Có mã đơn hay thông tin quan trọng nào không?</p>
+            <p class="d">Xác định khách cần gì và trích xuất mã đơn hoặc thông tin quan trọng.</p>
           </li>
           <li>
             <p class="hd"><span class="n">2</span>Tìm căn cứ</p>
             <p class="tech">Knowledge</p>
-            <p class="d">Tìm chính sách, tài liệu phù hợp hoặc tra cứu đơn hàng của chính khách đó.</p>
+            <p class="d">Tìm chính sách liên quan và tra cứu dữ liệu của đúng khách hàng.</p>
           </li>
           <li class="key">
-            <p class="hd"><span class="n">3</span>Quyết định</p>
+            <p class="hd"><span class="n">3</span>Kiểm tra an toàn</p>
             <p class="tech">Decision</p>
-            <p class="d">Đã đủ điều kiện để hệ thống tự xử lý chưa? Dùng luật cố định, không để AI tự quyết.</p>
+            <p class="d">Luật cố định quyết định trả lời, hỏi thêm, chờ duyệt hay chuyển nhân viên.</p>
           </li>
           <li>
-            <p class="hd"><span class="n">4</span>Tạo phản hồi</p>
+            <p class="hd"><span class="n">4</span>Soạn phản hồi</p>
             <p class="tech">Response</p>
-            <p class="d">Bước duy nhất được gửi nội dung cho khách; chỉ tạo câu trả lời khi bước 3 cho phép.</p>
+            <p class="d">Chỉ soạn và gửi nội dung khi bước 3 xác nhận đủ điều kiện.</p>
           </li>
         </ol>
         <ul class="pipe-out">
           <li class="wait"><svg class="ic">
               <use href="#ic-bubble-q" />
-            </svg><b>Hỏi lại mã đơn</b>
-            <p>Hỏi về đơn nhưng thiếu mã</p><code>AWAITING_CUSTOMER</code>
+            </svg><b>Hỏi thêm mã đơn</b>
+            <p>Thiếu mã để tra cứu đơn</p><code>AWAITING_CUSTOMER</code>
           </li>
           <li><svg class="ic">
               <use href="#ic-send" />
-            </svg><b>Gửi ngay</b>
-            <p>Trả lời thẳng cho khách</p><code>REPLIED</code>
+            </svg><b>Trả lời khách ngay</b>
+            <p>Đủ căn cứ, ít rủi ro</p><code>REPLIED</code>
           </li>
           <li><svg class="ic">
               <use href="#ic-review" />
             </svg><b>Chờ nhân viên duyệt</b>
-            <p>Nháp được duyệt hoặc sửa</p><code>PENDING_APPROVAL</code>
+            <p>Nhân viên duyệt hoặc sửa bản nháp</p><code>PENDING_APPROVAL</code>
           </li>
           <li><svg class="ic">
               <use href="#ic-person" />
             </svg><b>Chuyển cho nhân viên</b>
-            <p>Kèm phiếu tóm tắt ca</p><code>IN_HUMAN_QUEUE</code>
+            <p>Kèm lý do và tóm tắt hội thoại</p><code>IN_HUMAN_QUEUE</code>
           </li>
         </ul>
-        <p class="cap pipe-cap" style="--z: 1.04">Mỗi bước do một tác tử (agent) chuyên trách đảm nhận và luôn chạy theo
-          thứ tự cố định; không tác tử nào được tự chọn bước tiếp theo. Bước 1, 2, 4 có dùng mô hình AI; bước 3 chỉ dùng
-          luật cố định.</p>
+        <p class="cap pipe-cap" style="--z: 1.04">Mỗi bước do một tác tử chuyên trách thực hiện theo thứ tự cố định. AI
+          được dùng để hiểu, tìm và diễn đạt; quyết định cho phép trả lời chỉ do luật cố định.</p>
       </div>
       <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">6 / 9</span></footer>
     </section>
 
-    <!-- 7 · Khi nào AI được phép trả lời — 1:15 -->
+    <!-- 7 · Điều kiện để AI được phép trả lời — 1:15 -->
     <section class="slide">
       <header class="head">
         <img src="mau/assets/logo-kma.png" alt="">
         <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
         <ol class="track" aria-label="Mạch trình bày">
-          <li class="done">Bài toán</li>
+          <li class="done">Vấn đề</li>
           <li class="done">Lý do chọn đề tài</li>
           <li class="on" aria-current="step">Giải pháp</li>
           <li>Hướng phát triển</li>
           <li>Kết luận</li>
         </ol>
       </header>
-      <h2 class="title">Khi nào AI được phép trả lời?</h2>
+      <h2 class="title">AI chỉ được trả lời khi hiểu yêu cầu và có đủ căn cứ</h2>
       <div class="body col" style="gap: 18px">
-        <div class="owner"><span class="r">Luật cố định quyết định · không ai cấu hình được</span><span class="c">Quản
-            trị viên cấu hình</span></div>
+        <div class="owner"><span class="r">Điều kiện an toàn cố định · quản trị viên không thể nới lỏng</span><span
+            class="c">Cách phản hồi do quản trị viên cấu hình</span></div>
         <div class="q3">
           <div class="qc">
             <div class="top"><svg class="ic">
@@ -2157,7 +2166,7 @@
               </svg>
               <div>
                 <p class="k">CÂU HỎI 1</p>
-                <h3>Hệ thống có hiểu được yêu cầu không?</h3>
+                <h3>Yêu cầu có rõ ràng và thuộc phạm vi xử lý không?</h3>
               </div>
             </div>
             <div class="bot">
@@ -2165,7 +2174,7 @@
               <p class="res"><svg class="ic">
                   <use href="#ic-person" />
                 </svg>Chuyển cho nhân viên</p>
-              <p class="why">Câu hỏi ngoài phạm vi cửa hàng, hoặc khách yêu cầu gặp người thật.</p>
+              <p class="why">Yêu cầu không rõ, ngoài phạm vi cửa hàng hoặc khách muốn gặp nhân viên.</p>
             </div>
           </div>
           <div class="qc">
@@ -2175,7 +2184,7 @@
               </svg>
               <div>
                 <p class="k">CÂU HỎI 2</p>
-                <h3>Có đủ dữ liệu làm căn cứ không?</h3>
+                <h3>Có thông tin đáng tin cậy để trả lời không?</h3>
               </div>
             </div>
             <div class="bot">
@@ -2183,7 +2192,8 @@
               <p class="res"><svg class="ic">
                   <use href="#ic-person" />
                 </svg>Chuyển cho nhân viên</p>
-              <p class="why">Không tìm thấy nguồn phù hợp, hoặc dịch vụ gặp lỗi: hệ thống không đoán.</p>
+              <p class="why">Không tìm thấy chính sách, dữ liệu phù hợp hoặc dịch vụ tra cứu gặp lỗi: hệ thống không
+                suy đoán.</p>
             </div>
           </div>
           <div class="qc">
@@ -2193,20 +2203,21 @@
               </svg>
               <div>
                 <p class="k">CÂU HỎI 3</p>
-                <h3>Đã an toàn: gửi ngay hay chờ duyệt?</h3>
+                <h3>Nếu đã an toàn, có cần nhân viên duyệt không?</h3>
               </div>
             </div>
             <div class="bot">
               <p class="lb">THEO CẤU HÌNH</p>
               <p class="opts"><span>Gửi ngay</span><span>Chờ nhân viên duyệt</span></p>
-              <p class="why">Chọn theo từng loại yêu cầu; mặc định hoàn tiền, đổi hàng, khiếu nại phải chờ duyệt.</p>
+              <p class="why">Quy định theo từng loại yêu cầu; hoàn tiền, đổi hàng và khiếu nại mặc định phải chờ duyệt.
+              </p>
             </div>
           </div>
         </div>
         <div class="must">
           <p class="lbl">Nguyên tắc bắt buộc</p>
-          <p class="txt">Không đủ căn cứ thì không đoán. Cấu hình chỉ chọn giữa gửi ngay và chờ duyệt, không thể biến
-            một trường hợp rủi ro thành trường hợp được tự động trả lời.</p>
+          <p class="txt">Không có căn cứ thì không trả lời. Cấu hình chỉ chọn gửi ngay hay chờ duyệt cho trường hợp đã
+            an toàn; không thể biến trường hợp rủi ro thành trường hợp được tự động trả lời.</p>
           <p class="ex">Ví dụ: khách đề nghị cấp “mã giảm giá 70%”, tài liệu không có mã này → hệ thống không tự tạo mã.
           </p>
         </div>
@@ -2220,14 +2231,14 @@
         <img src="mau/assets/logo-kma.png" alt="">
         <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
         <ol class="track" aria-label="Mạch trình bày">
-          <li class="done">Bài toán</li>
+          <li class="done">Vấn đề</li>
           <li class="done">Lý do chọn đề tài</li>
           <li class="done">Giải pháp</li>
           <li class="on" aria-current="step">Hướng phát triển</li>
           <li>Kết luận</li>
         </ol>
       </header>
-      <h2 class="title">Hạn chế hiện tại và hướng khắc phục</h2>
+      <h2 class="title">Bốn hạn chế cần xử lý trước khi mở rộng hệ thống</h2>
       <div class="body col" style="gap: 20px">
         <div class="fix">
           <span></span>
@@ -2235,29 +2246,28 @@
           <p class="hd">ẢNH HƯỞNG</p><span></span>
           <p class="hd">HƯỚNG KHẮC PHỤC</p>
           <span class="n">1</span>
-          <p class="c lim">Phản hồi chậm khi nhiều hội thoại cùng lúc</p><span class="ar"></span>
-          <p class="c">Khách phải chờ lâu hơn mục tiêu</p><span class="ar"></span>
-          <p class="c go">Đặt máy chủ cùng khu vực với cơ sở dữ liệu và kho tri thức; bớt các truy vấn cơ sở dữ liệu
-            không cần thiết.</p>
+          <p class="c lim">Độ trễ tăng khi nhiều hội thoại đến cùng lúc</p><span class="ar"></span>
+          <p class="c">Không đạt mục tiêu phản hồi trong 5 giây</p><span class="ar"></span>
+          <p class="c go">Đặt các dịch vụ cùng khu vực; giảm những truy vấn cơ sở dữ liệu không cần thiết.</p>
           <span class="n">2</span>
-          <p class="c lim">Một số câu hỏi tìm nguồn chưa tốt</p><span class="ar"></span>
-          <p class="c">Có thể chuyển cho nhân viên không cần thiết</p><span class="ar"></span>
-          <p class="c go">Lọc kết quả có mức phù hợp thấp, xếp hạng lại kết quả gần nhau, viết lại câu hỏi nối tiếp theo
-            ngữ cảnh.</p>
+          <p class="c lim">Một số câu hỏi chưa tìm đúng nguồn</p><span class="ar"></span>
+          <p class="c">Chuyển sang nhân viên dù hệ thống có thể tự trả lời</p><span class="ar"></span>
+          <p class="c go">Loại kết quả có độ phù hợp thấp, xếp hạng lại các kết quả sát nhau và viết lại câu hỏi nối
+            tiếp theo ngữ cảnh.</p>
           <span class="n">3</span>
-          <p class="c lim">Mới chạy an toàn trên một tiến trình máy chủ</p><span class="ar"></span>
-          <p class="c">Khó mở rộng khi số khách tăng</p><span class="ar"></span>
-          <p class="c go">Chuyển dữ liệu phối hợp sang kho dùng chung để chạy nhiều tiến trình.</p>
+          <p class="c lim">Cơ chế phối hợp mới an toàn trên một tiến trình</p><span class="ar"></span>
+          <p class="c">Khó tăng số máy chủ khi lượng khách tăng</p><span class="ar"></span>
+          <p class="c go">Đưa trạng thái phối hợp sang kho dùng chung để nhiều tiến trình cùng hoạt động an toàn.</p>
           <span class="n">4</span>
-          <p class="c lim">Chưa thao tác trên đơn hàng thật</p><span class="ar"></span>
-          <p class="c">Giá trị nghiệp vụ còn giới hạn</p><span class="ar"></span>
-          <p class="c go">Tích hợp hệ thống đơn hàng thật; thao tác nhạy cảm như hủy đơn, hoàn tiền vẫn do nhân viên
+          <p class="c lim">Chưa tích hợp hệ thống đơn hàng thực tế</p><span class="ar"></span>
+          <p class="c">Mới dừng ở dữ liệu mô phỏng</p><span class="ar"></span>
+          <p class="c go">Tích hợp hệ thống đơn hàng; thao tác nhạy cảm như hủy đơn, hoàn tiền vẫn do nhân viên
             duyệt.</p>
         </div>
-        <p class="note" style="--z: .97">Nguyên tắc phát triển giữ nguyên: tăng mức tự động hóa nhưng không đánh đổi khả
-          năng kiểm soát.</p>
-        <p class="cap" style="--z: 1.04">Hướng dài hạn: vòng học bán tự động (hệ thống đề xuất bổ sung tri thức, quản
-          trị viên quyết định), mở rộng đa kênh và đa ngôn ngữ.</p>
+        <p class="note" style="--z: .97">Nguyên tắc không thay đổi: chỉ mở rộng tự động hóa khi vẫn kiểm soát được rủi
+          ro.</p>
+        <p class="cap" style="--z: 1.04">Dài hạn: hệ thống đề xuất bổ sung tri thức để quản trị viên phê duyệt; sau đó
+          mở rộng đa kênh và đa ngôn ngữ.</p>
       </div>
       <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">8 / 9</span></footer>
     </section>
@@ -2268,40 +2278,40 @@
         <img src="mau/assets/logo-kma.png" alt="">
         <p class="inst">Học viện Kỹ thuật Mật mã<span>Khoa Công nghệ thông tin</span></p>
         <ol class="track" aria-label="Mạch trình bày">
-          <li class="done">Bài toán</li>
+          <li class="done">Vấn đề</li>
           <li class="done">Lý do chọn đề tài</li>
           <li class="done">Giải pháp</li>
           <li class="done">Hướng phát triển</li>
           <li class="on" aria-current="step">Kết luận</li>
         </ol>
       </header>
-      <h2 class="title">Kết luận</h2>
+      <h2 class="title">Kết luận: tự động hóa hiệu quả cần đi cùng kiểm soát</h2>
       <div class="body col" style="justify-content: space-between; --z: 1.22">
-        <p class="verdict">Tự động hóa phần phù hợp,<br>giữ con người ở các quyết định có rủi ro.</p>
+        <p class="verdict">AI tự động hóa phần hiểu và trả lời;<br>luật và con người kiểm soát các quyết định rủi ro.</p>
         <div class="duo">
           <div class="box tint">
             <h3><svg class="ic">
                 <use href="#ic-spark" />
-              </svg>AI đảm nhận việc ngôn ngữ</h3>
+              </svg>AI làm tốt phần ngôn ngữ</h3>
             <ul class="list xs">
-              <li>Hiểu câu hỏi của khách</li>
-              <li>Tìm thông tin liên quan</li>
-              <li>Diễn đạt câu trả lời</li>
+              <li>Hiểu cách khách diễn đạt</li>
+              <li>Tìm chính sách và dữ liệu liên quan</li>
+              <li>Soạn câu trả lời theo căn cứ</li>
             </ul>
           </div>
           <div class="box warn">
             <h3><svg class="ic">
                 <use href="#ic-shield" />
-              </svg>Luật cố định và con người kiểm soát</h3>
+              </svg>Luật và con người giữ quyền kiểm soát</h3>
             <ul class="list xs">
-              <li>Có đủ căn cứ để trả lời hay không</li>
-              <li>Khi nào phải chuyển cho nhân viên</li>
-              <li>Có được thực hiện thao tác nhạy cảm hay không</li>
+              <li>Xác nhận có đủ căn cứ để trả lời</li>
+              <li>Chặn hoặc chuyển các trường hợp rủi ro</li>
+              <li>Phê duyệt các thao tác nhạy cảm</li>
             </ul>
           </div>
         </div>
-        <p class="note"><b>Kết quả:</b> đạt các mục tiêu chất lượng chính; thời gian phản hồi khi nhiều hội thoại cùng
-          lúc cần tiếp tục tối ưu.</p>
+        <p class="note"><b>Kết quả đánh giá:</b> đạt mục tiêu về tỷ lệ tự xử lý và tỷ lệ chuyển nhầm; độ trễ khi nhiều
+          hội thoại đồng thời chưa đạt và cần tiếp tục tối ưu.</p>
       </div>
       <footer class="foot"><span>Bùi Anh Tuấn – Đồ án tốt nghiệp 2026</span><span class="pg">9 / 9</span></footer>
     </section>
